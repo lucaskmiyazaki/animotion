@@ -60,6 +60,14 @@ const nextFrameButton = createButton('Next Frame', () => {
     window.videoControls?.nextFrame();
 });
 
+const exportSkeletonButton = createButton('Export Skeleton', () => {
+    window.appActions?.exportSkeleton();
+});
+
+const importSkeletonButton = createButton('Import Skeleton', () => {
+    window.appActions?.importSkeleton();
+});
+
 // Add buttons to sidebar
 sidebar.append(
     modeButton,
@@ -68,6 +76,8 @@ sidebar.append(
     copyPrevFrameButton,
     previewButton,
     exportButton,
+    exportSkeletonButton,
+    importSkeletonButton,
     uploadVideoButton,
     prevFrameButton,
     nextFrameButton

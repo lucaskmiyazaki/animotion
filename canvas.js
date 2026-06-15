@@ -336,6 +336,56 @@ function cloneSkeleton(sourceSkeleton) {
     return newSkeleton;
 }
 
+function exportSkeleton() {
+    const skeleton = getCurrentSkeleton();
+    if (!skeleton) return;
+
+    const data = {
+        points: skeleton.points.map(p => ({ id: skeleton.points.indexOf(p), x: p.x, y: p.y })),
+        lines: skeleton.lines.map(l => ({
+            start: skeleton.points.indexOf(l.start),
+            end: skeleton.points.indexOf(l.end)
+        }))
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `skeleton_frame${currentFrameIndex}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function importSkeleton() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.txt';
+    input.addEventListener('change', () => {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                const newSkeleton = new Skeleton();
+                const pointObjs = data.points.map(p => newSkeleton.addPoint(p.x, p.y));
+                data.lines.forEach(l => newSkeleton.addLine(pointObjs[l.start], pointObjs[l.end]));
+                newSkeleton.updateAllGeometry();
+                frameSkeletons[currentFrameIndex] = newSkeleton;
+                hoveredPoint = null;
+                draggedPoint = null;
+                selectedPoint = null;
+                redrawAll();
+            } catch {
+                alert('Invalid skeleton file.');
+            }
+        };
+        reader.readAsText(file);
+    });
+    input.click();
+}
+
 function copyPreviousFrameSkeleton() {
     if (currentFrameIndex <= 0) return;
 
@@ -369,5 +419,7 @@ window.appActions = {
     getMode,
     setCurrentFrame,
     deleteSelectedPoint,
-    copyPreviousFrameSkeleton
+    copyPreviousFrameSkeleton,
+    exportSkeleton,
+    importSkeleton
 };
