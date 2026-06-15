@@ -62,9 +62,25 @@ class Chain {
         this.trapezoids = [];
     }
 
+    // Returns the intersection point of infinite lines through (p1,p2) and (p3,p4), or null if parallel
+    _lineIntersection(p1, p2, p3, p4) {
+        const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
+        const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
+        const denom = d1x * d2y - d1y * d2x;
+        if (Math.abs(denom) < 1e-10) return null; // parallel
+        const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
+        return { x: p1.x + t * d1x, y: p1.y + t * d1y };
+    }
     buildFromSkeleton(skeleton, thickness, startX = 0, baseY = 0) {
 
         this.clear();
+
+        if (skeleton.lines.length === 0) return;
+
+        const initialAngle = skeleton.lines[0].angle; // degrees
+        const angleRad = initialAngle * Math.PI / 180;
+        const dirX = Math.cos(angleRad);
+        const dirY = Math.sin(angleRad);
 
         let prev = null;
 
@@ -82,15 +98,15 @@ class Chain {
                 thickness
             );
 
-            // Compute flat X position immediately
-            let flatX;
+            // Compute flat offset (distance along initial direction)
+            let flatOffset;
 
             if (!prev) {
-                flatX = startX;
+                flatOffset = 0;
             }
             else {
-                flatX =
-                    prev.flatPosition.x +
+                flatOffset =
+                    prev.flatOffset +
                     prev.trapezoid.meanLineLength +
                     prev.trapezoid.getRightExcess() +
                     trap.getLeftExcess();
@@ -101,9 +117,14 @@ class Chain {
                 trapezoid: trap,
                 skeletonLine: line,
 
-                // flat state (computed immediately)
-                flatPosition: { x: flatX, y: baseY },
-                flatRotation: 0,
+                flatOffset: flatOffset,
+
+                // flat state: laid out along the first line's direction
+                flatPosition: {
+                    x: startX + flatOffset * dirX,
+                    y: baseY + flatOffset * dirY
+                },
+                flatRotation: initialAngle,
 
                 // final state
                 finalPosition: {
@@ -114,8 +135,11 @@ class Chain {
                 finalRotation: line.angle,
 
                 // current state initialized as flat
-                position: { x: flatX, y: baseY },
-                rotation: 0
+                position: {
+                    x: startX + flatOffset * dirX,
+                    y: baseY + flatOffset * dirY
+                },
+                rotation: initialAngle
 
             };
 
@@ -124,6 +148,23 @@ class Chain {
             prev = item;
 
         });
+
+        // Compute pivot points: geometric intersection of right edge of link N with left edge of link N+1
+        // For the first link there is no previous, so pivot = flatPosition
+        this.trapezoids[0].pivotPoint = {
+            x: this.trapezoids[0].flatPosition.x,
+            y: this.trapezoids[0].flatPosition.y
+        };
+        for (let i = 1; i < this.trapezoids.length; i++) {
+            const prevItem = this.trapezoids[i - 1];
+            const currItem = this.trapezoids[i];
+            const prevPts = prevItem.trapezoid.getPoints(prevItem.flatPosition, prevItem.flatRotation);
+            const currPts = currItem.trapezoid.getPoints(currItem.flatPosition, currItem.flatRotation);
+            // right edge of prev: pts[1] (top-right) to pts[2] (bottom-right)
+            // left edge of curr:  pts[0] (top-left)  to pts[3] (bottom-left)
+            const pivot = this._lineIntersection(prevPts[1], prevPts[2], currPts[0], currPts[3]);
+            currItem.pivotPoint = pivot || { x: currItem.flatPosition.x, y: currItem.flatPosition.y };
+        }
     }
 
 
