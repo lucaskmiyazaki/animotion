@@ -32,6 +32,10 @@ const buildButton = createButton('Build Chain', () => {
     window.appActions?.buildChain();
 });
 
+const deletePointButton = createButton('Delete Point', () => {
+    window.appActions?.deleteSelectedPoint();
+});
+
 const previewButton = createButton('Preview', () => {
     window.appActions?.playPreviewAnimation();
 });
@@ -42,6 +46,10 @@ const exportButton = createButton('Export DXF', () => {
 
 const uploadVideoButton = createButton('Upload Video', () => {
     window.videoControls?.openVideoPicker();
+});
+
+const copyPrevFrameButton = createButton('Copy Prev', () => {
+    window.appActions?.copyPreviousFrameSkeleton();
 });
 
 const prevFrameButton = createButton('Prev Frame', () => {
@@ -56,6 +64,8 @@ const nextFrameButton = createButton('Next Frame', () => {
 sidebar.append(
     modeButton,
     buildButton,
+    deletePointButton,
+    copyPrevFrameButton,
     previewButton,
     exportButton,
     uploadVideoButton,

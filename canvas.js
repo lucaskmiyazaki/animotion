@@ -15,6 +15,8 @@ let drawingFinished = false;
 let isAnimating = false;
 let hoveredPoint = null;
 let draggedPoint = null;
+let selectedPoint = null;
+let hasDragged = false;
 let mode = 'create'; // 'create' or 'edit'
 
 // Default trapezoid thickness
@@ -58,34 +60,39 @@ function getPointAt(x, y) {
 }
 
 canvas.addEventListener('click', (e) => {
-    if (drawingFinished) return;
-    if (mode !== 'create') return;
+    if (mode === 'create') {
+        const skeleton = ensureCurrentSkeleton();
 
-    const skeleton = ensureCurrentSkeleton();
+        const x = e.clientX;
+        const y = e.clientY;
 
-    const x = e.clientX;
-    const y = e.clientY;
+        const newPoint = skeleton.addPoint(x, y);
 
-    const newPoint = skeleton.addPoint(x, y);
+        if (skeleton.points.length > 1) {
+            skeleton.addLine(
+                skeleton.points[skeleton.points.length - 2],
+                newPoint
+            );
+        }
 
-    if (skeleton.points.length > 1) {
-        skeleton.addLine(
-            skeleton.points[skeleton.points.length - 2],
-            newPoint
-        );
+        draw();
+    } else if (mode === 'edit') {
+        if (hasDragged) return;
+        const x = e.clientX;
+        const y = e.clientY;
+        selectedPoint = getPointAt(x, y);
+        redrawAll();
     }
-
-    draw();
 });
 
 canvas.addEventListener('mousedown', (e) => {
-    if (drawingFinished) return;
     if (mode !== 'edit') return;
 
     const x = e.clientX;
     const y = e.clientY;
 
     draggedPoint = getPointAt(x, y);
+    hasDragged = false;
 });
 
 canvas.addEventListener('mousemove', (e) => {
@@ -95,6 +102,7 @@ canvas.addEventListener('mousemove', (e) => {
     hoveredPoint = getPointAt(mouseX, mouseY);
 
     if (mode === 'edit' && draggedPoint) {
+        hasDragged = true;
         const skeleton = getCurrentSkeleton();
         if (skeleton) {
             skeleton.updatePoint(draggedPoint, mouseX, mouseY);
@@ -155,9 +163,18 @@ function draw() {
         const radius = point === hoveredPoint ? hoverRadius : pointRadius;
 
         ctx.beginPath();
-        ctx.fillStyle = 'red';
+        if (point === selectedPoint) {
+            ctx.fillStyle = 'gold';
+        } else {
+            ctx.fillStyle = 'red';
+        }
         ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
         ctx.fill();
+        if (point === selectedPoint) {
+            ctx.strokeStyle = 'orange';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
     });
 }
 
@@ -261,9 +278,19 @@ function buildChain() {
     redrawAll();
 }
 
+function deleteSelectedPoint() {
+    if (!selectedPoint) return;
+    const skeleton = getCurrentSkeleton();
+    if (!skeleton) return;
+    skeleton.deletePoint(selectedPoint);
+    selectedPoint = null;
+    redrawAll();
+}
+
 function toggleMode() {
     mode = mode === 'create' ? 'edit' : 'create';
     draggedPoint = null;
+    selectedPoint = null;
     return mode;
 }
 
@@ -311,6 +338,10 @@ document.addEventListener('keydown', (e) => {
     if (key === 'c' && !e.repeat) {
         copyPreviousFrameSkeleton();
     }
+
+    if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'edit') {
+        deleteSelectedPoint();
+    }
 });
 
 window.appActions = {
@@ -319,5 +350,7 @@ window.appActions = {
     buildChain,
     toggleMode,
     getMode,
-    setCurrentFrame
+    setCurrentFrame,
+    deleteSelectedPoint,
+    copyPreviousFrameSkeleton
 };

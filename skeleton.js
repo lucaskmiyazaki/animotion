@@ -110,4 +110,26 @@ class Skeleton {
         this.lines.forEach(line => line.updateAngle());
         this.points.forEach(point => point.updateAngle());
     }
+
+    deletePoint(point) {
+        const connectedLines = [...point.lines];
+        const neighbors = connectedLines.map(l => l.getOtherPoint(point));
+
+        // Remove connected lines from skeleton and from neighbor point refs
+        connectedLines.forEach(line => {
+            this.lines = this.lines.filter(l => l !== line);
+            line.start.lines = line.start.lines.filter(l => l !== line);
+            line.end.lines = line.end.lines.filter(l => l !== line);
+        });
+
+        // Remove the point
+        this.points = this.points.filter(p => p !== point);
+
+        // If it had exactly 2 neighbors, connect them
+        if (neighbors.length === 2) {
+            this.addLine(neighbors[0], neighbors[1]);
+        }
+
+        this.updateAllGeometry();
+    }
 }
