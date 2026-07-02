@@ -255,8 +255,17 @@ function draw() {
         ctx.stroke();
     });
 
-    skeleton.points.forEach(point => {
+    skeleton.points.forEach((point, index) => {
         const radius = point === hoveredPoint ? hoverRadius : pointRadius;
+
+        // Mark the first point with an outer red ring.
+        if (index === 0) {
+            ctx.beginPath();
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.arc(point.x, point.y, radius + 5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
 
         ctx.beginPath();
         if (point === selectedPoint) {
@@ -558,7 +567,7 @@ document.addEventListener('keydown', (e) => {
         copyPreviousFrameSkeleton();
     }
 
-    if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'edit') {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && (mode === 'edit' || mode === 'move')) {
         deleteSelectedPoint();
     }
 

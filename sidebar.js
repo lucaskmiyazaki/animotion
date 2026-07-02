@@ -51,12 +51,7 @@ const buildButton = createButton('Generate Chain', () => {
 });
 buildButton.classList.add('build-cta');
 
-const deletePointButton = createButton('Delete Point', () => {
-    window.appActions?.deleteSelectedPoint();
-});
 
-const toolButtons = [deletePointButton];
-toolButtons.forEach(button => button.classList.add('tool-button'));
 
 const frameControl = document.createElement('div');
 frameControl.className = 'frame-control';
@@ -217,7 +212,6 @@ frameSection.append(frameSectionTitle, iconActionsRow, frameControl);
 sidebar.append(
     sidebarHeader,
     sidebarSubheader,
-    deletePointButton,
     skeletonSection,
     frameSection,
     sideSpacer,
