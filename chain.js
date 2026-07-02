@@ -80,14 +80,65 @@ class Chain {
         return Math.hypot(point.x - Q.x, point.y - Q.y);
     }
 
+    // Returns the allowed [min, max] relative angle for link i relative to link i-1.
+    // One limit is the final relative angle (max bend). The other limit is 90° past
+    // straight (0°), in the same direction as going from final toward straight.
+    // e.g. finalRel = -30°: direction toward straight is positive (+), so other limit
+    // = -30° + 90° = +60°. Range = [-30°, +60°].
+    _getRelativeAngleLimits(linkIndex) {
+        if (linkIndex === 0) return null;
+
+        const item = this.trapezoids[linkIndex];
+        const prev = this.trapezoids[linkIndex - 1];
+
+        const finalRel = this.shortestAngleDifference(prev.finalRotation, item.finalRotation);
+
+        // Direction from final toward straight (0°): opposite sign of finalRel
+        // Other limit: 90° past straight in the same direction
+        const dirTowardStraight = finalRel >= 0 ? -1 : 1;
+        const otherLimit = finalRel + 90 * dirTowardStraight;
+
+        const minRel = Math.min(finalRel, otherLimit);
+        const maxRel = Math.max(finalRel, otherLimit);
+
+        return { minRel, maxRel };
+    }
+
+    // Clamps item.rotation so its relative angle to prev stays within limits.
+    _applyRelativeAngleConstraint(linkIndex) {
+        if (linkIndex === 0) return;
+
+        const limits = this._getRelativeAngleLimits(linkIndex);
+        if (!limits) return;
+
+        const item = this.trapezoids[linkIndex];
+        const prev = this.trapezoids[linkIndex - 1];
+
+        const currentRel = this.shortestAngleDifference(prev.rotation, item.rotation);
+        const clampedRel = Math.max(limits.minRel, Math.min(limits.maxRel, currentRel));
+
+        item.rotation = prev.rotation + clampedRel;
+    }
+
     _searchBestRotationForSegment(item, targetSegment, initialGuess) {
         if (!targetSegment) {
             return initialGuess;
         }
 
+        const linkIndex = this.trapezoids.indexOf(item);
+        const limits = this._getRelativeAngleLimits(linkIndex);
+
+        const clampRotation = (rotation) => {
+            if (!limits || linkIndex === 0) return rotation;
+            const prev = this.trapezoids[linkIndex - 1];
+            const rel = this.shortestAngleDifference(prev.rotation, rotation);
+            const clampedRel = Math.max(limits.minRel, Math.min(limits.maxRel, rel));
+            return prev.rotation + clampedRel;
+        };
+
         const evaluate = (rotation) => {
             const previousRotation = item.rotation;
-            item.rotation = rotation;
+            item.rotation = clampRotation(rotation);
             this.positionAllLinksFromRotations();
             const nextPivot = this._getEndingEdgeMidpoint(item, item.position, item.rotation);
             item.rotation = previousRotation;
@@ -100,7 +151,7 @@ class Chain {
 
         let bestRotation = initialGuess;
         let bestError = Infinity;
-        let center = initialGuess;
+        let center = clampRotation(initialGuess);
         let range = 180;
         let step = 15;
 
@@ -113,15 +164,15 @@ class Chain {
                 }
             }
 
-            center = bestRotation;
+            center = clampRotation(bestRotation);
             range = step;
             step = Math.max(step / 3, 0.5);
         }
 
-        item.rotation = bestRotation;
+        item.rotation = clampRotation(bestRotation);
         this.positionAllLinksFromRotations();
 
-        return bestRotation;
+        return item.rotation;
     }
 
     _getEndingEdgeMidpoint(item, position, rotation) {
@@ -370,7 +421,8 @@ class Chain {
             const initialGuess = targetSegment.angle;
 
             item.startRotation = this._searchBestRotationForSegment(item, targetSegment, initialGuess);
-            item.rotation = item.startRotation;
+            // _searchBestRotationForSegment already constrains item.rotation; sync startRotation
+            item.startRotation = item.rotation;
             this.positionAllLinksFromRotations();
         }
     }
@@ -387,6 +439,9 @@ class Chain {
             if (i === 0) {
                 currentPivot = item.pivotPoint;
             } else {
+                // Enforce range-of-motion constraint before positioning
+                this._applyRelativeAngleConstraint(i);
+
                 // Transform pivot through previous link's local frame
                 const prev = this.trapezoids[i - 1];
                 const flatRad = prev.flatRotation * Math.PI / 180;

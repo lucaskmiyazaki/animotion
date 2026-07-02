@@ -316,6 +316,7 @@ function animateTowardsFinal(chain, duration = 1000) {
             const trapezoids = chain.getTrapezoids();
 
             // Update rotations: interpolate from start to final
+            // positionAllLinksFromRotations will enforce range-of-motion constraints
             trapezoids.forEach((item, i) => {
                 if (i === 0) {
                     const dr = shortestAngleDifference(item.startRotation, item.finalRotation);
@@ -331,7 +332,7 @@ function animateTowardsFinal(chain, duration = 1000) {
                 }
             });
 
-            // Position all links based on their current rotations
+            // Position all links - this enforces range-of-motion constraints on each link
             chain.positionAllLinksFromRotations();
 
             redrawAll();
