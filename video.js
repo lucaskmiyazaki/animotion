@@ -227,7 +227,11 @@
     }
 
     function prevFrame() {
-        showFrameIndex(currentFrameIndex - 1);
+        if (currentFrameIndex <= 0) {
+            showFrameIndex(maxFrameIndex);
+        } else {
+            showFrameIndex(currentFrameIndex - 1);
+        }
     }
 
     function playFrames() {

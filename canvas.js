@@ -528,13 +528,14 @@ function buildChain() {
         skeleton.points[0].y
     );
 
-    chain.computeStartRotationsFromRefSkeleton(frameSkeletons[0]);
-
     frameChains[currentFrameIndex] = chain;
 
     setFrameChainBuilt(currentFrameIndex, true);
 
     deleteAllFramesWithoutPoints();
+
+    // frameSkeletons[0] is guaranteed to exist after deleteAllFramesWithoutPoints remaps frames
+    chain.computeStartRotationsFromRefSkeleton(frameSkeletons[0]);
 
     redrawAll();
 }
