@@ -297,6 +297,10 @@ function shortestAngleDifference(from, to) {
     return diff;
 }
 
+function normalizeAngle(angle) {
+    return ((angle % 360) + 360) % 360;
+}
+
 function animateTowardsFinal(chain, duration = 1000) {
     if (!chain || chain.getTrapezoids().length === 0) {
         return Promise.resolve();
@@ -313,8 +317,18 @@ function animateTowardsFinal(chain, duration = 1000) {
 
             // Process links in order — each pivot depends on the previous link's current state
             trapezoids.forEach((item, i) => {
-                const dr = shortestAngleDifference(item.flatRotation, item.finalRotation);
-                item.rotation = item.flatRotation + dr * t;
+                if (i === 0) {
+                    const dr = shortestAngleDifference(item.flatRotation, item.finalRotation);
+                    item.rotation = item.flatRotation + dr * t;
+                } else {
+                    const prev = trapezoids[i - 1];
+                    const flatRelativeRotation = shortestAngleDifference(prev.flatRotation, item.flatRotation);
+                    const finalRelativeRotation = shortestAngleDifference(prev.finalRotation, item.finalRotation);
+                    const relativeDelta = shortestAngleDifference(flatRelativeRotation, finalRelativeRotation);
+                    const currentRelativeRotation = flatRelativeRotation + relativeDelta * t;
+
+                    item.rotation = normalizeAngle(prev.rotation + currentRelativeRotation);
+                }
 
                 let currentPivot;
                 if (i === 0) {
