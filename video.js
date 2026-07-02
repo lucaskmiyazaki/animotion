@@ -49,6 +49,7 @@
     let currentVideoURL = null;
     let currentFrameIndex = 0;
     let maxFrameIndex = 0;
+    let frameIndexMap = [];
     const frameChangeListeners = new Set();
     const playbackChangeListeners = new Set();
     const PLAYBACK_FPS = 10;
@@ -70,6 +71,12 @@
     function syncCanvasFrame() {
         window.appActions?.setCurrentFrame?.(currentFrameIndex);
         emitFrameChange();
+    }
+
+    function rebuildFrameIndexMap(frameIndicesToKeep) {
+        frameIndexMap = frameIndicesToKeep.slice();
+        maxFrameIndex = frameIndexMap.length > 0 ? frameIndexMap.length - 1 : 0;
+        currentFrameIndex = clampFrameIndex(currentFrameIndex);
     }
 
     function openVideoPicker() {
@@ -96,7 +103,9 @@
                 try {
                     video.pause();
                     currentFrameIndex = 0;
-                    maxFrameIndex = getVideoMaxFrameIndex();
+                    rebuildFrameIndexMap(
+                        Array.from({ length: getVideoMaxFrameIndex() + 1 }, (_, i) => i)
+                    );
                     video.currentTime = 0;
                     applyFrameVisuals();
                     syncCanvasFrame();
@@ -129,13 +138,13 @@
 
     function applyFrameVisuals() {
         const hasVideo = Boolean(video.src);
-        const videoMaxFrame = getVideoMaxFrameIndex();
-        const isVideoFrame = hasVideo && currentFrameIndex <= videoMaxFrame;
+        const sourceFrameIndex = frameIndexMap[currentFrameIndex];
+        const isVideoFrame = hasVideo && sourceFrameIndex !== undefined;
 
         if (isVideoFrame) {
             video.style.visibility = 'visible';
             video.pause();
-            video.currentTime = clampTime(currentFrameIndex * FRAME_STEP);
+            video.currentTime = clampTime(sourceFrameIndex * FRAME_STEP);
             document.body.style.background = '';
         } else {
             video.pause();
@@ -155,17 +164,62 @@
 
         video.pause();
         video.currentTime = clampTime(time);
-        currentFrameIndex = Math.round(video.currentTime / FRAME_STEP);
-        if (currentFrameIndex > maxFrameIndex) {
-            maxFrameIndex = currentFrameIndex;
+        const sourceFrameIndex = Math.round(video.currentTime / FRAME_STEP);
+        const exactLogicalIndex = frameIndexMap.indexOf(sourceFrameIndex);
+
+        if (exactLogicalIndex !== -1) {
+            currentFrameIndex = exactLogicalIndex;
+        } else if (frameIndexMap.length > 0) {
+            let nearestIndex = 0;
+            let nearestDistance = Math.abs(frameIndexMap[0] - sourceFrameIndex);
+
+            for (let i = 1; i < frameIndexMap.length; i++) {
+                const distance = Math.abs(frameIndexMap[i] - sourceFrameIndex);
+                if (distance < nearestDistance) {
+                    nearestIndex = i;
+                    nearestDistance = distance;
+                }
+            }
+
+            currentFrameIndex = nearestIndex;
         }
+
         applyFrameVisuals();
         syncCanvasFrame();
     }
 
+    function removeFrameIndices(frameIndices) {
+        if (!frameIndices || frameIndices.length === 0) return;
+
+        const sortedIndices = Array.from(new Set(frameIndices))
+            .filter(index => Number.isInteger(index) && index >= 0)
+            .sort((a, b) => b - a);
+
+        for (const index of sortedIndices) {
+            if (index < frameIndexMap.length) {
+                frameIndexMap.splice(index, 1);
+            }
+        }
+
+        maxFrameIndex = frameIndexMap.length > 0 ? frameIndexMap.length - 1 : 0;
+        currentFrameIndex = clampFrameIndex(currentFrameIndex);
+        applyFrameVisuals();
+        emitFrameChange();
+    }
+
+    function appendFrameSlot() {
+        const lastSourceFrameIndex = frameIndexMap.length > 0
+            ? frameIndexMap[frameIndexMap.length - 1]
+            : -1;
+
+        frameIndexMap.push(lastSourceFrameIndex + 1);
+        maxFrameIndex = frameIndexMap.length - 1;
+        emitFrameChange();
+    }
+
     function nextFrame() {
         if (currentFrameIndex >= maxFrameIndex) {
-            maxFrameIndex += 1;
+            appendFrameSlot();
         }
         showFrameIndex(currentFrameIndex + 1);
         window.appActions?.autoCopyPreviousSkeletonIfEmpty?.();
@@ -224,6 +278,15 @@
         showFrameIndex,
         getCurrentFrameIndex: () => currentFrameIndex,
         getMaxFrameIndex: () => maxFrameIndex,
+        appendFrameSlot,
+        removeFrameIndices,
+        updateMaxFrameIndex: (newMaxFrameIndex) => {
+            frameIndexMap = Array.from({ length: newMaxFrameIndex + 1 }, (_, i) => i);
+            maxFrameIndex = newMaxFrameIndex;
+            currentFrameIndex = clampFrameIndex(currentFrameIndex);
+            applyFrameVisuals();
+            emitFrameChange();
+        },
         onFrameChange: (listener) => {
             frameChangeListeners.add(listener);
             return () => frameChangeListeners.delete(listener);

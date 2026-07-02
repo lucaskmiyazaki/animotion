@@ -387,6 +387,144 @@ function exportDXF() {
     chain.exportFlatDXF();
 }
 
+function getStoredFrameIndices() {
+    return Object.keys(frameSkeletons)
+        .concat(Object.keys(frameChains))
+        .concat(Object.keys(frameChainBuilt))
+        .map(k => Number.parseInt(k, 10))
+        .filter((value, index, values) => Number.isInteger(value) && values.indexOf(value) === index)
+        .sort((a, b) => b - a);
+}
+
+function removeLogicalFrameAt(frameIndex) {
+    const storedFrameIndices = getStoredFrameIndices();
+    const hasOwn = (store, index) => Object.prototype.hasOwnProperty.call(store, index);
+
+    for (const index of storedFrameIndices) {
+        if (index < frameIndex) {
+            continue;
+        }
+
+        if (index === frameIndex) {
+            delete frameSkeletons[index];
+            delete frameChains[index];
+            delete frameChainBuilt[index];
+            continue;
+        }
+
+        if (hasOwn(frameSkeletons, index)) {
+            frameSkeletons[index - 1] = frameSkeletons[index];
+        } else {
+            delete frameSkeletons[index - 1];
+        }
+
+        if (hasOwn(frameChains, index)) {
+            frameChains[index - 1] = frameChains[index];
+        } else {
+            delete frameChains[index - 1];
+        }
+
+        if (hasOwn(frameChainBuilt, index)) {
+            frameChainBuilt[index - 1] = frameChainBuilt[index];
+        } else {
+            delete frameChainBuilt[index - 1];
+        }
+
+        delete frameSkeletons[index];
+        delete frameChains[index];
+        delete frameChainBuilt[index];
+    }
+}
+
+function deleteAllFramesWithoutPoints() {
+    // Include logical frames that exist only in navigation, not just stored skeleton data.
+    const currentMaxFrame = Math.max(
+        ...Object.keys(frameSkeletons).map(k => parseInt(k)),
+        ...Object.keys(frameChains).map(k => parseInt(k)),
+        ...Object.keys(frameChainBuilt).map(k => parseInt(k)),
+        window.videoControls?.getMaxFrameIndex?.() ?? -1,
+        -1
+    );
+
+    if (currentMaxFrame < 0) return; // No frames at all
+
+    // Check frames from 0 to currentMaxFrame to find which have points
+    const framesWithPoints = [];
+    for (let i = 0; i <= currentMaxFrame; i++) {
+        const skeleton = frameSkeletons[i];
+        if (skeleton && skeleton.points.length > 0) {
+            framesWithPoints.push(i);
+        }
+    }
+
+    if (framesWithPoints.length === 0) return; // No frames with points
+
+    // Create mapping from old index to new index
+    const indexMap = {};
+    framesWithPoints.forEach((oldIdx, newIdx) => {
+        indexMap[oldIdx] = newIdx;
+    });
+
+    // Create new storage with remapped indices
+    const newFrameSkeletons = {};
+    const newFrameChains = {};
+    const newFrameChainBuilt = {};
+
+    // Copy only frames that have points, remapped to new indices
+    Object.keys(frameSkeletons).forEach(oldIdx => {
+        const newIdx = indexMap[oldIdx];
+        if (newIdx !== undefined) {
+            newFrameSkeletons[newIdx] = frameSkeletons[oldIdx];
+        }
+    });
+
+    Object.keys(frameChains).forEach(oldIdx => {
+        const newIdx = indexMap[oldIdx];
+        if (newIdx !== undefined) {
+            newFrameChains[newIdx] = frameChains[oldIdx];
+        }
+    });
+
+    Object.keys(frameChainBuilt).forEach(oldIdx => {
+        const newIdx = indexMap[oldIdx];
+        if (newIdx !== undefined) {
+            newFrameChainBuilt[newIdx] = frameChainBuilt[oldIdx];
+        }
+    });
+
+    // Clear all old data
+    for (let i = 0; i <= currentMaxFrame; i++) {
+        delete frameSkeletons[i];
+        delete frameChains[i];
+        delete frameChainBuilt[i];
+    }
+
+    // Assign new data
+    Object.assign(frameSkeletons, newFrameSkeletons);
+    Object.assign(frameChains, newFrameChains);
+    Object.assign(frameChainBuilt, newFrameChainBuilt);
+
+    // Update current frame index to match remapped frame
+    const newCurrentFrameIndex = indexMap[currentFrameIndex];
+    if (newCurrentFrameIndex !== undefined) {
+        currentFrameIndex = newCurrentFrameIndex;
+    } else {
+        currentFrameIndex = 0;
+    }
+
+    const removedFrameIndices = [];
+
+    for (let i = 0; i <= currentMaxFrame; i++) {
+        if (!framesWithPoints.includes(i)) {
+            removedFrameIndices.push(i);
+        }
+    }
+
+    emitChainStateChange();
+    window.videoControls?.removeFrameIndices?.(removedFrameIndices);
+    window.videoControls?.showFrameIndex?.(currentFrameIndex);
+}
+
 function buildChain() {
     const skeleton = getCurrentSkeleton();
     if (!skeleton || skeleton.points.length === 0) return;
@@ -408,6 +546,8 @@ function buildChain() {
 
     setFrameChainBuilt(currentFrameIndex, true);
 
+    deleteAllFramesWithoutPoints();
+
     redrawAll();
 }
 
@@ -419,6 +559,64 @@ function deleteSelectedPoint() {
     selectedPoint = null;
     markCurrentFrameChainDirty();
     redrawAll();
+}
+
+function deleteAllEmptyPreviousFrames() {
+    if (currentFrameIndex === 0) return;
+
+    // Check if all frames before current are empty
+    for (let i = 0; i < currentFrameIndex; i++) {
+        const skeleton = frameSkeletons[i];
+        if (skeleton && skeleton.points.length > 0) {
+            return; // At least one previous frame has content
+        }
+    }
+
+    // All previous frames are empty, delete and shift remaining frames down
+    const numToDelete = currentFrameIndex;
+
+    // Collect all frame indices across all storage objects
+    const allIndices = Object.keys(frameSkeletons)
+        .concat(Object.keys(frameChains))
+        .concat(Object.keys(frameChainBuilt))
+        .map(k => parseInt(k))
+        .filter((v, i, a) => a.indexOf(v) === i) // unique values
+        .sort((a, b) => b - a); // descending order
+
+    // Shift frames down, processing from highest to lowest to avoid overwriting
+    for (const idx of allIndices) {
+        if (idx >= numToDelete) {
+            const newIdx = idx - numToDelete;
+            if (frameSkeletons[idx]) {
+                frameSkeletons[newIdx] = frameSkeletons[idx];
+                delete frameSkeletons[idx];
+            }
+            if (frameChains[idx]) {
+                frameChains[newIdx] = frameChains[idx];
+                delete frameChains[idx];
+            }
+            if (frameChainBuilt[idx]) {
+                frameChainBuilt[newIdx] = frameChainBuilt[idx];
+                delete frameChainBuilt[idx];
+            }
+        } else {
+            // Delete empty frames
+            delete frameSkeletons[idx];
+            delete frameChains[idx];
+            delete frameChainBuilt[idx];
+        }
+    }
+
+    const removedFrameIndices = [];
+    for (let i = 0; i < numToDelete; i++) {
+        removedFrameIndices.push(i);
+    }
+
+    // Move to frame 0 and notify listeners
+    currentFrameIndex = 0;
+    emitChainStateChange();
+    window.videoControls?.removeFrameIndices?.(removedFrameIndices);
+    window.videoControls?.showFrameIndex?.(0);
 }
 
 function toggleMode() {
@@ -552,11 +750,14 @@ function autoCopyPreviousSkeletonIfEmpty() {
 }
 
 function deleteCurrentFrame() {
-    delete frameSkeletons[currentFrameIndex];
-    delete frameChains[currentFrameIndex];
-    delete frameChainBuilt[currentFrameIndex];
+    const deletedFrameIndex = currentFrameIndex;
 
-    const newFrameIndex = currentFrameIndex > 0 ? currentFrameIndex - 1 : 0;
+    removeLogicalFrameAt(deletedFrameIndex);
+    emitChainStateChange();
+
+    window.videoControls?.removeFrameIndices?.([deletedFrameIndex]);
+
+    const newFrameIndex = deletedFrameIndex > 0 ? deletedFrameIndex - 1 : 0;
     window.videoControls?.showFrameIndex?.(newFrameIndex);
 }
 
