@@ -228,6 +228,43 @@ class Chain {
 
     }
 
+    /**
+     * Position all links using current rotation values.
+     * Each link rotates around its pivot point, which depends on the previous link's state.
+     * Uses the pivot-based rigid body mechanism.
+     */
+    positionAllLinksFromRotations() {
+        let currentPivot = null;
+
+        this.trapezoids.forEach((item, i) => {
+            if (i === 0) {
+                currentPivot = item.pivotPoint;
+            } else {
+                // Transform pivot through previous link's local frame
+                const prev = this.trapezoids[i - 1];
+                const flatRad = prev.flatRotation * Math.PI / 180;
+                const dpx = item.pivotPoint.x - prev.flatPosition.x;
+                const dpy = item.pivotPoint.y - prev.flatPosition.y;
+                const localX = Math.cos(flatRad) * dpx + Math.sin(flatRad) * dpy;
+                const localY = -Math.sin(flatRad) * dpx + Math.cos(flatRad) * dpy;
+                const curRad = prev.rotation * Math.PI / 180;
+                currentPivot = {
+                    x: prev.position.x + Math.cos(curRad) * localX - Math.sin(curRad) * localY,
+                    y: prev.position.y + Math.sin(curRad) * localX + Math.cos(curRad) * localY
+                };
+            }
+
+            // Position this link around its pivot
+            const flatRad = item.flatRotation * Math.PI / 180;
+            const dpx = item.flatPosition.x - item.pivotPoint.x;
+            const dpy = item.flatPosition.y - item.pivotPoint.y;
+            const localX = Math.cos(flatRad) * dpx + Math.sin(flatRad) * dpy;
+            const localY = -Math.sin(flatRad) * dpx + Math.cos(flatRad) * dpy;
+            const curRad = item.rotation * Math.PI / 180;
+            item.position.x = currentPivot.x + Math.cos(curRad) * localX - Math.sin(curRad) * localY;
+            item.position.y = currentPivot.y + Math.sin(curRad) * localX + Math.cos(curRad) * localY;
+        });
+    }
 
     getTrapezoids() {
         return this.trapezoids;

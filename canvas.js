@@ -315,7 +315,7 @@ function animateTowardsFinal(chain, duration = 1000) {
 
             const trapezoids = chain.getTrapezoids();
 
-            // Process links in order — each pivot depends on the previous link's current state
+            // Update rotations: interpolate from flat to final
             trapezoids.forEach((item, i) => {
                 if (i === 0) {
                     const dr = shortestAngleDifference(item.flatRotation, item.finalRotation);
@@ -329,39 +329,10 @@ function animateTowardsFinal(chain, duration = 1000) {
 
                     item.rotation = normalizeAngle(prev.rotation + currentRelativeRotation);
                 }
-
-                let currentPivot;
-                if (i === 0) {
-                    // First link pivots around its own anchor (no previous link)
-                    currentPivot = item.pivotPoint;
-                } else {
-                    // Pivot is a point on the previous link's right edge.
-                    // Express it in the previous link's local frame (at flat state),
-                    // then transform it using the previous link's current state.
-                    const prev = trapezoids[i - 1];
-                    const flatRad = prev.flatRotation * Math.PI / 180;
-                    const dpx = item.pivotPoint.x - prev.flatPosition.x;
-                    const dpy = item.pivotPoint.y - prev.flatPosition.y;
-                    const localX =  Math.cos(flatRad) * dpx + Math.sin(flatRad) * dpy;
-                    const localY = -Math.sin(flatRad) * dpx + Math.cos(flatRad) * dpy;
-                    const curRad = prev.rotation * Math.PI / 180;
-                    currentPivot = {
-                        x: prev.position.x + Math.cos(curRad) * localX - Math.sin(curRad) * localY,
-                        y: prev.position.y + Math.sin(curRad) * localX + Math.cos(curRad) * localY
-                    };
-                }
-
-                // Express this link's flatPosition relative to its own pivot in its local frame,
-                // then rotate to current rotation around currentPivot.
-                const flatRad = item.flatRotation * Math.PI / 180;
-                const dpx = item.flatPosition.x - item.pivotPoint.x;
-                const dpy = item.flatPosition.y - item.pivotPoint.y;
-                const localX =  Math.cos(flatRad) * dpx + Math.sin(flatRad) * dpy;
-                const localY = -Math.sin(flatRad) * dpx + Math.cos(flatRad) * dpy;
-                const curRad = item.rotation * Math.PI / 180;
-                item.position.x = currentPivot.x + Math.cos(curRad) * localX - Math.sin(curRad) * localY;
-                item.position.y = currentPivot.y + Math.sin(curRad) * localX + Math.cos(curRad) * localY;
             });
+
+            // Position all links based on their current rotations
+            chain.positionAllLinksFromRotations();
 
             redrawAll();
 
