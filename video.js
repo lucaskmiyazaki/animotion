@@ -48,9 +48,28 @@
 
     let currentVideoURL = null;
     let currentFrameIndex = 0;
+    let maxFrameIndex = 0;
+    const frameChangeListeners = new Set();
+    const playbackChangeListeners = new Set();
+    const PLAYBACK_FPS = 10;
+    let playbackTimer = null;
+
+    function emitFrameChange() {
+        frameChangeListeners.forEach(listener => {
+            listener(currentFrameIndex, maxFrameIndex);
+        });
+    }
+
+    function emitPlaybackChange() {
+        const playing = playbackTimer !== null;
+        playbackChangeListeners.forEach(listener => {
+            listener(playing);
+        });
+    }
 
     function syncCanvasFrame() {
         window.appActions?.setCurrentFrame?.(currentFrameIndex);
+        emitFrameChange();
     }
 
     function openVideoPicker() {
@@ -60,6 +79,8 @@
 
     function loadVideoFile(file) {
         if (!file) return;
+
+        pausePlayback();
 
         if (currentVideoURL) {
             URL.revokeObjectURL(currentVideoURL);
@@ -75,7 +96,9 @@
                 try {
                     video.pause();
                     currentFrameIndex = 0;
+                    maxFrameIndex = getVideoMaxFrameIndex();
                     video.currentTime = 0;
+                    applyFrameVisuals();
                     syncCanvasFrame();
                 } catch (err) {
                     console.error('Could not initialize video:', err);
@@ -92,21 +115,38 @@
         return Math.min(Math.max(0, t), video.duration);
     }
 
-    function clampFrameIndex(frameIndex) {
+    function getVideoMaxFrameIndex() {
         if (!isFinite(video.duration) || isNaN(video.duration)) {
-            return Math.max(0, frameIndex);
+            return 0;
         }
 
-        const maxFrame = Math.floor(video.duration / FRAME_STEP);
-        return Math.min(Math.max(0, frameIndex), maxFrame);
+        return Math.floor(video.duration / FRAME_STEP);
+    }
+
+    function clampFrameIndex(frameIndex) {
+        return Math.min(Math.max(0, frameIndex), maxFrameIndex);
+    }
+
+    function applyFrameVisuals() {
+        const hasVideo = Boolean(video.src);
+        const videoMaxFrame = getVideoMaxFrameIndex();
+        const isVideoFrame = hasVideo && currentFrameIndex <= videoMaxFrame;
+
+        if (isVideoFrame) {
+            video.style.visibility = 'visible';
+            video.pause();
+            video.currentTime = clampTime(currentFrameIndex * FRAME_STEP);
+            document.body.style.background = '';
+        } else {
+            video.pause();
+            video.style.visibility = 'hidden';
+            document.body.style.background = 'black';
+        }
     }
 
     function showFrameIndex(frameIndex) {
-        if (!video.src) return;
-
         currentFrameIndex = clampFrameIndex(frameIndex);
-        video.pause();
-        video.currentTime = clampTime(currentFrameIndex * FRAME_STEP);
+        applyFrameVisuals();
         syncCanvasFrame();
     }
 
@@ -116,17 +156,54 @@
         video.pause();
         video.currentTime = clampTime(time);
         currentFrameIndex = Math.round(video.currentTime / FRAME_STEP);
+        if (currentFrameIndex > maxFrameIndex) {
+            maxFrameIndex = currentFrameIndex;
+        }
+        applyFrameVisuals();
         syncCanvasFrame();
     }
 
     function nextFrame() {
-        if (!video.src) return;
+        if (currentFrameIndex >= maxFrameIndex) {
+            maxFrameIndex += 1;
+        }
         showFrameIndex(currentFrameIndex + 1);
+        window.appActions?.autoCopyPreviousSkeletonIfEmpty?.();
     }
 
     function prevFrame() {
-        if (!video.src) return;
         showFrameIndex(currentFrameIndex - 1);
+    }
+
+    function playFrames() {
+        if (playbackTimer !== null) return;
+
+        playbackTimer = setInterval(() => {
+            if (currentFrameIndex >= maxFrameIndex) {
+                showFrameIndex(0);
+                return;
+            }
+
+            showFrameIndex(currentFrameIndex + 1);
+        }, 1000 / PLAYBACK_FPS);
+
+        emitPlaybackChange();
+    }
+
+    function pausePlayback() {
+        if (playbackTimer === null) return;
+
+        clearInterval(playbackTimer);
+        playbackTimer = null;
+        emitPlaybackChange();
+    }
+
+    function togglePlayback() {
+        if (playbackTimer === null) {
+            playFrames();
+        } else {
+            pausePlayback();
+        }
     }
 
     fileInput.addEventListener('change', (e) => {
@@ -139,9 +216,22 @@
         loadVideoFile,
         nextFrame,
         prevFrame,
+        playFrames,
+        pausePlayback,
+        togglePlayback,
+        isPlaying: () => playbackTimer !== null,
         showFrameAt,
         showFrameIndex,
         getCurrentFrameIndex: () => currentFrameIndex,
+        getMaxFrameIndex: () => maxFrameIndex,
+        onFrameChange: (listener) => {
+            frameChangeListeners.add(listener);
+            return () => frameChangeListeners.delete(listener);
+        },
+        onPlaybackChange: (listener) => {
+            playbackChangeListeners.add(listener);
+            return () => playbackChangeListeners.delete(listener);
+        },
         video
     };
 })();

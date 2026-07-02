@@ -2,6 +2,14 @@
 const sidebar = document.createElement('div');
 sidebar.id = 'sidebar';
 
+const sidebarHeader = document.createElement('div');
+sidebarHeader.className = 'sidebar-header';
+sidebarHeader.textContent = 'Pangolin';
+
+const sidebarSubheader = document.createElement('div');
+sidebarSubheader.className = 'sidebar-subheader';
+sidebarSubheader.textContent = 'Skeleton Tools';
+
 // Helper to create buttons
 function createButton(label, onClick) {
     const btn = document.createElement('button');
@@ -10,81 +18,210 @@ function createButton(label, onClick) {
     return btn;
 }
 
-// MODE TOGGLE BUTTON
-const modeButton = document.createElement('button');
-
-function updateModeButton() {
-    const mode = window.appActions?.getMode?.() || 'create';
-    if (mode === 'create') {
-        modeButton.textContent = 'Mode: Create';
-    } else if (mode === 'edit') {
-        modeButton.textContent = 'Mode: Edit';
-    } else {
-        modeButton.textContent = 'Mode: Move';
-    }
+function createIconButton(iconSVG, title, onClick) {
+    const btn = document.createElement('button');
+    btn.className = 'icon-button';
+    btn.type = 'button';
+    btn.innerHTML = iconSVG;
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+    btn.addEventListener('click', onClick);
+    return btn;
 }
 
-modeButton.addEventListener('click', () => {
-    window.appActions?.toggleMode?.();
-    updateModeButton();
+const addPointButton = createButton('Add Point', () => {
+    const mode = window.appActions?.getMode?.() || 'move';
+    if (mode === 'create') {
+        window.appActions?.toggleMode?.();
+    } else {
+        window.appActions?.switchToCreateMode?.();
+    }
 });
+addPointButton.classList.add('add-point-button');
 
-// Initialize label
-updateModeButton();
+function updateAddPointButtonState(mode = window.appActions?.getMode?.()) {
+    const isCreateMode = mode === 'create';
+    addPointButton.classList.toggle('active', isCreateMode);
+    addPointButton.setAttribute('aria-pressed', isCreateMode ? 'true' : 'false');
+}
 
-const buildButton = createButton('Build Chain', () => {
+const buildButton = createButton('Generate Chain', () => {
     window.appActions?.buildChain();
+    updateBuildControls();
 });
+buildButton.classList.add('build-cta');
 
 const deletePointButton = createButton('Delete Point', () => {
     window.appActions?.deleteSelectedPoint();
 });
 
-const previewButton = createButton('Preview', () => {
-    window.appActions?.playPreviewAnimation();
+const toolButtons = [deletePointButton];
+toolButtons.forEach(button => button.classList.add('tool-button'));
+
+const frameControl = document.createElement('div');
+frameControl.className = 'frame-control';
+
+const framePrevButton = document.createElement('button');
+framePrevButton.textContent = '<';
+framePrevButton.addEventListener('click', () => {
+    window.videoControls?.prevFrame?.();
+    updateFrameInput();
 });
 
-const exportButton = createButton('Export DXF', () => {
+const frameInput = document.createElement('input');
+frameInput.type = 'number';
+frameInput.min = '0';
+frameInput.step = '1';
+frameInput.value = '0';
+frameInput.className = 'frame-input';
+frameInput.addEventListener('change', () => {
+    const raw = Number.parseInt(frameInput.value, 10);
+    const value = Number.isNaN(raw) ? 0 : Math.max(0, raw);
+    window.videoControls?.showFrameIndex?.(value);
+    updateFrameInput();
+});
+
+const frameNextButton = document.createElement('button');
+frameNextButton.textContent = '>';
+frameNextButton.addEventListener('click', () => {
+    window.videoControls?.nextFrame?.();
+    updateFrameInput();
+});
+
+const trashIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-9l-1 1H5v2h14V4z"/></svg>';
+const deleteFrameButton = createIconButton(trashIcon, 'Delete Frame', () => {
+    window.appActions?.deleteCurrentFrame();
+    updateFrameInput();
+});
+
+frameControl.append(framePrevButton, frameInput, deleteFrameButton, frameNextButton);
+
+const frameSection = document.createElement('div');
+frameSection.className = 'frame-section';
+
+const frameSectionTitle = document.createElement('div');
+frameSectionTitle.className = 'section-title';
+frameSectionTitle.textContent = 'Frames';
+
+const skeletonSection = document.createElement('div');
+skeletonSection.className = 'skeleton-section';
+
+const skeletonSectionTitle = document.createElement('div');
+skeletonSectionTitle.className = 'section-title';
+skeletonSectionTitle.textContent = 'Skeleton';
+
+const sideSpacer = document.createElement('div');
+sideSpacer.className = 'sidebar-spacer';
+
+const bottomActions = document.createElement('div');
+bottomActions.className = 'bottom-actions';
+
+const exportBottomButton = createButton('Export DXF', () => {
     window.appActions?.exportDXF();
 });
+exportBottomButton.classList.add('bottom-export');
 
-const uploadVideoButton = createButton('Upload Video', () => {
-    window.videoControls?.openVideoPicker();
+const previewBottomButton = createIconButton(
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
+    'Preview',
+    () => {
+        window.appActions?.playPreviewAnimation();
+    }
+);
+previewBottomButton.classList.add('bottom-preview-icon');
+
+const bottomSecondaryActions = document.createElement('div');
+bottomSecondaryActions.className = 'bottom-secondary-actions';
+bottomSecondaryActions.append(exportBottomButton, previewBottomButton);
+
+function updateBuildControls() {
+    const hasChain = window.appActions?.hasChainInCurrentFrame?.() ?? false;
+    buildButton.textContent = hasChain ? 'Regenerate Chain' : 'Generate Chain';
+    bottomSecondaryActions.style.display = hasChain ? 'grid' : 'none';
+}
+
+bottomActions.append(buildButton, bottomSecondaryActions);
+
+function updateFrameInput() {
+    const current = window.videoControls?.getCurrentFrameIndex?.() ?? 0;
+    const max = window.videoControls?.getMaxFrameIndex?.() ?? current;
+    frameInput.value = String(current);
+    frameInput.max = String(max);
+}
+
+window.videoControls?.onFrameChange?.(() => {
+    updateFrameInput();
+    updateBuildControls();
 });
 
-const copyPrevFrameButton = createButton('Copy Prev', () => {
-    window.appActions?.copyPreviousFrameSkeleton();
+window.appActions?.onChainStateChange?.(() => {
+    updateBuildControls();
 });
 
-const prevFrameButton = createButton('Prev Frame', () => {
-    window.videoControls?.prevFrame();
+window.appActions?.onModeChange?.((mode) => {
+    updateAddPointButtonState(mode);
 });
 
-const nextFrameButton = createButton('Next Frame', () => {
-    window.videoControls?.nextFrame();
-});
+updateFrameInput();
+updateBuildControls();
+updateAddPointButtonState();
 
-const exportSkeletonButton = createButton('Export Skeleton', () => {
-    window.appActions?.exportSkeleton();
-});
+const iconActionsRow = document.createElement('div');
+iconActionsRow.className = 'icon-actions-row frame-icon-actions-row';
 
-const importSkeletonButton = createButton('Import Skeleton', () => {
+const skeletonIconActionsRow = document.createElement('div');
+skeletonIconActionsRow.className = 'icon-actions-row skeleton-icon-actions-row';
+
+const uploadIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 9h-4v4H7l5 5 5-5h-3zM5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5v-2h5V6H5v12h5v2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>';
+const downloadIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 15V9h4v6h3l-5 5-5-5h3zM5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5v-2h5V6H5v12h5v2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>';
+const videoIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h12a2 2 0 0 1 2 2v1.5l2.8-2A1 1 0 0 1 22 8.3v7.4a1 1 0 0 1-1.2.8L18 14.5V16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm0 2v8h12V8H4z"/></svg>';
+const playIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+const pauseIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h5v14H6zm7 0h5v14h-5z"/></svg>';
+
+const importSkeletonIconButton = createIconButton(uploadIcon, 'Import Skeleton', () => {
     window.appActions?.importSkeleton();
 });
 
-// Add buttons to sidebar
+const exportSkeletonIconButton = createIconButton(downloadIcon, 'Export Skeleton', () => {
+    window.appActions?.exportSkeleton();
+});
+
+const uploadVideoIconButton = createIconButton(videoIcon, 'Upload Video', () => {
+    window.videoControls?.openVideoPicker();
+});
+
+const playPauseButton = createIconButton(playIcon, 'Play', () => {
+    window.videoControls?.togglePlayback?.();
+});
+
+function updatePlaybackButton() {
+    const playing = window.videoControls?.isPlaying?.() ?? false;
+    playPauseButton.innerHTML = playing ? pauseIcon : playIcon;
+    playPauseButton.title = playing ? 'Pause' : 'Play';
+    playPauseButton.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+}
+
+window.videoControls?.onPlaybackChange?.(() => {
+    updatePlaybackButton();
+});
+
+updatePlaybackButton();
+
+skeletonIconActionsRow.append(importSkeletonIconButton, exportSkeletonIconButton);
+iconActionsRow.append(uploadVideoIconButton, playPauseButton);
+
+skeletonSection.append(skeletonSectionTitle, skeletonIconActionsRow, addPointButton);
+frameSection.append(frameSectionTitle, iconActionsRow, frameControl);
+
+// Add controls to sidebar
 sidebar.append(
-    modeButton,
-    buildButton,
+    sidebarHeader,
+    sidebarSubheader,
     deletePointButton,
-    copyPrevFrameButton,
-    previewButton,
-    exportButton,
-    exportSkeletonButton,
-    importSkeletonButton,
-    uploadVideoButton,
-    prevFrameButton,
-    nextFrameButton
+    skeletonSection,
+    frameSection,
+    sideSpacer,
+    bottomActions
 );
 
 // Add sidebar to page

@@ -4,11 +4,14 @@ const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// one chain for now
-const chain = new Chain();
+// one chain per frame
+const frameChains = {};
 
 // one skeleton per frame
 const frameSkeletons = {};
+const frameChainBuilt = {};
+const chainStateListeners = new Set();
+const modeChangeListeners = new Set();
 let currentFrameIndex = 0;
 
 let drawingFinished = false;
@@ -17,7 +20,7 @@ let hoveredPoint = null;
 let draggedPoint = null;
 let selectedPoint = null;
 let hasDragged = false;
-let mode = 'create'; // 'create', 'edit', or 'move'
+let mode = 'move'; // 'create', 'edit', or 'move'
 
 // Default trapezoid thickness
 const trapezoidThickness = 50;
@@ -27,6 +30,37 @@ const hitRadius = 10;
 
 function getCurrentSkeleton() {
     return frameSkeletons[currentFrameIndex] || null;
+}
+
+function getCurrentChain() {
+    return frameChains[currentFrameIndex] || null;
+}
+
+function emitChainStateChange() {
+    chainStateListeners.forEach(listener => listener());
+}
+
+function emitModeChange() {
+    modeChangeListeners.forEach(listener => listener(mode));
+}
+
+function setFrameChainBuilt(frameIndex, built) {
+    if (built) {
+        frameChainBuilt[frameIndex] = true;
+    } else {
+        delete frameChainBuilt[frameIndex];
+    }
+    emitChainStateChange();
+}
+
+function markCurrentFrameChainDirty() {
+    delete frameChains[currentFrameIndex];
+    setFrameChainBuilt(currentFrameIndex, false);
+}
+
+function hasChainInFrame(frameIndex) {
+    const frameChain = frameChains[frameIndex];
+    return Boolean(frameChain && frameChain.getTrapezoids().length > 0 && frameChainBuilt[frameIndex]);
 }
 
 function ensureCurrentSkeleton() {
@@ -40,6 +74,7 @@ function setCurrentFrame(frameIndex) {
     currentFrameIndex = frameIndex;
     hoveredPoint = null;
     draggedPoint = null;
+    emitChainStateChange();
     redrawAll();
 }
 
@@ -126,6 +161,8 @@ canvas.addEventListener('click', (e) => {
             );
         }
 
+        markCurrentFrameChainDirty();
+
         draw();
     } else if (mode === 'edit' || mode === 'move') {
         if (hasDragged) return;
@@ -157,12 +194,14 @@ canvas.addEventListener('mousemove', (e) => {
         const skeleton = getCurrentSkeleton();
         if (skeleton) {
             skeleton.updatePoint(draggedPoint, mouseX, mouseY);
+            markCurrentFrameChainDirty();
         }
     } else if (mode === 'move' && draggedPoint) {
         hasDragged = true;
         const skeleton = getCurrentSkeleton();
         if (skeleton) {
             moveTailWithConstraints(skeleton, draggedPoint, mouseX, mouseY);
+            markCurrentFrameChainDirty();
         }
     }
 
@@ -237,7 +276,10 @@ function draw() {
 
 function redrawAll() {
     draw();
-    drawChain(chain);
+    const frameChain = getCurrentChain();
+    if (frameChain) {
+        drawChain(frameChain);
+    }
 }
 
 function shortestAngleDifference(from, to) {
@@ -246,8 +288,8 @@ function shortestAngleDifference(from, to) {
     return diff;
 }
 
-function animateTowardsFinal(duration = 1000) {
-    if (chain.getTrapezoids().length === 0) {
+function animateTowardsFinal(chain, duration = 1000) {
+    if (!chain || chain.getTrapezoids().length === 0) {
         return Promise.resolve();
     }
 
@@ -312,15 +354,16 @@ function animateTowardsFinal(duration = 1000) {
 }
 
 function playPreviewAnimation() {
+    const chain = getCurrentChain();
     if (isAnimating) return;
-    if (chain.getTrapezoids().length === 0) return;
+    if (!chain || chain.getTrapezoids().length === 0) return;
 
     isAnimating = true;
 
     chain.resetToFlat();
     redrawAll();
 
-    animateTowardsFinal(1000)
+    animateTowardsFinal(chain, 1000)
         .then(() => new Promise(resolve => setTimeout(resolve, 1000)))
         .then(() => {
             chain.resetToFlat();
@@ -330,6 +373,8 @@ function playPreviewAnimation() {
 }
 
 function exportDXF() {
+    const chain = getCurrentChain();
+    if (!chain || chain.getTrapezoids().length === 0) return;
     chain.exportFlatDXF();
 }
 
@@ -342,12 +387,17 @@ function buildChain() {
     skeleton.updateAllGeometry();
     console.log(skeleton);
 
+    const chain = new Chain();
     chain.buildFromSkeleton(
         skeleton,
         trapezoidThickness,
         skeleton.points[0].x,
         skeleton.points[0].y
     );
+
+    frameChains[currentFrameIndex] = chain;
+
+    setFrameChainBuilt(currentFrameIndex, true);
 
     redrawAll();
 }
@@ -358,19 +408,33 @@ function deleteSelectedPoint() {
     if (!skeleton) return;
     skeleton.deletePoint(selectedPoint);
     selectedPoint = null;
+    markCurrentFrameChainDirty();
     redrawAll();
 }
 
 function toggleMode() {
     if (mode === 'create') {
-        mode = 'edit';
+        mode = 'move';
+        canvas.classList.remove('create-mode');
     } else if (mode === 'edit') {
         mode = 'move';
+        canvas.classList.remove('create-mode');
     } else {
         mode = 'create';
+        canvas.classList.add('create-mode');
     }
     draggedPoint = null;
     selectedPoint = null;
+    emitModeChange();
+    return mode;
+}
+
+function switchToCreateMode() {
+    mode = 'create';
+    canvas.classList.add('create-mode');
+    draggedPoint = null;
+    selectedPoint = null;
+    emitModeChange();
     return mode;
 }
 
@@ -436,6 +500,7 @@ function importSkeleton() {
                 data.lines.forEach(l => newSkeleton.addLine(pointObjs[l.start], pointObjs[l.end]));
                 newSkeleton.updateAllGeometry();
                 frameSkeletons[currentFrameIndex] = newSkeleton;
+                markCurrentFrameChainDirty();
                 hoveredPoint = null;
                 draggedPoint = null;
                 selectedPoint = null;
@@ -456,10 +521,34 @@ function copyPreviousFrameSkeleton() {
     if (!previousSkeleton) return;
 
     frameSkeletons[currentFrameIndex] = cloneSkeleton(previousSkeleton);
+    markCurrentFrameChainDirty();
 
     hoveredPoint = null;
     draggedPoint = null;
     redrawAll();
+}
+
+function autoCopyPreviousSkeletonIfEmpty() {
+    if (currentFrameIndex <= 0) return;
+    
+    const currentSkeleton = frameSkeletons[currentFrameIndex];
+    if (currentSkeleton) return; // Don't overwrite existing skeleton
+    
+    const previousSkeleton = frameSkeletons[currentFrameIndex - 1];
+    if (!previousSkeleton) return;
+    
+    frameSkeletons[currentFrameIndex] = cloneSkeleton(previousSkeleton);
+    markCurrentFrameChainDirty();
+    redrawAll();
+}
+
+function deleteCurrentFrame() {
+    delete frameSkeletons[currentFrameIndex];
+    delete frameChains[currentFrameIndex];
+    delete frameChainBuilt[currentFrameIndex];
+
+    const newFrameIndex = currentFrameIndex > 0 ? currentFrameIndex - 1 : 0;
+    window.videoControls?.showFrameIndex?.(newFrameIndex);
 }
 
 document.addEventListener('keydown', (e) => {
@@ -472,6 +561,14 @@ document.addEventListener('keydown', (e) => {
     if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'edit') {
         deleteSelectedPoint();
     }
+
+    if (e.key === 'Escape' && mode === 'create') {
+        mode = 'move';
+        canvas.classList.remove('create-mode');
+        draggedPoint = null;
+        selectedPoint = null;
+        emitModeChange();
+    }
 });
 
 window.appActions = {
@@ -479,10 +576,22 @@ window.appActions = {
     exportDXF,
     buildChain,
     toggleMode,
+    switchToCreateMode,
     getMode,
     setCurrentFrame,
+    hasChainInCurrentFrame: () => hasChainInFrame(currentFrameIndex),
+    onChainStateChange: (listener) => {
+        chainStateListeners.add(listener);
+        return () => chainStateListeners.delete(listener);
+    },
+    onModeChange: (listener) => {
+        modeChangeListeners.add(listener);
+        return () => modeChangeListeners.delete(listener);
+    },
     deleteSelectedPoint,
     copyPreviousFrameSkeleton,
+    autoCopyPreviousSkeletonIfEmpty,
     exportSkeleton,
-    importSkeleton
+    importSkeleton,
+    deleteCurrentFrame
 };
