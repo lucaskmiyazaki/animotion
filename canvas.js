@@ -315,14 +315,14 @@ function animateTowardsFinal(chain, duration = 1000) {
 
             const trapezoids = chain.getTrapezoids();
 
-            // Update rotations: interpolate from flat to final
+            // Update rotations: interpolate from start to final
             trapezoids.forEach((item, i) => {
                 if (i === 0) {
-                    const dr = shortestAngleDifference(item.flatRotation, item.finalRotation);
-                    item.rotation = item.flatRotation + dr * t;
+                    const dr = shortestAngleDifference(item.startRotation, item.finalRotation);
+                    item.rotation = item.startRotation + dr * t;
                 } else {
                     const prev = trapezoids[i - 1];
-                    const flatRelativeRotation = shortestAngleDifference(prev.flatRotation, item.flatRotation);
+                    const flatRelativeRotation = shortestAngleDifference(prev.startRotation, item.startRotation);
                     const finalRelativeRotation = shortestAngleDifference(prev.finalRotation, item.finalRotation);
                     const relativeDelta = shortestAngleDifference(flatRelativeRotation, finalRelativeRotation);
                     const currentRelativeRotation = flatRelativeRotation + relativeDelta * t;
@@ -526,6 +526,8 @@ function buildChain() {
         skeleton.points[0].x,
         skeleton.points[0].y
     );
+
+    chain.computeStartRotationsFromRefSkeleton(frameSkeletons[0]);
 
     frameChains[currentFrameIndex] = chain;
 

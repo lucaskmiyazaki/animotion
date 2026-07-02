@@ -62,6 +62,76 @@ class Chain {
         this.trapezoids = [];
     }
 
+    // Returns the closest point on segment AB to point P
+    _closestPointOnLine(point, lineStart, lineEnd) {
+        const dx = lineEnd.x - lineStart.x;
+        const dy = lineEnd.y - lineStart.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq < 1e-10) return { x: lineStart.x, y: lineStart.y };
+        const t = Math.max(0, Math.min(1,
+            ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lenSq
+        ));
+        return { x: lineStart.x + t * dx, y: lineStart.y + t * dy };
+    }
+
+    // Returns the distance from point P to segment AB
+    _distancePointToLine(point, lineStart, lineEnd) {
+        const Q = this._closestPointOnLine(point, lineStart, lineEnd);
+        return Math.hypot(point.x - Q.x, point.y - Q.y);
+    }
+
+    _searchBestRotationForSegment(item, targetSegment, initialGuess) {
+        if (!targetSegment) {
+            return initialGuess;
+        }
+
+        const evaluate = (rotation) => {
+            const previousRotation = item.rotation;
+            item.rotation = rotation;
+            this.positionAllLinksFromRotations();
+            const nextPivot = this._getEndingEdgeMidpoint(item, item.position, item.rotation);
+            item.rotation = previousRotation;
+
+            return {
+                error: this._distancePointToLine(nextPivot, targetSegment.start, targetSegment.end),
+                nextPivot
+            };
+        };
+
+        let bestRotation = initialGuess;
+        let bestError = Infinity;
+        let center = initialGuess;
+        let range = 180;
+        let step = 15;
+
+        for (let pass = 0; pass < 4; pass++) {
+            for (let rotation = center - range; rotation <= center + range + 1e-9; rotation += step) {
+                const sample = evaluate(rotation);
+                if (sample.error < bestError) {
+                    bestError = sample.error;
+                    bestRotation = rotation;
+                }
+            }
+
+            center = bestRotation;
+            range = step;
+            step = Math.max(step / 3, 0.5);
+        }
+
+        item.rotation = bestRotation;
+        this.positionAllLinksFromRotations();
+
+        return bestRotation;
+    }
+
+    _getEndingEdgeMidpoint(item, position, rotation) {
+        const pts = item.trapezoid.getPoints(position, rotation);
+        return {
+            x: (pts[1].x + pts[2].x) / 2,
+            y: (pts[1].y + pts[2].y) / 2
+        };
+    }
+
     // Returns the intersection point of infinite lines through (p1,p2) and (p3,p4), or null if parallel
     _lineIntersection(p1, p2, p3, p4) {
         const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
@@ -139,7 +209,10 @@ class Chain {
                     x: startX + flatOffset * dirX,
                     y: baseY + flatOffset * dirY
                 },
-                rotation: initialAngle
+                rotation: initialAngle,
+
+                // initial animation state (can be overridden by computeStartRotationsFromRefSkeleton)
+                startRotation: initialAngle
 
             };
 
@@ -217,15 +290,89 @@ class Chain {
 
 
     resetToFlat() {
-
         this.trapezoids.forEach(item => {
+            item.rotation = item.startRotation;
+        });
+        this.positionAllLinksFromRotations();
+    }
 
-            item.position.x = item.flatPosition.x;
-            item.position.y = item.flatPosition.y;
-            item.rotation = item.flatRotation;
+    // Compute startRotation for each link by greedily fitting the chain to an
+    // aligned version of refSkeleton. The error is the distance from the midpoint
+    // of each link's ending edge to the closest point on the corresponding frame-0
+    // skeleton segment, and the frame-0 theta values are used as the initial guess.
+    computeStartRotationsFromRefSkeleton(refSkeleton) {
+        const trapezoids = this.trapezoids;
+        if (trapezoids.length === 0 || !refSkeleton || refSkeleton.lines.length === 0) return;
 
+        // Frame 0 path: if chain was built from the same skeleton object used as
+        // reference, initial pose should exactly equal final pose.
+        const sameAsReference =
+            trapezoids.length === refSkeleton.lines.length &&
+            trapezoids.every((item, i) => item.skeletonLine === refSkeleton.lines[i]);
+
+        if (sameAsReference) {
+            trapezoids.forEach(item => {
+                item.startRotation = item.finalRotation;
+                item.rotation = item.startRotation;
+            });
+            this.positionAllLinksFromRotations();
+            return;
+        }
+
+        const currentP0 = trapezoids[0].pivotPoint;
+        const currentFirstAngle = trapezoids[0].flatRotation;
+        const refP0 = refSkeleton.points[0];
+        const refFirstAngle = refSkeleton.lines[0].angle;
+
+        // Align ref skeleton: rotate by angleDelta around refP0, then translate to currentP0
+        const angleDelta = currentFirstAngle - refFirstAngle;
+        const cosA = Math.cos(angleDelta * Math.PI / 180);
+        const sinA = Math.sin(angleDelta * Math.PI / 180);
+
+        const alignedPoints = refSkeleton.points.map(pt => {
+            const dx = pt.x - refP0.x;
+            const dy = pt.y - refP0.y;
+            return {
+                x: currentP0.x + dx * cosA - dy * sinA,
+                y: currentP0.y + dx * sinA + dy * cosA
+            };
         });
 
+        const alignedLineAngles = refSkeleton.lines.map(line =>
+            ((line.angle + angleDelta) % 360 + 360) % 360
+        );
+
+        const alignedSegments = refSkeleton.lines.map((line, i) => ({
+            start: alignedPoints[i],
+            end: alignedPoints[i + 1],
+            angle: alignedLineAngles[i]
+        }));
+
+        // Greedy forward pass: for each link i, choose startRotation[i] so the
+        // midpoint of its ending edge is as close as possible to the aligned
+        // frame-0 skeleton segment.
+
+        trapezoids.forEach(item => {
+            item.rotation = item.startRotation;
+        });
+        this.positionAllLinksFromRotations();
+
+        for (let i = 0; i < trapezoids.length; i++) {
+            const item = trapezoids[i];
+            if (i >= alignedSegments.length) {
+                item.startRotation = alignedSegments[i] ? alignedSegments[i].angle : item.flatRotation;
+                item.rotation = item.startRotation;
+                this.positionAllLinksFromRotations();
+                break;
+            }
+
+            const targetSegment = alignedSegments[i];
+            const initialGuess = targetSegment.angle;
+
+            item.startRotation = this._searchBestRotationForSegment(item, targetSegment, initialGuess);
+            item.rotation = item.startRotation;
+            this.positionAllLinksFromRotations();
+        }
     }
 
     /**
