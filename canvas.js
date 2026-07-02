@@ -74,6 +74,15 @@ function setCurrentFrame(frameIndex) {
     currentFrameIndex = frameIndex;
     hoveredPoint = null;
     draggedPoint = null;
+
+    // Interpolate the main chain (from the skeleton) for this frame
+    const chain = getMainChain();
+    if (chain) {
+        const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
+        const t = maxFrameIndex > 0 ? Math.min(frameIndex / maxFrameIndex, 1) : 0;
+        applyChainAtT(chain, t);
+    }
+
     emitChainStateChange();
     redrawAll();
 }
@@ -285,7 +294,7 @@ function draw() {
 
 function redrawAll() {
     draw();
-    const frameChain = getCurrentChain();
+    const frameChain = getMainChain();
     if (frameChain) {
         drawChain(frameChain);
     }
@@ -299,6 +308,37 @@ function shortestAngleDifference(from, to) {
 
 function normalizeAngle(angle) {
     return ((angle % 360) + 360) % 360;
+}
+
+// Get the main chain (the one built from the skeleton)
+function getMainChain() {
+    // Find the frame that has a chain
+    for (const frameIndex in frameChains) {
+        if (frameChains[frameIndex]) {
+            return frameChains[frameIndex];
+        }
+    }
+    return null;
+}
+
+// Position chain at interpolation factor t (0 = initial, 1 = final)
+function applyChainAtT(chain, t) {
+    if (!chain || chain.getTrapezoids().length === 0) return;
+    const trapezoids = chain.getTrapezoids();
+    trapezoids.forEach((item, i) => {
+        if (i === 0) {
+            const dr = shortestAngleDifference(item.startRotation, item.finalRotation);
+            item.rotation = item.startRotation + dr * t;
+        } else {
+            const prev = trapezoids[i - 1];
+            const startRelativeRotation = shortestAngleDifference(prev.startRotation, item.startRotation);
+            const finalRelativeRotation = shortestAngleDifference(prev.finalRotation, item.finalRotation);
+            const relativeDelta = shortestAngleDifference(startRelativeRotation, finalRelativeRotation);
+            const currentRelativeRotation = startRelativeRotation + relativeDelta * t;
+            item.rotation = normalizeAngle(prev.rotation + currentRelativeRotation);
+        }
+    });
+    chain.positionAllLinksFromRotations();
 }
 
 function animateTowardsFinal(chain, duration = 1000) {
@@ -349,22 +389,7 @@ function animateTowardsFinal(chain, duration = 1000) {
 }
 
 function playPreviewAnimation() {
-    const chain = getCurrentChain();
-    if (isAnimating) return;
-    if (!chain || chain.getTrapezoids().length === 0) return;
-
-    isAnimating = true;
-
-    chain.resetToFlat();
-    redrawAll();
-
-    animateTowardsFinal(chain, 1000)
-        .then(() => new Promise(resolve => setTimeout(resolve, 1000)))
-        .then(() => {
-            chain.resetToFlat();
-            redrawAll();
-            isAnimating = false;
-        });
+    window.videoControls?.togglePlayback?.();
 }
 
 function exportDXF() {
@@ -536,6 +561,11 @@ function buildChain() {
 
     // frameSkeletons[0] is guaranteed to exist after deleteAllFramesWithoutPoints remaps frames
     chain.computeStartRotationsFromRefSkeleton(frameSkeletons[0]);
+
+    // Show initial position (t=0) for current frame
+    const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
+    const t = maxFrameIndex > 0 ? Math.min(currentFrameIndex / maxFrameIndex, 1) : 0;
+    applyChainAtT(chain, t);
 
     redrawAll();
 }
