@@ -17,7 +17,7 @@ let hoveredPoint = null;
 let draggedPoint = null;
 let selectedPoint = null;
 let hasDragged = false;
-let mode = 'create'; // 'create' or 'edit'
+let mode = 'create'; // 'create', 'edit', or 'move'
 
 // Default trapezoid thickness
 const trapezoidThickness = 50;
@@ -59,6 +59,57 @@ function getPointAt(x, y) {
     return null;
 }
 
+function moveTailWithConstraints(skeleton, point, mouseX, mouseY) {
+    const index = skeleton.points.indexOf(point);
+    if (index < 0) return;
+
+    if (index === 0) {
+        const dx = mouseX - point.x;
+        const dy = mouseY - point.y;
+
+        skeleton.points.forEach(p => {
+            p.x += dx;
+            p.y += dy;
+        });
+
+        skeleton.updateAllGeometry();
+        return;
+    }
+
+    const pivot = skeleton.points[index - 1];
+    const oldVecX = point.x - pivot.x;
+    const oldVecY = point.y - pivot.y;
+    const oldLen = Math.hypot(oldVecX, oldVecY);
+    if (oldLen < 1e-8) return;
+
+    const mouseVecX = mouseX - pivot.x;
+    const mouseVecY = mouseY - pivot.y;
+    const mouseLen = Math.hypot(mouseVecX, mouseVecY);
+    if (mouseLen < 1e-8) return;
+
+    // Keep segment (index-1 -> index) length fixed while matching drag direction.
+    const constrainedVecX = (mouseVecX / mouseLen) * oldLen;
+    const constrainedVecY = (mouseVecY / mouseLen) * oldLen;
+
+    const oldAngle = Math.atan2(oldVecY, oldVecX);
+    const newAngle = Math.atan2(constrainedVecY, constrainedVecX);
+    const delta = newAngle - oldAngle;
+
+    const cos = Math.cos(delta);
+    const sin = Math.sin(delta);
+
+    for (let i = index; i < skeleton.points.length; i++) {
+        const tailPoint = skeleton.points[i];
+        const relX = tailPoint.x - pivot.x;
+        const relY = tailPoint.y - pivot.y;
+
+        tailPoint.x = pivot.x + relX * cos - relY * sin;
+        tailPoint.y = pivot.y + relX * sin + relY * cos;
+    }
+
+    skeleton.updateAllGeometry();
+}
+
 canvas.addEventListener('click', (e) => {
     if (mode === 'create') {
         const skeleton = ensureCurrentSkeleton();
@@ -76,7 +127,7 @@ canvas.addEventListener('click', (e) => {
         }
 
         draw();
-    } else if (mode === 'edit') {
+    } else if (mode === 'edit' || mode === 'move') {
         if (hasDragged) return;
         const x = e.clientX;
         const y = e.clientY;
@@ -86,7 +137,7 @@ canvas.addEventListener('click', (e) => {
 });
 
 canvas.addEventListener('mousedown', (e) => {
-    if (mode !== 'edit') return;
+    if (mode !== 'edit' && mode !== 'move') return;
 
     const x = e.clientX;
     const y = e.clientY;
@@ -106,6 +157,12 @@ canvas.addEventListener('mousemove', (e) => {
         const skeleton = getCurrentSkeleton();
         if (skeleton) {
             skeleton.updatePoint(draggedPoint, mouseX, mouseY);
+        }
+    } else if (mode === 'move' && draggedPoint) {
+        hasDragged = true;
+        const skeleton = getCurrentSkeleton();
+        if (skeleton) {
+            moveTailWithConstraints(skeleton, draggedPoint, mouseX, mouseY);
         }
     }
 
@@ -305,7 +362,13 @@ function deleteSelectedPoint() {
 }
 
 function toggleMode() {
-    mode = mode === 'create' ? 'edit' : 'create';
+    if (mode === 'create') {
+        mode = 'edit';
+    } else if (mode === 'edit') {
+        mode = 'move';
+    } else {
+        mode = 'create';
+    }
     draggedPoint = null;
     selectedPoint = null;
     return mode;
