@@ -219,9 +219,10 @@
 
     function nextFrame() {
         if (currentFrameIndex >= maxFrameIndex) {
-            appendFrameSlot();
+            showFrameIndex(0);
+        } else {
+            showFrameIndex(currentFrameIndex + 1);
         }
-        showFrameIndex(currentFrameIndex + 1);
         window.appActions?.autoCopyPreviousSkeletonIfEmpty?.();
     }
 
