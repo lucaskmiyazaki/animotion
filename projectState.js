@@ -52,13 +52,22 @@ function gatherChainState(frameChains, frameChainBuilt) {
         .filter(Number.isInteger)
         .sort((a, b) => a - b);
 
+    console.log('gatherChainState: frameChains keys=', Object.keys(frameChains), 'frameChainBuilt keys=', Object.keys(frameChainBuilt));
+    console.log('gatherChainState: frameIndices=', frameIndices);
+
     return {
         frameCount: frameIndices.length,
-        frames: frameIndices.map(frameIndex => ({
-            frameIndex,
-            chainBuilt: Boolean(frameChainBuilt[frameIndex]),
-            chain: frameChains[frameIndex]?.toSerializable?.() ?? null
-        }))
+        frames: frameIndices.map(frameIndex => {
+            const chain = frameChains[frameIndex];
+            const chainBuilt = Boolean(frameChainBuilt[frameIndex]);
+            const serialized = chain?.toSerializable?.();
+            console.log(`  Frame ${frameIndex}: chainBuilt=${chainBuilt}, has chain=${!!chain}, trapezoids=${serialized?.trapezoids?.length ?? 0}`);
+            return {
+                frameIndex,
+                chainBuilt,
+                chain: serialized ?? null
+            };
+        })
     };
 }
 
@@ -81,6 +90,12 @@ async function getProjectStateSnapshot(stateRefs) {
         selectedPoint,
         getCurrentSkeleton
     } = stateRefs;
+
+    console.log('getProjectStateSnapshot called with:');
+    console.log('  frameSkeletons keys:', Object.keys(frameSkeletons));
+    console.log('  frameChains keys:', Object.keys(frameChains));
+    console.log('  frameChainBuilt keys:', Object.keys(frameChainBuilt));
+    console.log('  currentFrameIndex:', currentFrameIndex);
 
     const videoState = await window.videoControls?.getSerializableState?.();
 
@@ -118,6 +133,9 @@ async function getProjectStateSnapshot(stateRefs) {
  */
 async function saveProjectToFile(snapshot, fileName = 'project') {
     try {
+        console.log('saveProjectToFile: saving snapshot with chain data:');
+        console.log('  chain.frameCount:', snapshot.chain?.frameCount);
+        console.log('  chain.frames:', snapshot.chain?.frames?.map(f => ({ frameIndex: f.frameIndex, hasChain: !!f.chain, trapezoids: f.chain?.trapezoids?.length })));
         const json = JSON.stringify(snapshot, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -309,23 +327,28 @@ function restoreChainState(chainSnapshot) {
 
     try {
         console.log(`Restoring chain for ${chainSnapshot.frames.length} frames`);
+        console.log('chainSnapshot.frames:', chainSnapshot.frames);
         chainSnapshot.frames.forEach(({ frameIndex, chainBuilt, chain }) => {
+            console.log(`  Processing frame ${frameIndex}: chainBuilt=${chainBuilt}, chain=${!!chain}`);
             if (!chainBuilt || !chain) {
-                console.log(`Frame ${frameIndex}: no chain data`);
+                console.log(`    Skipping: no chain data`);
                 return;
             }
 
             // Reconstruct chain from serialized data
-            if (window.Chain && window.Chain.fromSerializable) {
-                const restoredChain = window.Chain.fromSerializable(chain);
-                console.log(`Restored chain for frame ${frameIndex}, trapezoids:`, restoredChain.getTrapezoids().length);
+            const ChainCtor = window.Chain || (typeof Chain !== 'undefined' ? Chain : null);
+            if (ChainCtor && ChainCtor.fromSerializable) {
+                const restoredChain = ChainCtor.fromSerializable(chain);
+                const trapezoidCount = restoredChain.getTrapezoids().length;
+                console.log(`    Restored chain with ${trapezoidCount} trapezoids`);
+                console.log(`    Calling setChainForFrame(${frameIndex}, chain, ${chainBuilt})`);
                 window.appActions?.setChainForFrame?.(frameIndex, restoredChain, chainBuilt);
             } else {
                 console.warn('Chain class not available for deserialization');
             }
         });
 
-        console.log('Chain state restored');
+        console.log('Chain state restored, frameChains now contains:', Object.keys(window.appActions?.getProjectStateRefs?.().frameChains ?? {}));
     } catch (error) {
         console.error('Error restoring chain:', error);
     }

@@ -854,16 +854,20 @@ window.appActions = {
         }
     },
     setChainForFrame: (frameIndex, chain, isBuilt) => {
-        console.log(`setChainForFrame: frame=${frameIndex}, chain exists=${!!chain}, isBuilt=${isBuilt}`);
+        console.log(`setChainForFrame CALLED: frame=${frameIndex}, chain exists=${!!chain}, isBuilt=${isBuilt}`);
         if (chain) {
             console.log(`  trapezoids: ${chain.getTrapezoids().length}`);
         }
         frameChains[frameIndex] = chain;
         if (isBuilt !== undefined) frameChainBuilt[frameIndex] = isBuilt;
+        console.log(`  frameChains[${frameIndex}] = ${!!frameChains[frameIndex]} (chain ${frameChains[frameIndex] ? 'stored' : 'NOT stored'})`);
         emitChainStateChange();
         // Also redraw immediately so restored chains show up
         if (currentFrameIndex === frameIndex) {
+            console.log(`  Current frame matches, redrawing...`);
             redrawAll();
+        } else {
+            console.log(`  Frame mismatch: currentFrameIndex=${currentFrameIndex}, frameIndex=${frameIndex}`);
         }
     }
 };

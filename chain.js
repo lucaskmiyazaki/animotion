@@ -503,8 +503,8 @@ class Chain {
         chain.trapezoids = data.trapezoids.map(item => ({
             trapezoid: new Trapezoid(
                 item.trapezoid.meanLineLength,
-                item.trapezoid.angleLeft * Math.PI / 360,  // Convert degrees back to radians
-                item.trapezoid.angleRight * Math.PI / 360, // Convert degrees back to radians
+                item.trapezoid.angleLeft,
+                item.trapezoid.angleRight,
                 item.trapezoid.thickness
             ),
             flatOffset: item.flatOffset,
@@ -577,4 +577,9 @@ class Chain {
 
     }
 
+}
+
+if (typeof window !== 'undefined') {
+    window.Chain = Chain;
+    window.Trapezoid = Trapezoid;
 }
