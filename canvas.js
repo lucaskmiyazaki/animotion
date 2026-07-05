@@ -296,7 +296,10 @@ function redrawAll() {
     draw();
     const frameChain = getMainChain();
     if (frameChain) {
+        console.log('redrawAll: drawing chain');
         drawChain(frameChain);
+    } else {
+        console.log('redrawAll: no chain to draw');
     }
 }
 
@@ -315,9 +318,11 @@ function getMainChain() {
     // Find the frame that has a chain
     for (const frameIndex in frameChains) {
         if (frameChains[frameIndex]) {
+            console.log(`getMainChain found chain at frame ${frameIndex}`);
             return frameChains[frameIndex];
         }
     }
+    console.log('getMainChain: no chain found in any frame');
     return null;
 }
 
@@ -668,6 +673,20 @@ function getMode() {
     return mode;
 }
 
+// Project state is now managed in projectState.js
+// Expose state references for serialization
+function exposeStateForSerialization() {
+    return {
+        frameSkeletons,
+        frameChains,
+        frameChainBuilt,
+        currentFrameIndex,
+        mode,
+        selectedPoint,
+        getCurrentSkeleton
+    };
+}
+
 function cloneSkeleton(sourceSkeleton) {
     if (!sourceSkeleton) return null;
 
@@ -822,5 +841,34 @@ window.appActions = {
     autoCopyPreviousSkeletonIfEmpty,
     exportSkeleton,
     importSkeleton,
-    deleteCurrentFrame
+    deleteCurrentFrame,
+    // Project state management
+    getProjectStateRefs: exposeStateForSerialization,
+    setSkeletonForFrame: (frameIndex, skeleton) => {
+        console.log(`setSkeletonForFrame: frame=${frameIndex}, has skeleton=${!!skeleton}`);
+        frameSkeletons[frameIndex] = skeleton;
+        emitChainStateChange();
+        // Also redraw immediately so restored skeletons show up
+        if (currentFrameIndex === frameIndex) {
+            redrawAll();
+        }
+    },
+    setChainForFrame: (frameIndex, chain, isBuilt) => {
+        console.log(`setChainForFrame: frame=${frameIndex}, chain exists=${!!chain}, isBuilt=${isBuilt}`);
+        if (chain) {
+            console.log(`  trapezoids: ${chain.getTrapezoids().length}`);
+        }
+        frameChains[frameIndex] = chain;
+        if (isBuilt !== undefined) frameChainBuilt[frameIndex] = isBuilt;
+        emitChainStateChange();
+        // Also redraw immediately so restored chains show up
+        if (currentFrameIndex === frameIndex) {
+            redrawAll();
+        }
+    }
 };
+
+// Listen for video frame changes and sync canvas state
+window.videoControls?.onFrameChange?.((videoFrameIndex) => {
+    setCurrentFrame(videoFrameIndex);
+});

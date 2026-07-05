@@ -111,6 +111,24 @@ canvas.create-mode {
     padding: 10px;
 }
 
+.project-actions {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 10px;
+}
+
+.project-buttons-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.project-button {
+    font-size: 12px;
+    padding: 8px 10px !important;
+}
+
 .skeleton-section > button {
     width: 100%;
     box-sizing: border-box;

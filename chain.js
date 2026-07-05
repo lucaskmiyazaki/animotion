@@ -472,6 +472,56 @@ class Chain {
         return this.trapezoids;
     }
 
+    toSerializable() {
+        return {
+            trapezoids: this.trapezoids.map(item => ({
+                trapezoid: {
+                    meanLineLength: item.trapezoid.meanLineLength,
+                    angleLeft: item.trapezoid.angleLeft * 360 / Math.PI,
+                    angleRight: item.trapezoid.angleRight * 360 / Math.PI,
+                    thickness: item.trapezoid.thickness
+                },
+                flatOffset: item.flatOffset,
+                flatPosition: item.flatPosition ? { ...item.flatPosition } : null,
+                flatRotation: item.flatRotation,
+                finalPosition: item.finalPosition ? { ...item.finalPosition } : null,
+                finalRotation: item.finalRotation,
+                position: item.position ? { ...item.position } : null,
+                rotation: item.rotation,
+                startRotation: item.startRotation,
+                pivotPoint: item.pivotPoint ? { ...item.pivotPoint } : null
+            }))
+        };
+    }
+
+    static fromSerializable(data) {
+        const chain = new Chain();
+        if (!data || !Array.isArray(data.trapezoids)) {
+            return chain;
+        }
+
+        chain.trapezoids = data.trapezoids.map(item => ({
+            trapezoid: new Trapezoid(
+                item.trapezoid.meanLineLength,
+                item.trapezoid.angleLeft * Math.PI / 360,  // Convert degrees back to radians
+                item.trapezoid.angleRight * Math.PI / 360, // Convert degrees back to radians
+                item.trapezoid.thickness
+            ),
+            flatOffset: item.flatOffset,
+            flatPosition: item.flatPosition ? { ...item.flatPosition } : { x: 0, y: 0 },
+            flatRotation: item.flatRotation,
+            finalPosition: item.finalPosition ? { ...item.finalPosition } : { x: 0, y: 0 },
+            finalRotation: item.finalRotation,
+            position: item.position ? { ...item.position } : { x: 0, y: 0 },
+            rotation: item.rotation,
+            startRotation: item.startRotation,
+            pivotPoint: item.pivotPoint ? { ...item.pivotPoint } : { x: 0, y: 0 },
+            skeletonLine: null
+        }));
+
+        return chain;
+    }
+
     exportFlatDXF(filename = "chain_flat.dxf") {
 
         const trapezoids = this.trapezoids;

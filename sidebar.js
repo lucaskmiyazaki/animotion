@@ -51,6 +51,47 @@ const buildButton = createButton('Generate Chain', () => {
 });
 buildButton.classList.add('build-cta');
 
+// Project Management Section (always visible)
+const projectActionsDiv = document.createElement('div');
+projectActionsDiv.className = 'project-actions';
+
+const projectActionsTitle = document.createElement('div');
+projectActionsTitle.className = 'section-title';
+projectActionsTitle.textContent = 'Project';
+
+const projectButtonsRow = document.createElement('div');
+projectButtonsRow.className = 'project-buttons-row';
+
+const saveProjectButton = createButton('Save', async () => {
+    try {
+        const stateRefs = window.appActions?.getProjectStateRefs?.();
+        if (!stateRefs) {
+            alert('Project state not available');
+            return;
+        }
+        await window.projectState?.triggerSaveProject?.(stateRefs);
+    } catch (error) {
+        console.error('Save error:', error);
+        alert('Error saving project');
+    }
+});
+saveProjectButton.classList.add('project-button', 'save-button');
+
+const openProjectButton = createButton('Open', () => {
+    window.projectState?.triggerLoadProject?.(async (snapshot) => {
+        try {
+            await window.projectState?.restoreProjectSnapshot?.(snapshot);
+        } catch (error) {
+            console.error('Restore error:', error);
+            alert('Error loading project');
+        }
+    });
+});
+openProjectButton.classList.add('project-button', 'open-button');
+
+projectButtonsRow.append(openProjectButton, saveProjectButton);
+projectActionsDiv.append(projectActionsTitle, projectButtonsRow);
+
 
 
 const frameControl = document.createElement('div');
@@ -214,6 +255,7 @@ sidebar.append(
     sidebarSubheader,
     skeletonSection,
     frameSection,
+    projectActionsDiv,
     sideSpacer,
     bottomActions
 );

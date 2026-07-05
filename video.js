@@ -47,6 +47,7 @@
     document.body.prepend(video);
 
     let currentVideoURL = null;
+    let currentVideoFile = null;
     let currentFrameIndex = 0;
     let maxFrameIndex = 0;
     let frameIndexMap = [];
@@ -84,37 +85,54 @@
         fileInput.click();
     }
 
+    function blobToDataURL(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error || new Error('Could not read file.'));
+            reader.readAsDataURL(blob);
+        });
+    }
+
     function loadVideoFile(file) {
-        if (!file) return;
+        return new Promise((resolve, reject) => {
+            if (!file) {
+                reject(new Error('No file provided'));
+                return;
+            }
 
-        pausePlayback();
+            pausePlayback();
 
-        if (currentVideoURL) {
-            URL.revokeObjectURL(currentVideoURL);
-        }
+            if (currentVideoURL) {
+                URL.revokeObjectURL(currentVideoURL);
+            }
 
-        currentVideoURL = URL.createObjectURL(file);
-        video.src = currentVideoURL;
-        video.load();
+            currentVideoFile = file;
+            currentVideoURL = URL.createObjectURL(file);
+            video.src = currentVideoURL;
+            video.load();
 
-        video.addEventListener(
-            'loadeddata',
-            async () => {
-                try {
-                    video.pause();
-                    currentFrameIndex = 0;
-                    rebuildFrameIndexMap(
-                        Array.from({ length: getVideoMaxFrameIndex() + 1 }, (_, i) => i)
-                    );
-                    video.currentTime = 0;
-                    applyFrameVisuals();
-                    syncCanvasFrame();
-                } catch (err) {
-                    console.error('Could not initialize video:', err);
-                }
-            },
-            { once: true }
-        );
+            video.addEventListener(
+                'loadeddata',
+                async () => {
+                    try {
+                        video.pause();
+                        currentFrameIndex = 0;
+                        rebuildFrameIndexMap(
+                            Array.from({ length: getVideoMaxFrameIndex() + 1 }, (_, i) => i)
+                        );
+                        video.currentTime = 0;
+                        applyFrameVisuals();
+                        syncCanvasFrame();
+                        resolve(); // Resolve when video is ready
+                    } catch (err) {
+                        console.error('Could not initialize video:', err);
+                        reject(err);
+                    }
+                },
+                { once: true }
+            );
+        });
     }
 
     function clampTime(t) {
@@ -267,12 +285,60 @@
 
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files?.[0];
-        loadVideoFile(file);
+        loadVideoFile(file)?.catch(err => {
+            console.error('Failed to load video file:', err);
+        });
     });
+
+    async function getSerializableState() {
+        return {
+            currentFrameIndex,
+            maxFrameIndex,
+            frameIndexMap: frameIndexMap.slice(),
+            frameRange: frameIndexMap.length > 0
+                ? {
+                    startSourceFrame: frameIndexMap[0],
+                    endSourceFrame: frameIndexMap[frameIndexMap.length - 1]
+                }
+                : null,
+            video: currentVideoFile
+                ? {
+                    name: currentVideoFile.name,
+                    type: currentVideoFile.type,
+                    dataURL: await blobToDataURL(currentVideoFile)
+                }
+                : null
+        };
+    }
 
     window.videoControls = {
         openVideoPicker,
         loadVideoFile,
+        getSerializableState,
+        getFrameIndexMap: () => frameIndexMap.slice(),
+        setFrameIndexMap: (newFrameIndexMap) => {
+            if (Array.isArray(newFrameIndexMap) && newFrameIndexMap.length > 0) {
+                frameIndexMap = newFrameIndexMap.slice();
+                maxFrameIndex = frameIndexMap.length - 1;
+                currentFrameIndex = clampFrameIndex(currentFrameIndex);
+                applyFrameVisuals();
+                emitFrameChange();
+            }
+        },
+        setFrameRange: (range) => {
+            if (range && range.startSourceFrame !== undefined && range.endSourceFrame !== undefined) {
+                const maxValidFrame = getVideoMaxFrameIndex();
+                const start = Math.max(0, range.startSourceFrame);
+                const end = Math.min(maxValidFrame, range.endSourceFrame);
+                if (start <= end) {
+                    frameIndexMap = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+                    maxFrameIndex = frameIndexMap.length - 1;
+                    currentFrameIndex = clampFrameIndex(currentFrameIndex);
+                    applyFrameVisuals();
+                    emitFrameChange();
+                }
+            }
+        },
         nextFrame,
         prevFrame,
         playFrames,
