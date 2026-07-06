@@ -87,6 +87,9 @@ function setCurrentFrame(frameIndex) {
         const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
         const t = maxFrameIndex > 0 ? Math.min(frameIndex / maxFrameIndex, 1) : 0;
         applyChainAtT(chain, t);
+
+        const skeleton = getCurrentSkeleton();
+        alignChainRootToSkeleton(chain, skeleton);
     }
 
     emitChainStateChange();
@@ -450,6 +453,42 @@ function shortestAngleDifference(from, to) {
 
 function normalizeAngle(angle) {
     return ((angle % 360) + 360) % 360;
+}
+
+function rotatePoint(point, center, angleDeg) {
+    const rad = angleDeg * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    return {
+        x: center.x + dx * cos - dy * sin,
+        y: center.y + dx * sin + dy * cos
+    };
+}
+
+// Rigidly align the current chain pose so link 0 matches the frame skeleton base.
+function alignChainRootToSkeleton(chain, skeleton) {
+    if (!chain || !skeleton || skeleton.points.length === 0 || skeleton.lines.length === 0) {
+        return;
+    }
+
+    const trapezoids = chain.getTrapezoids();
+    if (trapezoids.length === 0) return;
+
+    const first = trapezoids[0];
+    const targetPos = skeleton.points[0];
+    const targetRot = skeleton.lines[0].angle;
+
+    const sourcePos = { x: first.position.x, y: first.position.y };
+    const deltaRot = shortestAngleDifference(first.rotation, targetRot);
+
+    trapezoids.forEach(item => {
+        const rotatedPos = rotatePoint(item.position, sourcePos, deltaRot);
+        item.position.x = rotatedPos.x + (targetPos.x - sourcePos.x);
+        item.position.y = rotatedPos.y + (targetPos.y - sourcePos.y);
+        item.rotation = normalizeAngle(item.rotation + deltaRot);
+    });
 }
 
 // Get the main chain (the one built from the skeleton)
