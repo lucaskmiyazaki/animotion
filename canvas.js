@@ -22,6 +22,7 @@ let selectedPoint = null;
 let hasDragged = false;
 let mode = 'move'; // 'create', 'edit', or 'move'
 let holeEnabled = false;
+let jointsEnabled = false;
 
 // Default trapezoid thickness
 const trapezoidThickness = 50;
@@ -233,7 +234,9 @@ canvas.addEventListener('mouseleave', () => {
 });
 
 function drawChain(chain) {
-    chain.getTrapezoids().forEach(item => {
+    const trapezoids = chain.getTrapezoids();
+
+    trapezoids.forEach(item => {
         const pts = item.trapezoid.getPoints(item.position, item.rotation);
 
         ctx.fillStyle = 'rgba(0,200,0,0.3)';
@@ -270,6 +273,118 @@ function drawChain(chain) {
             ctx.stroke();
         }
     });
+
+    if (!jointsEnabled || trapezoids.length < 2) return;
+
+    const cross = (a, b) => a.x * b.y - a.y * b.x;
+    const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+    const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y });
+    const mul = (v, s) => ({ x: v.x * s, y: v.y * s });
+    const len = (v) => Math.hypot(v.x, v.y);
+    const normalize = (v) => {
+        const l = len(v);
+        if (l < 1e-8) return { x: 1, y: 0 };
+        return { x: v.x / l, y: v.y / l };
+    };
+    const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+    const lineSegmentIntersection = (linePoint, lineDir, segA, segB) => {
+        const segDir = sub(segB, segA);
+        const denom = cross(lineDir, segDir);
+        if (Math.abs(denom) < 1e-8) return null;
+
+        const w = sub(segA, linePoint);
+        const t = cross(w, segDir) / denom;
+        const u = cross(w, lineDir) / denom;
+        if (u < -1e-8 || u > 1 + 1e-8) return null;
+
+        return add(linePoint, mul(lineDir, t));
+    };
+
+    const polygonIntersections = (pts, linePoint, lineDir) => {
+        const edges = [
+            [pts[0], pts[1]],
+            [pts[1], pts[2]],
+            [pts[2], pts[3]],
+            [pts[3], pts[0]]
+        ];
+        const hits = [];
+        edges.forEach(([a, b]) => {
+            const hit = lineSegmentIntersection(linePoint, lineDir, a, b);
+            if (hit) hits.push(hit);
+        });
+        return hits;
+    };
+
+    for (let i = 1; i < trapezoids.length; i++) {
+        const prev = trapezoids[i - 1];
+        const curr = trapezoids[i];
+
+        const prevPts = prev.trapezoid.getPoints(prev.position, prev.rotation);
+        const currPts = curr.trapezoid.getPoints(curr.position, curr.rotation);
+
+        // Current pivot: intersection of prev right edge and curr left edge.
+        const pivot = lineSegmentIntersection(
+            prevPts[1],
+            sub(prevPts[2], prevPts[1]),
+            currPts[0],
+            currPts[3]
+        ) || midpoint(midpoint(prevPts[1], prevPts[2]), midpoint(currPts[0], currPts[3]));
+
+        // Link directions from left-mid to right-mid for each adjacent link.
+        const prevDir = normalize(sub(midpoint(prevPts[1], prevPts[2]), midpoint(prevPts[0], prevPts[3])));
+        const currDir = normalize(sub(midpoint(currPts[1], currPts[2]), midpoint(currPts[0], currPts[3])));
+        let bisector = normalize(add(prevDir, currDir));
+        if (len(add(prevDir, currDir)) < 1e-8) {
+            bisector = prevDir;
+        }
+
+        // Shift the line outside the links by joint thickness.
+        const jointThickness = ((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10;
+        const normal = { x: -bisector.y, y: bisector.x };
+        const anchorA = add(pivot, mul(normal, jointThickness));
+        const anchorB = add(pivot, mul(normal, -jointThickness));
+
+        const closestToAnchor = (hits) => hits.reduce((best, p) => {
+            const d = Math.hypot(p.x - hits.anchor.x, p.y - hits.anchor.y);
+            if (!best || d < best.d) return { p, d };
+            return best;
+        }, null).p;
+
+        const buildSegment = (anchor) => {
+            const prevHits = polygonIntersections(prevPts, anchor, bisector);
+            const currHits = polygonIntersections(currPts, anchor, bisector);
+            if (prevHits.length === 0 || currHits.length === 0) return null;
+
+            prevHits.anchor = anchor;
+            currHits.anchor = anchor;
+            const start = closestToAnchor(prevHits);
+            const end = closestToAnchor(currHits);
+            if (!start || !end) return null;
+
+            return {
+                start,
+                end,
+                length: Math.hypot(end.x - start.x, end.y - start.y)
+            };
+        };
+
+        const segmentA = buildSegment(anchorA);
+        const segmentB = buildSegment(anchorB);
+        if (!segmentA && !segmentB) continue;
+
+        // Smaller-angle side produces the shorter bridge between adjacent links.
+        const chosen = !segmentA ? segmentB : !segmentB ? segmentA : (segmentA.length <= segmentB.length ? segmentA : segmentB);
+        const start = chosen.start;
+        const end = chosen.end;
+
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.strokeStyle = 'rgba(0, 90, 0, 0.95)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
 }
 
 function draw() {
@@ -425,7 +540,7 @@ function exportDXF() {
     // Export whichever chain is currently renderable in the viewport.
     const chain = getCurrentChain() || getMainChain();
     if (!chain || chain.getTrapezoids().length === 0) return;
-    chain.exportCurrentDXF('chain_current.dxf', holeEnabled);
+    chain.exportCurrentDXF('chain_current.dxf', holeEnabled, jointsEnabled);
 }
 
 function getStoredFrameIndices() {
@@ -900,7 +1015,12 @@ window.appActions = {
         holeEnabled = Boolean(enabled);
         redrawAll();
     },
-    getHoleEnabled: () => holeEnabled
+    getHoleEnabled: () => holeEnabled,
+    setJointsEnabled: (enabled) => {
+        jointsEnabled = Boolean(enabled);
+        redrawAll();
+    },
+    getJointsEnabled: () => jointsEnabled
 };
 
 // Listen for video frame changes and sync canvas state

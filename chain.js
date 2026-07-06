@@ -577,7 +577,7 @@ class Chain {
 
     }
 
-    exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false) {
+    exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false, includeJoints = false) {
 
         const trapezoids = this.trapezoids;
         if (trapezoids.length === 0) return;
@@ -639,6 +639,114 @@ class Chain {
             }
 
         });
+
+        if (includeJoints && trapezoids.length >= 2) {
+            const cross = (a, b) => a.x * b.y - a.y * b.x;
+            const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+            const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y });
+            const mul = (v, s) => ({ x: v.x * s, y: v.y * s });
+            const len = (v) => Math.hypot(v.x, v.y);
+            const normalize = (v) => {
+                const l = len(v);
+                if (l < 1e-8) return { x: 1, y: 0 };
+                return { x: v.x / l, y: v.y / l };
+            };
+            const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+            const lineSegmentIntersection = (linePoint, lineDir, segA, segB) => {
+                const segDir = sub(segB, segA);
+                const denom = cross(lineDir, segDir);
+                if (Math.abs(denom) < 1e-8) return null;
+
+                const w = sub(segA, linePoint);
+                const t = cross(w, segDir) / denom;
+                const u = cross(w, lineDir) / denom;
+                if (u < -1e-8 || u > 1 + 1e-8) return null;
+
+                return add(linePoint, mul(lineDir, t));
+            };
+
+            const polygonIntersections = (pts, linePoint, lineDir) => {
+                const edges = [
+                    [pts[0], pts[1]],
+                    [pts[1], pts[2]],
+                    [pts[2], pts[3]],
+                    [pts[3], pts[0]]
+                ];
+                const hits = [];
+                edges.forEach(([a, b]) => {
+                    const hit = lineSegmentIntersection(linePoint, lineDir, a, b);
+                    if (hit) hits.push(hit);
+                });
+                return hits;
+            };
+
+            const closestToAnchor = (hits, anchor) => hits.reduce((best, p) => {
+                const d = Math.hypot(p.x - anchor.x, p.y - anchor.y);
+                if (!best || d < best.d) return { p, d };
+                return best;
+            }, null).p;
+
+            for (let i = 1; i < trapezoids.length; i++) {
+                const prev = trapezoids[i - 1];
+                const curr = trapezoids[i];
+
+                const prevPts = prev.trapezoid.getPoints(prev.position, prev.rotation);
+                const currPts = curr.trapezoid.getPoints(curr.position, curr.rotation);
+
+                const pivot = lineSegmentIntersection(
+                    prevPts[1],
+                    sub(prevPts[2], prevPts[1]),
+                    currPts[0],
+                    currPts[3]
+                ) || midpoint(midpoint(prevPts[1], prevPts[2]), midpoint(currPts[0], currPts[3]));
+
+                const prevDir = normalize(sub(midpoint(prevPts[1], prevPts[2]), midpoint(prevPts[0], prevPts[3])));
+                const currDir = normalize(sub(midpoint(currPts[1], currPts[2]), midpoint(currPts[0], currPts[3])));
+                let bisector = normalize(add(prevDir, currDir));
+                if (len(add(prevDir, currDir)) < 1e-8) {
+                    bisector = prevDir;
+                }
+
+                const jointThickness = ((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10;
+                const normal = { x: -bisector.y, y: bisector.x };
+                const anchorA = add(pivot, mul(normal, jointThickness));
+                const anchorB = add(pivot, mul(normal, -jointThickness));
+
+                const buildSegment = (anchor) => {
+                    const prevHits = polygonIntersections(prevPts, anchor, bisector);
+                    const currHits = polygonIntersections(currPts, anchor, bisector);
+                    if (prevHits.length === 0 || currHits.length === 0) return null;
+
+                    const start = closestToAnchor(prevHits, anchor);
+                    const end = closestToAnchor(currHits, anchor);
+                    if (!start || !end) return null;
+
+                    return {
+                        start,
+                        end,
+                        length: Math.hypot(end.x - start.x, end.y - start.y)
+                    };
+                };
+
+                const segmentA = buildSegment(anchorA);
+                const segmentB = buildSegment(anchorB);
+                if (!segmentA && !segmentB) continue;
+
+                const chosen = !segmentA ? segmentB : !segmentB ? segmentA : (segmentA.length <= segmentB.length ? segmentA : segmentB);
+
+                dxf += "0\nLINE\n";
+                dxf += "8\n0\n";
+
+                dxf += "10\n" + chosen.start.x + "\n";
+                dxf += "20\n" + (-chosen.start.y) + "\n";
+                dxf += "30\n0\n";
+
+                dxf += "11\n" + chosen.end.x + "\n";
+                dxf += "21\n" + (-chosen.end.y) + "\n";
+                dxf += "31\n0\n";
+            }
+        }
 
         // END ENTITIES
         dxf += "0\nENDSEC\n0\nEOF";

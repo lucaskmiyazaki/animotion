@@ -113,7 +113,22 @@ const holeOptionText = document.createElement('span');
 holeOptionText.textContent = 'Hole';
 
 holeOptionLabel.append(holeCheckbox, holeOptionText);
-chainOptionsSection.append(chainOptionsTitle, holeOptionLabel);
+
+const jointsOptionLabel = document.createElement('label');
+jointsOptionLabel.className = 'checkbox-option';
+
+const jointsCheckbox = document.createElement('input');
+jointsCheckbox.type = 'checkbox';
+jointsCheckbox.checked = window.appActions?.getJointsEnabled?.() ?? false;
+jointsCheckbox.addEventListener('change', () => {
+    window.appActions?.setJointsEnabled?.(jointsCheckbox.checked);
+});
+
+const jointsOptionText = document.createElement('span');
+jointsOptionText.textContent = 'Joints';
+
+jointsOptionLabel.append(jointsCheckbox, jointsOptionText);
+chainOptionsSection.append(chainOptionsTitle, holeOptionLabel, jointsOptionLabel);
 
 
 
