@@ -104,11 +104,27 @@ canvas.create-mode {
 }
 
 .frame-section,
-.skeleton-section {
+.skeleton-section,
+.chain-section {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 14px;
     padding: 10px;
+}
+
+.checkbox-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--sidebar-text);
+    user-select: none;
+}
+
+.checkbox-option input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #ff6f3c;
 }
 
 .project-actions {

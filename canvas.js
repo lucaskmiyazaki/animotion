@@ -21,6 +21,7 @@ let draggedPoint = null;
 let selectedPoint = null;
 let hasDragged = false;
 let mode = 'move'; // 'create', 'edit', or 'move'
+let holeEnabled = false;
 
 // Default trapezoid thickness
 const trapezoidThickness = 50;
@@ -245,6 +246,25 @@ function drawChain(chain) {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+
+        if (holeEnabled) {
+            // Center line parallel to the top/bottom edges of each link.
+            const leftMid = {
+                x: (pts[0].x + pts[3].x) / 2,
+                y: (pts[0].y + pts[3].y) / 2
+            };
+            const rightMid = {
+                x: (pts[1].x + pts[2].x) / 2,
+                y: (pts[1].y + pts[2].y) / 2
+            };
+
+            ctx.beginPath();
+            ctx.moveTo(leftMid.x, leftMid.y);
+            ctx.lineTo(rightMid.x, rightMid.y);
+            ctx.strokeStyle = 'rgba(0, 80, 0, 0.9)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
     });
 }
 
@@ -869,7 +889,12 @@ window.appActions = {
         } else {
             console.log(`  Frame mismatch: currentFrameIndex=${currentFrameIndex}, frameIndex=${frameIndex}`);
         }
-    }
+    },
+    setHoleEnabled: (enabled) => {
+        holeEnabled = Boolean(enabled);
+        redrawAll();
+    },
+    getHoleEnabled: () => holeEnabled
 };
 
 // Listen for video frame changes and sync canvas state

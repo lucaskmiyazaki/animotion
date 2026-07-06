@@ -92,6 +92,29 @@ openProjectButton.classList.add('project-button', 'open-button');
 projectButtonsRow.append(openProjectButton, saveProjectButton);
 projectActionsDiv.append(projectActionsTitle, projectButtonsRow);
 
+const chainOptionsSection = document.createElement('div');
+chainOptionsSection.className = 'chain-section';
+
+const chainOptionsTitle = document.createElement('div');
+chainOptionsTitle.className = 'section-title';
+chainOptionsTitle.textContent = 'Chain';
+
+const holeOptionLabel = document.createElement('label');
+holeOptionLabel.className = 'checkbox-option';
+
+const holeCheckbox = document.createElement('input');
+holeCheckbox.type = 'checkbox';
+holeCheckbox.checked = window.appActions?.getHoleEnabled?.() ?? false;
+holeCheckbox.addEventListener('change', () => {
+    window.appActions?.setHoleEnabled?.(holeCheckbox.checked);
+});
+
+const holeOptionText = document.createElement('span');
+holeOptionText.textContent = 'Hole';
+
+holeOptionLabel.append(holeCheckbox, holeOptionText);
+chainOptionsSection.append(chainOptionsTitle, holeOptionLabel);
+
 
 
 const frameControl = document.createElement('div');
@@ -255,6 +278,7 @@ sidebar.append(
     sidebarSubheader,
     skeletonSection,
     frameSection,
+    chainOptionsSection,
     projectActionsDiv,
     sideSpacer,
     bottomActions
