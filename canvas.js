@@ -425,7 +425,7 @@ function exportDXF() {
     // Export whichever chain is currently renderable in the viewport.
     const chain = getCurrentChain() || getMainChain();
     if (!chain || chain.getTrapezoids().length === 0) return;
-    chain.exportFlatDXF();
+    chain.exportCurrentDXF('chain_current.dxf', holeEnabled);
 }
 
 function getStoredFrameIndices() {

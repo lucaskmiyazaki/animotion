@@ -577,6 +577,84 @@ class Chain {
 
     }
 
+    exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false) {
+
+        const trapezoids = this.trapezoids;
+        if (trapezoids.length === 0) return;
+        let dxf = "";
+
+        // DXF HEADER
+        dxf += "0\nSECTION\n2\nHEADER\n0\nENDSEC\n";
+
+        // ENTITIES SECTION
+        dxf += "0\nSECTION\n2\nENTITIES\n";
+
+        trapezoids.forEach(item => {
+
+            const pts = item.trapezoid.getPoints(
+                item.position,
+                item.rotation
+            );
+
+            // Draw 4 boundary lines per trapezoid in current pose
+            for (let i = 0; i < 4; i++) {
+
+                const p1 = pts[i];
+                const p2 = pts[(i + 1) % 4];
+
+                dxf += "0\nLINE\n";
+                dxf += "8\n0\n"; // layer
+
+                dxf += "10\n" + p1.x + "\n";
+                dxf += "20\n" + (-p1.y) + "\n"; // invert Y for CAD
+                dxf += "30\n0\n";
+
+                dxf += "11\n" + p2.x + "\n";
+                dxf += "21\n" + (-p2.y) + "\n";
+                dxf += "31\n0\n";
+
+            }
+
+            if (includeHoles) {
+                // Hole center line: midpoint of left side to midpoint of right side.
+                const leftMid = {
+                    x: (pts[0].x + pts[3].x) / 2,
+                    y: (pts[0].y + pts[3].y) / 2
+                };
+                const rightMid = {
+                    x: (pts[1].x + pts[2].x) / 2,
+                    y: (pts[1].y + pts[2].y) / 2
+                };
+
+                dxf += "0\nLINE\n";
+                dxf += "8\n0\n"; // layer
+
+                dxf += "10\n" + leftMid.x + "\n";
+                dxf += "20\n" + (-leftMid.y) + "\n";
+                dxf += "30\n0\n";
+
+                dxf += "11\n" + rightMid.x + "\n";
+                dxf += "21\n" + (-rightMid.y) + "\n";
+                dxf += "31\n0\n";
+            }
+
+        });
+
+        // END ENTITIES
+        dxf += "0\nENDSEC\n0\nEOF";
+
+        // Download
+        const blob = new Blob([dxf], { type: "application/dxf" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+
+        URL.revokeObjectURL(url);
+
+    }
+
 }
 
 if (typeof window !== 'undefined') {
