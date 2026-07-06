@@ -64,6 +64,10 @@ function hasChainInFrame(frameIndex) {
     return Boolean(frameChain && frameChain.getTrapezoids().length > 0 && frameChainBuilt[frameIndex]);
 }
 
+function hasRenderableChain() {
+    return Boolean(getMainChain());
+}
+
 function ensureCurrentSkeleton() {
     if (!frameSkeletons[currentFrameIndex]) {
         frameSkeletons[currentFrameIndex] = new Skeleton();
@@ -418,7 +422,8 @@ function playPreviewAnimation() {
 }
 
 function exportDXF() {
-    const chain = getCurrentChain();
+    // Export whichever chain is currently renderable in the viewport.
+    const chain = getCurrentChain() || getMainChain();
     if (!chain || chain.getTrapezoids().length === 0) return;
     chain.exportFlatDXF();
 }
@@ -848,6 +853,7 @@ window.appActions = {
     getMode,
     setCurrentFrame,
     hasChainInCurrentFrame: () => hasChainInFrame(currentFrameIndex),
+    hasRenderableChain,
     onChainStateChange: (listener) => {
         chainStateListeners.add(listener);
         return () => chainStateListeners.delete(listener);

@@ -194,7 +194,7 @@ bottomSecondaryActions.className = 'bottom-secondary-actions';
 bottomSecondaryActions.append(exportBottomButton, previewBottomButton);
 
 function updateBuildControls() {
-    const hasChain = window.appActions?.hasChainInCurrentFrame?.() ?? false;
+    const hasChain = window.appActions?.hasRenderableChain?.() ?? false;
     buildButton.textContent = hasChain ? 'Regenerate Chain' : 'Generate Chain';
     bottomSecondaryActions.style.display = hasChain ? 'grid' : 'none';
 }
