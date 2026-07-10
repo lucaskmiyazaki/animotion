@@ -220,6 +220,197 @@ function calculateFinalLineLength() {
     return calculateInitialAndFinalLineLengths().finalL;
 }
 
+function getJointAngleInitials(chain) {
+    const activeChain = chain || getMainChain();
+    const trapezoids = activeChain?.getTrapezoids?.() ?? [];
+    const angles = [];
+
+    for (let i = 1; i < trapezoids.length; i++) {
+        const prev = trapezoids[i - 1];
+        const item = trapezoids[i];
+        angles.push(shortestAngleDifference(prev.startRotation, item.startRotation));
+    }
+
+    return angles;
+}
+
+function getJointAngleLimits(chain, jointIndex) {
+    const activeChain = chain || getMainChain();
+    const trapezoids = activeChain?.getTrapezoids?.() ?? [];
+    if (jointIndex < 0 || jointIndex >= trapezoids.length - 1) {
+        return null;
+    }
+
+    const prev = trapezoids[jointIndex];
+    const item = trapezoids[jointIndex + 1];
+    const finalRel = shortestAngleDifference(prev.finalRotation, item.finalRotation);
+
+    // Same rule as the existing constraint system:
+    // the other bound is 90 degrees past straight in the direction away from finalRel.
+    const dirTowardStraight = finalRel >= 0 ? -1 : 1;
+    const otherLimit = finalRel + 90 * dirTowardStraight;
+    return {
+        minRel: Math.min(finalRel, otherLimit),
+        maxRel: Math.max(finalRel, otherLimit)
+    };
+}
+
+function clampJointAngles(chain, angles) {
+    return angles.map((angle, jointIndex) => {
+        const limits = getJointAngleLimits(chain, jointIndex);
+        if (!limits) return angle;
+        return Math.max(limits.minRel, Math.min(limits.maxRel, angle));
+    });
+}
+
+function applyJointAngles(chain, jointAngles) {
+    const trapezoids = chain?.getTrapezoids?.() ?? [];
+    if (!chain || trapezoids.length === 0) return;
+
+    trapezoids[0].rotation = trapezoids[0].startRotation;
+    for (let i = 1; i < trapezoids.length; i++) {
+        const prev = trapezoids[i - 1];
+        const item = trapezoids[i];
+        item.rotation = normalizeAngle(prev.rotation + jointAngles[i - 1]);
+    }
+
+    chain.positionAllLinksFromRotations();
+}
+
+function computeLengthGradients(chain, angles, epsilon = 0.25) {
+    const activeChain = chain || getMainChain();
+    const trapezoids = activeChain?.getTrapezoids?.() ?? [];
+    if (!activeChain || trapezoids.length <= 1) {
+        return [];
+    }
+
+    const gradients = [];
+    for (let jointIndex = 0; jointIndex < angles.length; jointIndex++) {
+        const testPlus = angles.slice();
+        const testMinus = angles.slice();
+        testPlus[jointIndex] = anglePlusMinusClamp(activeChain, jointIndex, angles[jointIndex] + epsilon);
+        testMinus[jointIndex] = anglePlusMinusClamp(activeChain, jointIndex, angles[jointIndex] - epsilon);
+
+        applyJointAngles(activeChain, testPlus);
+        const lPlus = calculateTotalLineLength(activeChain);
+
+        applyJointAngles(activeChain, testMinus);
+        const lMinus = calculateTotalLineLength(activeChain);
+
+        gradients.push((lPlus - lMinus) / (2 * epsilon));
+    }
+
+    return gradients;
+}
+
+function anglePlusMinusClamp(chain, jointIndex, angle) {
+    const limits = getJointAngleLimits(chain, jointIndex);
+    if (!limits) return angle;
+    return Math.max(limits.minRel, Math.min(limits.maxRel, angle));
+}
+
+function projectAnglesToTargetL(chain, angles, targetL, maxProjectionIterations = 8) {
+    const activeChain = chain || getMainChain();
+    if (!activeChain || activeChain.getTrapezoids().length <= 1 || angles.length === 0) {
+        return angles;
+    }
+
+    let projected = clampJointAngles(activeChain, angles.slice());
+
+    for (let iteration = 0; iteration < maxProjectionIterations; iteration++) {
+        applyJointAngles(activeChain, projected);
+        const currentL = calculateTotalLineLength(activeChain);
+        const error = currentL - targetL;
+        if (Math.abs(error) < 0.25) break;
+
+        const lengthGradients = computeLengthGradients(activeChain, projected, 0.25);
+        const denominator = lengthGradients.reduce((sum, value) => sum + value * value, 0);
+        if (denominator < 1e-8) break;
+
+        const correction = error / denominator;
+        projected = projected.map((angle, jointIndex) => {
+            const nextAngle = angle - correction * lengthGradients[jointIndex];
+            return anglePlusMinusClamp(activeChain, jointIndex, nextAngle);
+        });
+    }
+
+    applyJointAngles(activeChain, projected);
+    return projected;
+}
+
+function solveMinimalEnergyAnglesForTargetL(chain, targetL, maxIterations = 80) {
+    const activeChain = chain || getMainChain();
+    const trapezoids = activeChain?.getTrapezoids?.() ?? [];
+    if (!activeChain || trapezoids.length <= 1) {
+        return [];
+    }
+
+    const initialAngles = getJointAngleInitials(activeChain);
+    let angles = initialAngles.slice();
+    angles = clampJointAngles(activeChain, angles);
+
+    const learningRate = 0.08;
+    const penaltyWeight = 12;
+    const epsilon = 0.25;
+
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+        applyJointAngles(activeChain, angles);
+        const currentL = calculateTotalLineLength(activeChain);
+        const lError = currentL - targetL;
+
+        if (Math.abs(lError) < 0.5) {
+            break;
+        }
+
+        const gradients = angles.map((angle, jointIndex) => {
+            const testPlus = angles.slice();
+            const testMinus = angles.slice();
+            testPlus[jointIndex] = angle + epsilon;
+            testMinus[jointIndex] = angle - epsilon;
+
+            applyJointAngles(activeChain, clampJointAngles(activeChain, testPlus));
+            const lPlus = calculateTotalLineLength(activeChain);
+
+            applyJointAngles(activeChain, clampJointAngles(activeChain, testMinus));
+            const lMinus = calculateTotalLineLength(activeChain);
+
+            const dL = (lPlus - lMinus) / (2 * epsilon);
+            const dEnergy = getJointK(jointIndex) * (angle - initialAngles[jointIndex]);
+            const dPenalty = 2 * penaltyWeight * lError * dL;
+            return dEnergy + dPenalty;
+        });
+
+        angles = angles.map((angle, jointIndex) => {
+            const nextAngle = angle - learningRate * gradients[jointIndex];
+            const limits = getJointAngleLimits(activeChain, jointIndex);
+            if (!limits) return nextAngle;
+            return Math.max(limits.minRel, Math.min(limits.maxRel, nextAngle));
+        });
+
+        angles = projectAnglesToTargetL(activeChain, angles, targetL);
+    }
+
+    applyJointAngles(activeChain, angles);
+    return angles;
+}
+
+function applyChainAtTargetL(chain, targetL) {
+    solveMinimalEnergyAnglesForTargetL(chain, targetL);
+}
+
+function updateChainForCurrentFrameByLength(chain, frameIndex) {
+    const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
+    const t = maxFrameIndex > 0 ? Math.min(frameIndex / maxFrameIndex, 1) : 0;
+    const initialL = calculateInitialLineLength();
+    const finalL = calculateFinalLineLength();
+    const rawTargetL = initialL + (finalL - initialL) * t;
+    const minL = Math.min(initialL, finalL);
+    const maxL = Math.max(initialL, finalL);
+    const targetL = Math.max(minL, Math.min(maxL, rawTargetL));
+    applyChainAtTargetL(chain, targetL);
+    return targetL;
+}
+
 // Skeleton length at current frame: sum of all skeleton segment lengths.
 function calculateCurrentSkeletonLength() {
     const skeleton = getCurrentSkeleton();
@@ -248,12 +439,10 @@ function setCurrentFrame(frameIndex) {
     hoveredPoint = null;
     draggedPoint = null;
 
-    // Interpolate the main chain (from the skeleton) for this frame
+    // Interpolate target L and solve for the minimum-energy theta values.
     const chain = getMainChain();
     if (chain) {
-        const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
-        const t = maxFrameIndex > 0 ? Math.min(frameIndex / maxFrameIndex, 1) : 0;
-        applyChainAtT(chain, t);
+        updateChainForCurrentFrameByLength(chain, frameIndex);
 
         const skeleton = getCurrentSkeleton();
         alignChainRootToSkeleton(chain, skeleton);
@@ -716,32 +905,14 @@ function animateTowardsFinal(chain, duration = 1000) {
 
     return new Promise(resolve => {
         const startTime = performance.now();
+        const initialL = calculateInitialLineLength();
+        const finalL = calculateFinalLineLength();
 
         function step(now) {
             const elapsed = now - startTime;
             const t = Math.min(elapsed / duration, 1);
-
-            const trapezoids = chain.getTrapezoids();
-
-            // Update rotations: interpolate from start to final
-            // positionAllLinksFromRotations will enforce range-of-motion constraints
-            trapezoids.forEach((item, i) => {
-                if (i === 0) {
-                    const dr = shortestAngleDifference(item.startRotation, item.finalRotation);
-                    item.rotation = item.startRotation + dr * t;
-                } else {
-                    const prev = trapezoids[i - 1];
-                    const flatRelativeRotation = shortestAngleDifference(prev.startRotation, item.startRotation);
-                    const finalRelativeRotation = shortestAngleDifference(prev.finalRotation, item.finalRotation);
-                    const relativeDelta = shortestAngleDifference(flatRelativeRotation, finalRelativeRotation);
-                    const currentRelativeRotation = flatRelativeRotation + relativeDelta * t;
-
-                    item.rotation = normalizeAngle(prev.rotation + currentRelativeRotation);
-                }
-            });
-
-            // Position all links - this enforces range-of-motion constraints on each link
-            chain.positionAllLinksFromRotations();
+            const targetL = initialL + (finalL - initialL) * t;
+            applyChainAtTargetL(chain, targetL);
 
             redrawAll();
 
