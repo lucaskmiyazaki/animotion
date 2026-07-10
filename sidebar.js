@@ -128,7 +128,48 @@ const jointsOptionText = document.createElement('span');
 jointsOptionText.textContent = 'Joints';
 
 jointsOptionLabel.append(jointsCheckbox, jointsOptionText);
-chainOptionsSection.append(chainOptionsTitle, holeOptionLabel, jointsOptionLabel);
+
+const jointKContainer = document.createElement('div');
+jointKContainer.className = 'joint-k-container';
+
+function renderJointKInputs() {
+    const count = window.appActions?.getJointCount?.() ?? 0;
+    jointKContainer.innerHTML = '';
+
+    if (count <= 0) {
+        const empty = document.createElement('div');
+        empty.className = 'joint-k-empty';
+        empty.textContent = 'No joints yet';
+        jointKContainer.append(empty);
+        return;
+    }
+
+    for (let i = 0; i < count; i++) {
+        const row = document.createElement('div');
+        row.className = 'joint-k-row';
+
+        const label = document.createElement('label');
+        label.className = 'joint-k-label';
+        label.textContent = `k${i + 1}`;
+
+        const input = document.createElement('input');
+        input.className = 'joint-k-input';
+        input.type = 'number';
+        input.step = '0.1';
+        input.min = '0';
+        input.value = String(window.appActions?.getJointK?.(i) ?? 1);
+        input.addEventListener('change', () => {
+            const parsed = Number.parseFloat(input.value);
+            const nextValue = Number.isFinite(parsed) ? parsed : 1;
+            window.appActions?.setJointK?.(i, nextValue);
+        });
+
+        row.append(label, input);
+        jointKContainer.append(row);
+    }
+}
+
+chainOptionsSection.append(chainOptionsTitle, holeOptionLabel, jointsOptionLabel, jointKContainer);
 
 
 
@@ -230,6 +271,7 @@ window.videoControls?.onFrameChange?.(() => {
 
 window.appActions?.onChainStateChange?.(() => {
     updateBuildControls();
+    renderJointKInputs();
 });
 
 window.appActions?.onModeChange?.((mode) => {
@@ -239,6 +281,7 @@ window.appActions?.onModeChange?.((mode) => {
 updateFrameInput();
 updateBuildControls();
 updateAddPointButtonState();
+renderJointKInputs();
 
 const iconActionsRow = document.createElement('div');
 iconActionsRow.className = 'icon-actions-row frame-icon-actions-row';

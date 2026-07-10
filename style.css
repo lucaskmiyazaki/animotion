@@ -38,6 +38,9 @@ canvas.create-mode {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
     z-index: 1000;
     color: var(--sidebar-text);
     box-shadow: 0 14px 44px rgba(4, 8, 18, 0.45);
@@ -125,6 +128,47 @@ canvas.create-mode {
     width: 16px;
     height: 16px;
     accent-color: #ff6f3c;
+}
+
+.joint-k-container {
+    margin-top: 8px;
+    display: grid;
+    gap: 6px;
+}
+
+.joint-k-empty {
+    font-size: 12px;
+    color: var(--muted-text);
+}
+
+.joint-k-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+    align-items: center;
+}
+
+.joint-k-label {
+    font-size: 12px;
+    color: var(--muted-text);
+    min-width: 20px;
+}
+
+.joint-k-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    font-size: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: var(--field-bg);
+    color: var(--sidebar-text);
+    outline: none;
+}
+
+.joint-k-input:focus {
+    border-color: rgba(121, 167, 255, 0.9);
+    box-shadow: 0 0 0 2px rgba(121, 167, 255, 0.22);
 }
 
 .project-actions {

@@ -577,7 +577,7 @@ class Chain {
 
     }
 
-    exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false, includeJoints = false) {
+    exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false, includeJoints = false, jointKValues = []) {
 
         const trapezoids = this.trapezoids;
         if (trapezoids.length === 0) return;
@@ -687,6 +687,11 @@ class Chain {
                 return best;
             }, null).p;
 
+            const getJointK = (jointIndex) => {
+                const raw = Number(jointKValues?.[jointIndex]);
+                return Number.isFinite(raw) ? raw : 1;
+            };
+
             for (let i = 1; i < trapezoids.length; i++) {
                 const prev = trapezoids[i - 1];
                 const curr = trapezoids[i];
@@ -708,7 +713,8 @@ class Chain {
                     bisector = prevDir;
                 }
 
-                const jointThickness = ((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10;
+                const k = getJointK(i - 1);
+                const jointThickness = (((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10) * k;
                 const normal = { x: -bisector.y, y: bisector.x };
                 const anchorA = add(pivot, mul(normal, jointThickness));
                 const anchorB = add(pivot, mul(normal, -jointThickness));

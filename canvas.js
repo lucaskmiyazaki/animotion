@@ -23,6 +23,7 @@ let hasDragged = false;
 let mode = 'move'; // 'create', 'edit', or 'move'
 let holeEnabled = false;
 let jointsEnabled = false;
+const jointKByIndex = {};
 
 // Default trapezoid thickness
 const trapezoidThickness = 50;
@@ -67,6 +68,41 @@ function hasChainInFrame(frameIndex) {
 
 function hasRenderableChain() {
     return Boolean(getMainChain());
+}
+
+function getJointK(jointIndex) {
+    const raw = Number(jointKByIndex[jointIndex]);
+    return Number.isFinite(raw) ? raw : 1;
+}
+
+function setJointK(jointIndex, value) {
+    const idx = Number.parseInt(jointIndex, 10);
+    if (!Number.isInteger(idx) || idx < 0) return;
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        delete jointKByIndex[idx];
+    } else {
+        jointKByIndex[idx] = parsed;
+    }
+
+    emitChainStateChange();
+    redrawAll();
+}
+
+function getJointCount(chain) {
+    const activeChain = chain || getMainChain();
+    const links = activeChain?.getTrapezoids?.()?.length ?? 0;
+    return Math.max(links - 1, 0);
+}
+
+function getJointKValues(chain) {
+    const count = getJointCount(chain);
+    const values = [];
+    for (let i = 0; i < count; i++) {
+        values.push(getJointK(i));
+    }
+    return values;
 }
 
 function ensureCurrentSkeleton() {
@@ -343,7 +379,8 @@ function drawChain(chain) {
         }
 
         // Shift the line outside the links by joint thickness.
-        const jointThickness = ((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10;
+        const k = getJointK(i - 1);
+        const jointThickness = (((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10) * k;
         const normal = { x: -bisector.y, y: bisector.x };
         const anchorA = add(pivot, mul(normal, jointThickness));
         const anchorB = add(pivot, mul(normal, -jointThickness));
@@ -579,7 +616,7 @@ function exportDXF() {
     // Export whichever chain is currently renderable in the viewport.
     const chain = getCurrentChain() || getMainChain();
     if (!chain || chain.getTrapezoids().length === 0) return;
-    chain.exportCurrentDXF('chain_current.dxf', holeEnabled, jointsEnabled);
+    chain.exportCurrentDXF('chain_current.dxf', holeEnabled, jointsEnabled, getJointKValues(chain));
 }
 
 function getStoredFrameIndices() {
@@ -1059,7 +1096,10 @@ window.appActions = {
         jointsEnabled = Boolean(enabled);
         redrawAll();
     },
-    getJointsEnabled: () => jointsEnabled
+    getJointsEnabled: () => jointsEnabled,
+    getJointCount: () => getJointCount(),
+    getJointK: (jointIndex) => getJointK(jointIndex),
+    setJointK: (jointIndex, value) => setJointK(jointIndex, value)
 };
 
 // Listen for video frame changes and sync canvas state
