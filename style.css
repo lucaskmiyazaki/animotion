@@ -171,6 +171,17 @@ canvas.create-mode {
     box-shadow: 0 0 0 2px rgba(121, 167, 255, 0.22);
 }
 
+.energy-display {
+    margin-top: 12px;
+    padding: 8px;
+    font-size: 12px;
+    color: var(--sidebar-text);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    text-align: center;
+}
+
 .project-actions {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);

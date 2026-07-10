@@ -105,6 +105,90 @@ function getJointKValues(chain) {
     return values;
 }
 
+// Elastic potential energy at current frame:
+// E_total = sum_j (1/2) * k_j * (theta_j - theta_j0)^2
+function calculateTotalElasticEnergy() {
+    const chain = getMainChain();
+    if (!chain || chain.getTrapezoids().length <= 1) {
+        return 0;
+    }
+
+    const trapezoids = chain.getTrapezoids();
+    const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
+    const t = maxFrameIndex > 0 ? Math.min(currentFrameIndex / maxFrameIndex, 1) : 0;
+
+    let totalEnergy = 0;
+    for (let i = 1; i < trapezoids.length; i++) {
+        const prev = trapezoids[i - 1];
+        const item = trapezoids[i];
+
+        const theta0 = shortestAngleDifference(prev.startRotation, item.startRotation);
+        const thetaFinal = shortestAngleDifference(prev.finalRotation, item.finalRotation);
+        const thetaDelta = shortestAngleDifference(theta0, thetaFinal);
+        const theta = theta0 + thetaDelta * t;
+
+        const k = getJointK(i - 1);
+        const dTheta = theta - theta0;
+        totalEnergy += 0.5 * k * dTheta * dTheta;
+    }
+
+    return totalEnergy;
+}
+
+// Hole-network length:
+// L = sum(hole line lengths) + sum(connection lengths between adjacent hole lines)
+function calculateTotalLineLength() {
+    const chain = getMainChain();
+    if (!chain || chain.getTrapezoids().length === 0) {
+        return 0;
+    }
+
+    const trapezoids = chain.getTrapezoids();
+    let totalLength = 0;
+
+    const holeMids = trapezoids.map(item => {
+        const pts = item.trapezoid.getPoints(item.position, item.rotation);
+        const leftMid = {
+            x: (pts[0].x + pts[3].x) / 2,
+            y: (pts[0].y + pts[3].y) / 2
+        };
+        const rightMid = {
+            x: (pts[1].x + pts[2].x) / 2,
+            y: (pts[1].y + pts[2].y) / 2
+        };
+
+        // Hole line inside this trapezoid.
+        totalLength += Math.hypot(rightMid.x - leftMid.x, rightMid.y - leftMid.y);
+
+        return { leftMid, rightMid };
+    });
+
+    // Connection line from right end of link i hole line to left end of link i+1 hole line.
+    for (let i = 0; i < holeMids.length - 1; i++) {
+        const from = holeMids[i].rightMid;
+        const to = holeMids[i + 1].leftMid;
+        totalLength += Math.hypot(to.x - from.x, to.y - from.y);
+    }
+
+    return totalLength;
+}
+
+// Skeleton length at current frame: sum of all skeleton segment lengths.
+function calculateCurrentSkeletonLength() {
+    const skeleton = getCurrentSkeleton();
+    if (!skeleton || !Array.isArray(skeleton.lines) || skeleton.lines.length === 0) {
+        return 0;
+    }
+
+    let total = 0;
+    skeleton.lines.forEach(line => {
+        if (!line?.start || !line?.end) return;
+        total += Math.hypot(line.end.x - line.start.x, line.end.y - line.start.y);
+    });
+
+    return total;
+}
+
 function ensureCurrentSkeleton() {
     if (!frameSkeletons[currentFrameIndex]) {
         frameSkeletons[currentFrameIndex] = new Skeleton();
@@ -310,8 +394,30 @@ function drawChain(chain) {
             ctx.strokeStyle = 'rgba(0, 80, 0, 0.9)';
             ctx.lineWidth = 2;
             ctx.stroke();
+
+            // Keep for hole-to-hole connection drawing.
+            item._holeLeftMid = leftMid;
+            item._holeRightMid = rightMid;
         }
     });
+
+    // Draw hole connection lines between adjacent links whenever Hole is enabled.
+    if (holeEnabled && trapezoids.length >= 2) {
+        ctx.strokeStyle = 'rgba(0, 100, 0, 0.6)';
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i < trapezoids.length - 1; i++) {
+            const curr = trapezoids[i];
+            const next = trapezoids[i + 1];
+
+            if (curr._holeRightMid && next._holeLeftMid) {
+                ctx.beginPath();
+                ctx.moveTo(curr._holeRightMid.x, curr._holeRightMid.y);
+                ctx.lineTo(next._holeLeftMid.x, next._holeLeftMid.y);
+                ctx.stroke();
+            }
+        }
+    }
 
     if (!jointsEnabled || trapezoids.length < 2) return;
 
@@ -1089,17 +1195,22 @@ window.appActions = {
     },
     setHoleEnabled: (enabled) => {
         holeEnabled = Boolean(enabled);
+        emitChainStateChange();
         redrawAll();
     },
     getHoleEnabled: () => holeEnabled,
     setJointsEnabled: (enabled) => {
         jointsEnabled = Boolean(enabled);
+        emitChainStateChange();
         redrawAll();
     },
     getJointsEnabled: () => jointsEnabled,
     getJointCount: () => getJointCount(),
     getJointK: (jointIndex) => getJointK(jointIndex),
-    setJointK: (jointIndex, value) => setJointK(jointIndex, value)
+    setJointK: (jointIndex, value) => setJointK(jointIndex, value),
+    calculateTotalElasticEnergy: () => calculateTotalElasticEnergy(),
+    calculateTotalLineLength: () => calculateTotalLineLength(),
+    calculateCurrentSkeletonLength: () => calculateCurrentSkeletonLength()
 };
 
 // Listen for video frame changes and sync canvas state

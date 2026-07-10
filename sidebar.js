@@ -169,7 +169,36 @@ function renderJointKInputs() {
     }
 }
 
-chainOptionsSection.append(chainOptionsTitle, holeOptionLabel, jointsOptionLabel, jointKContainer);
+const energyDisplay = document.createElement('div');
+energyDisplay.className = 'energy-display';
+energyDisplay.textContent = 'Elastic Energy: 0';
+
+const lineLengthDisplay = document.createElement('div');
+lineLengthDisplay.className = 'energy-display';
+lineLengthDisplay.textContent = 'L: 0';
+
+const skeletonLengthDisplay = document.createElement('div');
+skeletonLengthDisplay.className = 'energy-display';
+skeletonLengthDisplay.textContent = 'Skeleton Length: 0';
+
+function updateEnergyAndLengthDisplay() {
+    const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
+    const totalL = window.appActions?.calculateTotalLineLength?.() ?? 0;
+    const skeletonLength = window.appActions?.calculateCurrentSkeletonLength?.() ?? 0;
+    energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
+    lineLengthDisplay.textContent = `L: ${totalL.toFixed(2)}`;
+    skeletonLengthDisplay.textContent = `Skeleton Length: ${skeletonLength.toFixed(2)}`;
+}
+
+chainOptionsSection.append(
+    chainOptionsTitle,
+    holeOptionLabel,
+    jointsOptionLabel,
+    jointKContainer,
+    energyDisplay,
+    lineLengthDisplay,
+    skeletonLengthDisplay
+);
 
 
 
@@ -267,11 +296,13 @@ function updateFrameInput() {
 window.videoControls?.onFrameChange?.(() => {
     updateFrameInput();
     updateBuildControls();
+    updateEnergyAndLengthDisplay();
 });
 
 window.appActions?.onChainStateChange?.(() => {
     updateBuildControls();
     renderJointKInputs();
+    updateEnergyAndLengthDisplay();
 });
 
 window.appActions?.onModeChange?.((mode) => {
@@ -282,6 +313,7 @@ updateFrameInput();
 updateBuildControls();
 updateAddPointButtonState();
 renderJointKInputs();
+updateEnergyAndLengthDisplay();
 
 const iconActionsRow = document.createElement('div');
 iconActionsRow.className = 'icon-actions-row frame-icon-actions-row';
