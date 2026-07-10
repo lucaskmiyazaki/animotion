@@ -394,6 +394,9 @@ async function restoreProjectSnapshot(snapshot) {
         // 3. Restore chain (before seeking so canvas can render them)
         restoreChainState(snapshot.chain);
 
+        // Log initial and final L after the chain has been restored.
+        window.appActions?.calculateInitialAndFinalLineLengths?.();
+
         // 4. NOW seek to correct frame (triggers canvas redraw with skeletons/chains)
         if (snapshot.video && snapshot.video.currentFrameIndex !== undefined) {
             window.videoControls?.showFrameIndex?.(snapshot.video.currentFrameIndex);

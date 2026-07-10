@@ -137,8 +137,7 @@ function calculateTotalElasticEnergy() {
 
 // Hole-network length:
 // L = sum(hole line lengths) + sum(connection lengths between adjacent hole lines)
-function calculateTotalLineLength() {
-    const chain = getMainChain();
+function calculateTotalLineLength(chain = getMainChain()) {
     if (!chain || chain.getTrapezoids().length === 0) {
         return 0;
     }
@@ -171,6 +170,54 @@ function calculateTotalLineLength() {
     }
 
     return totalLength;
+}
+
+function snapshotChainPose(chain) {
+    const trapezoids = chain?.getTrapezoids?.() ?? [];
+    return trapezoids.map(item => ({
+        rotation: item.rotation,
+        position: { x: item.position.x, y: item.position.y }
+    }));
+}
+
+function restoreChainPose(chain, snapshot) {
+    const trapezoids = chain?.getTrapezoids?.() ?? [];
+    if (!Array.isArray(snapshot) || snapshot.length !== trapezoids.length) return;
+
+    trapezoids.forEach((item, i) => {
+        item.rotation = snapshot[i].rotation;
+        item.position.x = snapshot[i].position.x;
+        item.position.y = snapshot[i].position.y;
+    });
+}
+
+function calculateInitialAndFinalLineLengths() {
+    const chain = getMainChain();
+    if (!chain || chain.getTrapezoids().length === 0) {
+        return { initialL: 0, finalL: 0 };
+    }
+
+    const savedPose = snapshotChainPose(chain);
+
+    applyChainAtT(chain, 0);
+    const initialL = calculateTotalLineLength(chain);
+
+    applyChainAtT(chain, 1);
+    const finalL = calculateTotalLineLength(chain);
+
+    restoreChainPose(chain, savedPose);
+
+    console.log(`L initial=${initialL.toFixed(2)}, L final=${finalL.toFixed(2)}`);
+
+    return { initialL, finalL };
+}
+
+function calculateInitialLineLength() {
+    return calculateInitialAndFinalLineLengths().initialL;
+}
+
+function calculateFinalLineLength() {
+    return calculateInitialAndFinalLineLengths().finalL;
 }
 
 // Skeleton length at current frame: sum of all skeleton segment lengths.
@@ -581,10 +628,7 @@ function redrawAll() {
     draw();
     const frameChain = getMainChain();
     if (frameChain) {
-        console.log('redrawAll: drawing chain');
         drawChain(frameChain);
-    } else {
-        console.log('redrawAll: no chain to draw');
     }
 }
 
@@ -639,11 +683,9 @@ function getMainChain() {
     // Find the frame that has a chain
     for (const frameIndex in frameChains) {
         if (frameChains[frameIndex]) {
-            console.log(`getMainChain found chain at frame ${frameIndex}`);
             return frameChains[frameIndex];
         }
     }
-    console.log('getMainChain: no chain found in any frame');
     return null;
 }
 
@@ -1168,7 +1210,6 @@ window.appActions = {
     // Project state management
     getProjectStateRefs: exposeStateForSerialization,
     setSkeletonForFrame: (frameIndex, skeleton) => {
-        console.log(`setSkeletonForFrame: frame=${frameIndex}, has skeleton=${!!skeleton}`);
         frameSkeletons[frameIndex] = skeleton;
         emitChainStateChange();
         // Also redraw immediately so restored skeletons show up
@@ -1177,20 +1218,12 @@ window.appActions = {
         }
     },
     setChainForFrame: (frameIndex, chain, isBuilt) => {
-        console.log(`setChainForFrame CALLED: frame=${frameIndex}, chain exists=${!!chain}, isBuilt=${isBuilt}`);
-        if (chain) {
-            console.log(`  trapezoids: ${chain.getTrapezoids().length}`);
-        }
         frameChains[frameIndex] = chain;
         if (isBuilt !== undefined) frameChainBuilt[frameIndex] = isBuilt;
-        console.log(`  frameChains[${frameIndex}] = ${!!frameChains[frameIndex]} (chain ${frameChains[frameIndex] ? 'stored' : 'NOT stored'})`);
         emitChainStateChange();
         // Also redraw immediately so restored chains show up
         if (currentFrameIndex === frameIndex) {
-            console.log(`  Current frame matches, redrawing...`);
             redrawAll();
-        } else {
-            console.log(`  Frame mismatch: currentFrameIndex=${currentFrameIndex}, frameIndex=${frameIndex}`);
         }
     },
     setHoleEnabled: (enabled) => {
@@ -1210,7 +1243,10 @@ window.appActions = {
     setJointK: (jointIndex, value) => setJointK(jointIndex, value),
     calculateTotalElasticEnergy: () => calculateTotalElasticEnergy(),
     calculateTotalLineLength: () => calculateTotalLineLength(),
-    calculateCurrentSkeletonLength: () => calculateCurrentSkeletonLength()
+    calculateCurrentSkeletonLength: () => calculateCurrentSkeletonLength(),
+    calculateInitialLineLength: () => calculateInitialLineLength(),
+    calculateFinalLineLength: () => calculateFinalLineLength(),
+    calculateInitialAndFinalLineLengths: () => calculateInitialAndFinalLineLengths()
 };
 
 // Listen for video frame changes and sync canvas state
