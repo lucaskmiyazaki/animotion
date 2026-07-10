@@ -1354,6 +1354,128 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Computes the total distance between each link's ending-edge midpoint and its
+// corresponding skeleton segment (same metric used in computeStartRotationsFromRefSkeleton).
+function computeChainSkeletonError(chain, skeleton) {
+    const trapezoids = chain?.getTrapezoids?.() ?? [];
+    const lines = skeleton?.lines ?? [];
+    if (trapezoids.length === 0 || lines.length === 0) return 0;
+
+    let totalError = 0;
+    const count = Math.min(trapezoids.length, lines.length);
+    for (let i = 0; i < count; i++) {
+        const item = trapezoids[i];
+        const pts = item.trapezoid.getPoints(item.position, item.rotation);
+        // Ending-edge midpoint (right edge midpoint of each link)
+        const endMid = {
+            x: (pts[1].x + pts[2].x) / 2,
+            y: (pts[1].y + pts[2].y) / 2
+        };
+
+        const lineStart = lines[i].start;
+        const lineEnd = lines[i].end;
+        const dx = lineEnd.x - lineStart.x;
+        const dy = lineEnd.y - lineStart.y;
+        const lenSq = dx * dx + dy * dy;
+        let dist;
+        if (lenSq < 1e-10) {
+            dist = Math.hypot(endMid.x - lineStart.x, endMid.y - lineStart.y);
+        } else {
+            const t = Math.max(0, Math.min(1,
+                ((endMid.x - lineStart.x) * dx + (endMid.y - lineStart.y) * dy) / lenSq
+            ));
+            dist = Math.hypot(endMid.x - (lineStart.x + t * dx), endMid.y - (lineStart.y + t * dy));
+        }
+        totalError += dist;
+    }
+    return totalError;
+}
+
+// Finds the k values (one per joint) that minimize the summed chain-skeleton
+// distance across every frame that has a skeleton, using numerical gradient descent.
+function findKsMinimizingChainSkeletonDistance() {
+    const chain = getMainChain();
+    if (!chain || chain.getTrapezoids().length <= 1) {
+        console.log('No chain to optimize');
+        return;
+    }
+
+    const numJoints = getJointCount(chain);
+    if (numJoints === 0) {
+        console.log('No joints to optimize');
+        return;
+    }
+
+    // Collect frames that have skeletons with at least one segment.
+    const framesWithSkeletons = Object.keys(frameSkeletons)
+        .map(k => Number.parseInt(k, 10))
+        .filter(f => Number.isInteger(f) && frameSkeletons[f]?.lines?.length > 0)
+        .sort((a, b) => a - b);
+
+    if (framesWithSkeletons.length === 0) {
+        console.log('No frames with skeletons found');
+        return;
+    }
+
+    // Pre-compute endpoint lengths once – they are k-independent.
+    const { initialL, finalL } = calculateInitialAndFinalLineLengths();
+    const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
+    const minL = Math.min(initialL, finalL);
+    const maxL = Math.max(initialL, finalL);
+
+    // Save the current pose so we can restore it after optimization.
+    const savedPose = snapshotChainPose(chain);
+
+    function evaluateTotalError(kValues) {
+        // Temporarily set k values.
+        for (let i = 0; i < numJoints; i++) {
+            jointKByIndex[i] = kValues[i];
+        }
+
+        let totalError = 0;
+        for (const frameIndex of framesWithSkeletons) {
+            const t = maxFrameIndex > 0 ? Math.min(frameIndex / maxFrameIndex, 1) : 0;
+            const rawTargetL = initialL + (finalL - initialL) * t;
+            const targetL = Math.max(minL, Math.min(maxL, rawTargetL));
+            applyChainAtTargetL(chain, targetL);
+            totalError += computeChainSkeletonError(chain, frameSkeletons[frameIndex]);
+        }
+
+        return totalError;
+    }
+
+    let kValues = Array.from({ length: numJoints }, (_, i) => Math.max(0.01, getJointK(i)));
+    const learningRate = 0.005;
+    const epsilon = 0.1;
+    const maxIterations = 60;
+
+    for (let iter = 0; iter < maxIterations; iter++) {
+        const baseError = evaluateTotalError(kValues);
+        const gradients = kValues.map((k, i) => {
+            const testKs = kValues.slice();
+            testKs[i] = k + epsilon;
+            const errorPlus = evaluateTotalError(testKs);
+            return (errorPlus - baseError) / epsilon;
+        });
+
+        const newKValues = kValues.map((k, i) => Math.max(0.01, k - learningRate * gradients[i]));
+        const converged = newKValues.every((k, i) => Math.abs(k - kValues[i]) < 1e-5);
+        kValues = newKValues;
+        if (converged) break;
+    }
+
+    // Restore the chain to the state it was in before optimization.
+    restoreChainPose(chain, savedPose);
+
+    // Apply the optimal k values via setJointK so the sidebar updates.
+    for (let i = 0; i < numJoints; i++) {
+        setJointK(i, kValues[i]);
+    }
+
+    console.log('Optimized k values:', kValues.map(k => k.toFixed(4)).join(', '));
+    return kValues;
+}
+
 window.appActions = {
     playPreviewAnimation,
     exportDXF,
@@ -1417,7 +1539,8 @@ window.appActions = {
     calculateCurrentSkeletonLength: () => calculateCurrentSkeletonLength(),
     calculateInitialLineLength: () => calculateInitialLineLength(),
     calculateFinalLineLength: () => calculateFinalLineLength(),
-    calculateInitialAndFinalLineLengths: () => calculateInitialAndFinalLineLengths()
+    calculateInitialAndFinalLineLengths: () => calculateInitialAndFinalLineLengths(),
+    findKsMinimizingChainSkeletonDistance: () => findKsMinimizingChainSkeletonDistance()
 };
 
 // Listen for video frame changes and sync canvas state

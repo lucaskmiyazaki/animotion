@@ -169,6 +169,19 @@ function renderJointKInputs() {
     }
 }
 
+const fitKButton = createButton('Fit k to skeleton', () => {
+    fitKButton.disabled = true;
+    fitKButton.textContent = 'Fitting…';
+    // Run asynchronously so the UI can repaint first.
+    setTimeout(() => {
+        window.appActions?.findKsMinimizingChainSkeletonDistance?.();
+        renderJointKInputs();
+        fitKButton.disabled = false;
+        fitKButton.textContent = 'Fit k to skeleton';
+    }, 20);
+});
+fitKButton.classList.add('fit-k-button');
+
 const energyDisplay = document.createElement('div');
 energyDisplay.className = 'energy-display';
 energyDisplay.textContent = 'Elastic Energy: 0';
@@ -195,6 +208,7 @@ chainOptionsSection.append(
     holeOptionLabel,
     jointsOptionLabel,
     jointKContainer,
+    fitKButton,
     energyDisplay,
     lineLengthDisplay,
     skeletonLengthDisplay
