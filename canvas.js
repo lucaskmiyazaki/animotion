@@ -26,7 +26,8 @@ let jointsEnabled = false;
 const jointKByIndex = {};
 
 // Default trapezoid thickness
-const trapezoidThickness = 50;
+let chainThickness = 50;
+let jointMinimumThickness = 5;
 const pointRadius = 5;
 const hoverRadius = 9;
 const hitRadius = 10;
@@ -103,6 +104,88 @@ function getJointKValues(chain) {
         values.push(getJointK(i));
     }
     return values;
+}
+
+function getChainThickness() {
+    return chainThickness;
+}
+
+function setChainThickness(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    chainThickness = parsed;
+    emitChainStateChange();
+    redrawAll();
+}
+
+function getJointMinimumThickness() {
+    return jointMinimumThickness;
+}
+
+function setJointMinimumThickness(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    jointMinimumThickness = parsed;
+    emitChainStateChange();
+    redrawAll();
+}
+
+function getJointGammaDegrees(chain, linkIndex) {
+    const activeChain = chain || getMainChain();
+    const trapezoids = activeChain?.getTrapezoids?.() ?? [];
+    if (!activeChain || linkIndex <= 0 || linkIndex >= trapezoids.length) {
+        return 0;
+    }
+
+    const prev = trapezoids[linkIndex - 1];
+    const curr = trapezoids[linkIndex];
+    const theta = Math.abs(shortestAngleDifference(prev.rotation, curr.rotation));
+    const a1 = (prev.trapezoid.angleRight * 360) / Math.PI;
+    const a2 = (curr.trapezoid.angleLeft * 360) / Math.PI;
+    const gamma = 180 - theta - a1 - a2;
+    return Math.max(gamma, 0.001);
+}
+
+function getJointThicknesses(chain) {
+    const activeChain = chain || getMainChain();
+    const count = getJointCount(activeChain);
+    if (!activeChain || count <= 0) {
+        return [];
+    }
+
+    const raw = [];
+    for (let i = 0; i < count; i++) {
+        const gamma = getJointGammaDegrees(activeChain, i + 1);
+        const tanHalfGamma = Math.tan((gamma * Math.PI / 180) / 2);
+        const safeTan = Math.max(tanHalfGamma, 1e-6);
+        const k = Math.max(getJointK(i), 1e-8);
+        raw.push(Math.sqrt(k * safeTan));
+    }
+
+    const minRaw = Math.min(...raw);
+    if (!Number.isFinite(minRaw) || minRaw <= 0) {
+        return Array(count).fill(jointMinimumThickness);
+    }
+
+    const scale = jointMinimumThickness / minRaw;
+    return raw.map(value => value * scale);
+}
+
+function updateJointKFromThicknessModel(chain) {
+    const activeChain = chain || getMainChain();
+    const count = getJointCount(activeChain);
+    if (!activeChain || count <= 0) {
+        return;
+    }
+
+    const thicknesses = getJointThicknesses(activeChain);
+    for (let i = 0; i < count; i++) {
+        const gamma = getJointGammaDegrees(activeChain, i + 1);
+        const tanHalfGamma = Math.tan((gamma * Math.PI / 180) / 2);
+        const safeTan = Math.max(tanHalfGamma, 1e-6);
+        const k = (thicknesses[i] * thicknesses[i]) / safeTan;
+        jointKByIndex[i] = Math.max(k, 1e-6);
+    }
 }
 
 // Elastic potential energy at current frame:
@@ -721,8 +804,8 @@ function drawChain(chain) {
         }
 
         // Shift the line outside the links by joint thickness.
-        const k = getJointK(i - 1);
-        const jointThickness = (((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10) * k;
+        const thicknesses = getJointThicknesses(chain);
+        const jointThickness = thicknesses[i - 1] ?? jointMinimumThickness;
         const normal = { x: -bisector.y, y: bisector.x };
         const anchorA = add(pivot, mul(normal, jointThickness));
         const anchorB = add(pivot, mul(normal, -jointThickness));
@@ -1088,7 +1171,7 @@ function buildChain() {
     const chain = new Chain();
     chain.buildFromSkeleton(
         skeleton,
-        trapezoidThickness,
+        chainThickness,
         skeleton.points[0].x,
         skeleton.points[0].y
     );
@@ -1534,6 +1617,11 @@ window.appActions = {
     getJointCount: () => getJointCount(),
     getJointK: (jointIndex) => getJointK(jointIndex),
     setJointK: (jointIndex, value) => setJointK(jointIndex, value),
+    getChainThickness: () => getChainThickness(),
+    setChainThickness: (value) => setChainThickness(value),
+    getJointMinimumThickness: () => getJointMinimumThickness(),
+    setJointMinimumThickness: (value) => setJointMinimumThickness(value),
+    getJointThicknesses: () => getJointThicknesses(),
     calculateTotalElasticEnergy: () => calculateTotalElasticEnergy(),
     calculateTotalLineLength: () => calculateTotalLineLength(),
     calculateCurrentSkeletonLength: () => calculateCurrentSkeletonLength(),

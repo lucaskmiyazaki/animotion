@@ -129,6 +129,52 @@ jointsOptionText.textContent = 'Joints';
 
 jointsOptionLabel.append(jointsCheckbox, jointsOptionText);
 
+const chainThicknessRow = document.createElement('div');
+chainThicknessRow.className = 'joint-k-row';
+
+const chainThicknessLabel = document.createElement('label');
+chainThicknessLabel.className = 'joint-k-label';
+chainThicknessLabel.textContent = 'Chain thickness';
+
+const chainThicknessInput = document.createElement('input');
+chainThicknessInput.className = 'joint-k-input';
+chainThicknessInput.type = 'number';
+chainThicknessInput.min = '0.1';
+chainThicknessInput.step = '0.1';
+chainThicknessInput.value = String(window.appActions?.getChainThickness?.() ?? 50);
+chainThicknessInput.addEventListener('change', () => {
+    const parsed = Number.parseFloat(chainThicknessInput.value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+        window.appActions?.setChainThickness?.(parsed);
+    }
+});
+
+chainThicknessRow.append(chainThicknessLabel, chainThicknessInput);
+
+const jointMinThicknessRow = document.createElement('div');
+jointMinThicknessRow.className = 'joint-k-row';
+
+const jointMinThicknessLabel = document.createElement('label');
+jointMinThicknessLabel.className = 'joint-k-label';
+jointMinThicknessLabel.textContent = 'Joint min thickness';
+
+const jointMinThicknessInput = document.createElement('input');
+jointMinThicknessInput.className = 'joint-k-input';
+jointMinThicknessInput.type = 'number';
+jointMinThicknessInput.min = '0.1';
+jointMinThicknessInput.step = '0.1';
+jointMinThicknessInput.value = String(window.appActions?.getJointMinimumThickness?.() ?? 5);
+jointMinThicknessInput.addEventListener('change', () => {
+    const parsed = Number.parseFloat(jointMinThicknessInput.value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+        window.appActions?.setJointMinimumThickness?.(parsed);
+        renderJointKInputs();
+        updateEnergyAndLengthDisplay();
+    }
+});
+
+jointMinThicknessRow.append(jointMinThicknessLabel, jointMinThicknessInput);
+
 const jointKContainer = document.createElement('div');
 jointKContainer.className = 'joint-k-container';
 
@@ -194,24 +240,35 @@ const skeletonLengthDisplay = document.createElement('div');
 skeletonLengthDisplay.className = 'energy-display';
 skeletonLengthDisplay.textContent = 'Skeleton Length: 0';
 
+const jointThicknessDisplay = document.createElement('div');
+jointThicknessDisplay.className = 'energy-display';
+jointThicknessDisplay.textContent = 'Joint Thicknesses: -';
+
 function updateEnergyAndLengthDisplay() {
     const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
     const totalL = window.appActions?.calculateTotalLineLength?.() ?? 0;
     const skeletonLength = window.appActions?.calculateCurrentSkeletonLength?.() ?? 0;
+    const jointThicknesses = window.appActions?.getJointThicknesses?.() ?? [];
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
     lineLengthDisplay.textContent = `L: ${totalL.toFixed(2)}`;
     skeletonLengthDisplay.textContent = `Skeleton Length: ${skeletonLength.toFixed(2)}`;
+    jointThicknessDisplay.textContent = jointThicknesses.length > 0
+        ? `Joint Thicknesses: ${jointThicknesses.map(v => v.toFixed(2)).join(', ')}`
+        : 'Joint Thicknesses: -';
 }
 
 chainOptionsSection.append(
     chainOptionsTitle,
     holeOptionLabel,
     jointsOptionLabel,
+    chainThicknessRow,
+    jointMinThicknessRow,
     jointKContainer,
     fitKButton,
     energyDisplay,
     lineLengthDisplay,
-    skeletonLengthDisplay
+    skeletonLengthDisplay,
+    jointThicknessDisplay
 );
 
 
