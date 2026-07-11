@@ -1437,8 +1437,8 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// Computes the total distance between each link's ending-edge midpoint and its
-// corresponding skeleton segment (same metric used in computeStartRotationsFromRefSkeleton).
+// Computes total chain-skeleton error using both edge midpoints of each link.
+// The last mapped skeleton segment is treated as an infinite imaginary line.
 function computeChainSkeletonError(chain, skeleton) {
     const trapezoids = chain?.getTrapezoids?.() ?? [];
     const lines = skeleton?.lines ?? [];
@@ -1449,8 +1449,11 @@ function computeChainSkeletonError(chain, skeleton) {
     for (let i = 0; i < count; i++) {
         const item = trapezoids[i];
         const pts = item.trapezoid.getPoints(item.position, item.rotation);
-        // Ending-edge midpoint (right edge midpoint of each link)
-        const endMid = {
+        const leftMid = {
+            x: (pts[0].x + pts[3].x) / 2,
+            y: (pts[0].y + pts[3].y) / 2
+        };
+        const rightMid = {
             x: (pts[1].x + pts[2].x) / 2,
             y: (pts[1].y + pts[2].y) / 2
         };
@@ -1462,20 +1465,33 @@ function computeChainSkeletonError(chain, skeleton) {
         const lenSq = dx * dx + dy * dy;
         let dist;
         if (lenSq < 1e-10) {
-            dist = Math.hypot(endMid.x - lineStart.x, endMid.y - lineStart.y);
+            const dLeft = Math.hypot(leftMid.x - lineStart.x, leftMid.y - lineStart.y);
+            const dRight = Math.hypot(rightMid.x - lineStart.x, rightMid.y - lineStart.y);
+            dist = dLeft + dRight;
         } else {
-            const t = Math.max(0, Math.min(1,
-                ((endMid.x - lineStart.x) * dx + (endMid.y - lineStart.y) * dy) / lenSq
-            ));
-            dist = Math.hypot(endMid.x - (lineStart.x + t * dx), endMid.y - (lineStart.y + t * dy));
+            const rawTLeft = ((leftMid.x - lineStart.x) * dx + (leftMid.y - lineStart.y) * dy) / lenSq;
+            const rawTRight = ((rightMid.x - lineStart.x) * dx + (rightMid.y - lineStart.y) * dy) / lenSq;
+            const isLastMappedSegment = i === count - 1;
+
+            const tLeft = isLastMappedSegment ? rawTLeft : Math.max(0, Math.min(1, rawTLeft));
+            const tRight = isLastMappedSegment ? rawTRight : Math.max(0, Math.min(1, rawTRight));
+
+            const projLeftX = lineStart.x + tLeft * dx;
+            const projLeftY = lineStart.y + tLeft * dy;
+            const projRightX = lineStart.x + tRight * dx;
+            const projRightY = lineStart.y + tRight * dy;
+
+            const dLeft = Math.hypot(leftMid.x - projLeftX, leftMid.y - projLeftY);
+            const dRight = Math.hypot(rightMid.x - projRightX, rightMid.y - projRightY);
+            dist = dLeft + dRight;
         }
         totalError += dist;
     }
     return totalError;
 }
 
-// Finds the k values (one per joint) that minimize the summed chain-skeleton
-// distance across every frame that has a skeleton, using numerical gradient descent.
+// Finds globally optimized k values (one per joint) minimizing summed
+// chain-skeleton error across all available frames.
 function findKsMinimizingChainSkeletonDistance() {
     const chain = getMainChain();
     if (!chain || chain.getTrapezoids().length <= 1) {
@@ -1528,23 +1544,77 @@ function findKsMinimizingChainSkeletonDistance() {
     }
 
     let kValues = Array.from({ length: numJoints }, (_, i) => Math.max(0.01, getJointK(i)));
-    const learningRate = 0.005;
-    const epsilon = 0.1;
-    const maxIterations = 60;
+    let bestError = evaluateTotalError(kValues);
 
-    for (let iter = 0; iter < maxIterations; iter++) {
-        const baseError = evaluateTotalError(kValues);
-        const gradients = kValues.map((k, i) => {
-            const testKs = kValues.slice();
-            testKs[i] = k + epsilon;
-            const errorPlus = evaluateTotalError(testKs);
-            return (errorPlus - baseError) / epsilon;
-        });
+    // Global coordinate search over all joints.
+    const maxPasses = 14;
+    let additiveStep = 0.5;
+    let multiplicativeStep = 0.35;
 
-        const newKValues = kValues.map((k, i) => Math.max(0.01, k - learningRate * gradients[i]));
-        const converged = newKValues.every((k, i) => Math.abs(k - kValues[i]) < 1e-5);
-        kValues = newKValues;
-        if (converged) break;
+    for (let pass = 0; pass < maxPasses; pass++) {
+        let improvedInPass = false;
+
+        for (let i = 0; i < numJoints; i++) {
+            const base = Math.max(0.01, kValues[i]);
+            const candidates = [
+                Math.max(0.01, base - additiveStep),
+                base + additiveStep,
+                Math.max(0.01, base * (1 - multiplicativeStep)),
+                base * (1 + multiplicativeStep),
+                Math.max(0.01, base * 0.5),
+                base * 1.8
+            ];
+
+            let localBestK = base;
+            let localBestError = bestError;
+
+            for (const candidate of candidates) {
+                if (!Number.isFinite(candidate)) continue;
+                const testKValues = kValues.slice();
+                testKValues[i] = candidate;
+                const error = evaluateTotalError(testKValues);
+                if (error + 1e-9 < localBestError) {
+                    localBestError = error;
+                    localBestK = candidate;
+                }
+            }
+
+            if (localBestK !== base) {
+                kValues[i] = localBestK;
+                bestError = localBestError;
+                improvedInPass = true;
+            }
+        }
+
+        if (!improvedInPass) {
+            additiveStep *= 0.5;
+            multiplicativeStep *= 0.6;
+            if (additiveStep < 0.01 && multiplicativeStep < 0.05) {
+                break;
+            }
+        }
+    }
+
+    // Fallback coarse absolute search.
+    const absoluteCandidates = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10];
+    for (let i = 0; i < numJoints; i++) {
+        let localBestK = kValues[i];
+        let localBestError = bestError;
+
+        for (const candidate of absoluteCandidates) {
+            const testKValues = kValues.slice();
+            testKValues[i] = candidate;
+            const error = evaluateTotalError(testKValues);
+            if (error + 1e-9 < localBestError) {
+                localBestError = error;
+                localBestK = candidate;
+            }
+        }
+
+        if (localBestK !== kValues[i]) {
+            kValues[i] = localBestK;
+            bestError = localBestError;
+        }
     }
 
     // Restore the chain to the state it was in before optimization.

@@ -62,21 +62,22 @@ class Chain {
         this.trapezoids = [];
     }
 
-    // Returns the closest point on segment AB to point P
-    _closestPointOnLine(point, lineStart, lineEnd) {
+    // Returns the closest point on AB to point P.
+    // If treatAsInfinite is true, AB is treated as an infinite line.
+    _closestPointOnLine(point, lineStart, lineEnd, treatAsInfinite = false) {
         const dx = lineEnd.x - lineStart.x;
         const dy = lineEnd.y - lineStart.y;
         const lenSq = dx * dx + dy * dy;
         if (lenSq < 1e-10) return { x: lineStart.x, y: lineStart.y };
-        const t = Math.max(0, Math.min(1,
-            ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lenSq
-        ));
+        const rawT = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lenSq;
+        const t = treatAsInfinite ? rawT : Math.max(0, Math.min(1, rawT));
         return { x: lineStart.x + t * dx, y: lineStart.y + t * dy };
     }
 
-    // Returns the distance from point P to segment AB
-    _distancePointToLine(point, lineStart, lineEnd) {
-        const Q = this._closestPointOnLine(point, lineStart, lineEnd);
+    // Returns the distance from point P to AB.
+    // If treatAsInfinite is true, AB is treated as an infinite line.
+    _distancePointToLine(point, lineStart, lineEnd, treatAsInfinite = false) {
+        const Q = this._closestPointOnLine(point, lineStart, lineEnd, treatAsInfinite);
         return Math.hypot(point.x - Q.x, point.y - Q.y);
     }
 
@@ -181,6 +182,39 @@ class Chain {
             x: (pts[1].x + pts[2].x) / 2,
             y: (pts[1].y + pts[2].y) / 2
         };
+    }
+
+    _getEdgeMidpoints(item, position, rotation) {
+        const pts = item.trapezoid.getPoints(position, rotation);
+        return {
+            leftMid: {
+                x: (pts[0].x + pts[3].x) / 2,
+                y: (pts[0].y + pts[3].y) / 2
+            },
+            rightMid: {
+                x: (pts[1].x + pts[2].x) / 2,
+                y: (pts[1].y + pts[2].y) / 2
+            }
+        };
+    }
+
+    _computeTotalAlignmentError(targetSegments) {
+        const count = Math.min(this.trapezoids.length, targetSegments.length);
+        let totalError = 0;
+
+        for (let i = 0; i < count; i++) {
+            const segment = targetSegments[i];
+            if (!segment) continue;
+
+            const item = this.trapezoids[i];
+            const { leftMid, rightMid } = this._getEdgeMidpoints(item, item.position, item.rotation);
+            const useInfinite = Boolean(segment.treatAsInfinite);
+
+            totalError += this._distancePointToLine(leftMid, segment.start, segment.end, useInfinite);
+            totalError += this._distancePointToLine(rightMid, segment.start, segment.end, useInfinite);
+        }
+
+        return totalError;
     }
 
     // Returns the intersection point of infinite lines through (p1,p2) and (p3,p4), or null if parallel
@@ -347,10 +381,9 @@ class Chain {
         this.positionAllLinksFromRotations();
     }
 
-    // Compute startRotation for each link by greedily fitting the chain to an
-    // aligned version of refSkeleton. The error is the distance from the midpoint
-    // of each link's ending edge to the closest point on the corresponding frame-0
-    // skeleton segment, and the frame-0 theta values are used as the initial guess.
+    // Compute startRotation by globally minimizing alignment error against an
+    // aligned version of refSkeleton. Each link uses both left and right edge
+    // midpoints for error, and the last skeleton segment is treated as infinite.
     computeStartRotationsFromRefSkeleton(refSkeleton) {
         const trapezoids = this.trapezoids;
         if (trapezoids.length === 0 || !refSkeleton || refSkeleton.lines.length === 0) return;
@@ -396,35 +429,69 @@ class Chain {
         const alignedSegments = refSkeleton.lines.map((line, i) => ({
             start: alignedPoints[i],
             end: alignedPoints[i + 1],
-            angle: alignedLineAngles[i]
+            angle: alignedLineAngles[i],
+            treatAsInfinite: i === refSkeleton.lines.length - 1
         }));
 
-        // Greedy forward pass: for each link i, choose startRotation[i] so the
-        // midpoint of its ending edge is as close as possible to the aligned
-        // frame-0 skeleton segment.
+        const applyAndClampRotations = (rotations) => {
+            for (let i = 0; i < trapezoids.length; i++) {
+                trapezoids[i].rotation = rotations[i];
+            }
+            this.positionAllLinksFromRotations();
+            return trapezoids.map(item => item.rotation);
+        };
 
-        trapezoids.forEach(item => {
-            item.rotation = item.startRotation;
-        });
-        this.positionAllLinksFromRotations();
+        let bestRotations = applyAndClampRotations(
+            trapezoids.map((item, i) => alignedSegments[i]?.angle ?? item.startRotation ?? item.flatRotation)
+        );
+        let bestError = this._computeTotalAlignmentError(alignedSegments);
 
-        for (let i = 0; i < trapezoids.length; i++) {
-            const item = trapezoids[i];
-            if (i >= alignedSegments.length) {
-                item.startRotation = alignedSegments[i] ? alignedSegments[i].angle : item.flatRotation;
-                item.rotation = item.startRotation;
-                this.positionAllLinksFromRotations();
-                break;
+        // Global coordinate-descent over all link rotations.
+        let step = 12;
+        const minStep = 0.25;
+        const maxOuterIterations = 60;
+
+        for (let outer = 0; outer < maxOuterIterations && step >= minStep; outer++) {
+            let improved = false;
+
+            for (let i = 0; i < trapezoids.length; i++) {
+                let localBestError = bestError;
+                let localBestRotations = bestRotations;
+                const base = bestRotations[i];
+                const candidates = [base - step, base + step, base - 2 * step, base + 2 * step];
+
+                for (const candidate of candidates) {
+                    const testInput = bestRotations.slice();
+                    testInput[i] = candidate;
+                    const testRotations = applyAndClampRotations(testInput);
+                    const testError = this._computeTotalAlignmentError(alignedSegments);
+
+                    if (testError + 1e-9 < localBestError) {
+                        localBestError = testError;
+                        localBestRotations = testRotations;
+                    }
+                }
+
+                if (localBestError + 1e-9 < bestError) {
+                    bestError = localBestError;
+                    bestRotations = localBestRotations;
+                    improved = true;
+                }
+
+                bestRotations = applyAndClampRotations(bestRotations);
             }
 
-            const targetSegment = alignedSegments[i];
-            const initialGuess = targetSegment.angle;
-
-            item.startRotation = this._searchBestRotationForSegment(item, targetSegment, initialGuess);
-            // _searchBestRotationForSegment already constrains item.rotation; sync startRotation
-            item.startRotation = item.rotation;
-            this.positionAllLinksFromRotations();
+            if (!improved) {
+                step /= 2;
+            }
         }
+
+        bestRotations = applyAndClampRotations(bestRotations);
+        trapezoids.forEach((item, i) => {
+            item.startRotation = bestRotations[i];
+            item.rotation = bestRotations[i];
+        });
+        this.positionAllLinksFromRotations();
     }
 
     /**
