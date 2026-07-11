@@ -52,16 +52,12 @@ function gatherChainState(frameChains, frameChainBuilt) {
         .filter(Number.isInteger)
         .sort((a, b) => a - b);
 
-    console.log('gatherChainState: frameChains keys=', Object.keys(frameChains), 'frameChainBuilt keys=', Object.keys(frameChainBuilt));
-    console.log('gatherChainState: frameIndices=', frameIndices);
-
     return {
         frameCount: frameIndices.length,
         frames: frameIndices.map(frameIndex => {
             const chain = frameChains[frameIndex];
             const chainBuilt = Boolean(frameChainBuilt[frameIndex]);
             const serialized = chain?.toSerializable?.();
-            console.log(`  Frame ${frameIndex}: chainBuilt=${chainBuilt}, has chain=${!!chain}, trapezoids=${serialized?.trapezoids?.length ?? 0}`);
             return {
                 frameIndex,
                 chainBuilt,
@@ -90,12 +86,6 @@ async function getProjectStateSnapshot(stateRefs) {
         selectedPoint,
         getCurrentSkeleton
     } = stateRefs;
-
-    console.log('getProjectStateSnapshot called with:');
-    console.log('  frameSkeletons keys:', Object.keys(frameSkeletons));
-    console.log('  frameChains keys:', Object.keys(frameChains));
-    console.log('  frameChainBuilt keys:', Object.keys(frameChainBuilt));
-    console.log('  currentFrameIndex:', currentFrameIndex);
 
     const videoState = await window.videoControls?.getSerializableState?.();
 
@@ -133,9 +123,6 @@ async function getProjectStateSnapshot(stateRefs) {
  */
 async function saveProjectToFile(snapshot, fileName = 'project') {
     try {
-        console.log('saveProjectToFile: saving snapshot with chain data:');
-        console.log('  chain.frameCount:', snapshot.chain?.frameCount);
-        console.log('  chain.frames:', snapshot.chain?.frames?.map(f => ({ frameIndex: f.frameIndex, hasChain: !!f.chain, trapezoids: f.chain?.trapezoids?.length })));
         const json = JSON.stringify(snapshot, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -146,7 +133,6 @@ async function saveProjectToFile(snapshot, fileName = 'project') {
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
-        console.log('Project saved:', fileName);
     } catch (error) {
         console.error('Error saving project:', error);
         throw error;
@@ -216,7 +202,6 @@ function triggerLoadProject(onLoad) {
             if (!file) return;
             const snapshot = await loadProjectFromFile(file);
             await onLoad(snapshot);
-            console.log('Project loaded successfully');
         } catch (error) {
             console.error('Failed to load project:', error);
             alert('Error loading project: ' + error.message);
@@ -236,7 +221,6 @@ function triggerLoadProject(onLoad) {
  */
 async function restoreVideoState(videoSnapshot, seekNow = false) {
     if (!videoSnapshot || !videoSnapshot.video) {
-        console.log('No video in snapshot');
         return;
     }
 
@@ -244,31 +228,23 @@ async function restoreVideoState(videoSnapshot, seekNow = false) {
     const frameIndexMap = videoSnapshot.frameIndexMap || [];
 
     try {
-        console.log(`Restoring video: ${name}, ${frameIndexMap.length} frames mapped`);
-        
         // Convert dataURL back to File
         const response = await fetch(dataURL);
         const blob = await response.blob();
         const file = new File([blob], name, { type });
 
         // Load video file and WAIT for it to fully load
-        console.log('Loading video file...');
         await window.videoControls?.loadVideoFile?.(file);
-        console.log('Video loaded, now restoring frame mapping');
 
         // NOW restore frame index map (after video has initialized)
         if (frameIndexMap.length > 0) {
-            console.log(`Restoring frameIndexMap with ${frameIndexMap.length} frames: [${frameIndexMap.slice(0,5).join(',')}...]`);
             window.videoControls?.setFrameIndexMap?.(frameIndexMap);
         }
 
         // Seek to saved frame (only if seekNow is true)
         if (seekNow && videoSnapshot.currentFrameIndex !== undefined) {
-            console.log(`Seeking to frame ${videoSnapshot.currentFrameIndex}`);
             window.videoControls?.showFrameIndex?.(videoSnapshot.currentFrameIndex);
         }
-
-        console.log('Video state restored');
     } catch (error) {
         console.error('Error restoring video:', error);
     }
@@ -309,7 +285,6 @@ function restoreSkeletonState(skeletonSnapshot) {
             window.appActions?.setSkeletonForFrame?.(frameIndex, newSkeleton);
         });
 
-        console.log('Skeleton state restored');
     } catch (error) {
         console.error('Error restoring skeleton:', error);
     }
@@ -321,17 +296,12 @@ function restoreSkeletonState(skeletonSnapshot) {
  */
 function restoreChainState(chainSnapshot) {
     if (!chainSnapshot || !chainSnapshot.frames) {
-        console.log('No chain snapshot to restore');
         return;
     }
 
     try {
-        console.log(`Restoring chain for ${chainSnapshot.frames.length} frames`);
-        console.log('chainSnapshot.frames:', chainSnapshot.frames);
         chainSnapshot.frames.forEach(({ frameIndex, chainBuilt, chain }) => {
-            console.log(`  Processing frame ${frameIndex}: chainBuilt=${chainBuilt}, chain=${!!chain}`);
             if (!chainBuilt || !chain) {
-                console.log(`    Skipping: no chain data`);
                 return;
             }
 
@@ -339,16 +309,11 @@ function restoreChainState(chainSnapshot) {
             const ChainCtor = window.Chain || (typeof Chain !== 'undefined' ? Chain : null);
             if (ChainCtor && ChainCtor.fromSerializable) {
                 const restoredChain = ChainCtor.fromSerializable(chain);
-                const trapezoidCount = restoredChain.getTrapezoids().length;
-                console.log(`    Restored chain with ${trapezoidCount} trapezoids`);
-                console.log(`    Calling setChainForFrame(${frameIndex}, chain, ${chainBuilt})`);
                 window.appActions?.setChainForFrame?.(frameIndex, restoredChain, chainBuilt);
             } else {
                 console.warn('Chain class not available for deserialization');
             }
         });
-
-        console.log('Chain state restored, frameChains now contains:', Object.keys(window.appActions?.getProjectStateRefs?.().frameChains ?? {}));
     } catch (error) {
         console.error('Error restoring chain:', error);
     }
@@ -371,7 +336,6 @@ function restoreUIState(uiSnapshot) {
             window.videoControls?.showFrameIndex?.(uiSnapshot.currentFrameIndex);
         }
 
-        console.log('UI state restored');
     } catch (error) {
         console.error('Error restoring UI state:', error);
     }
@@ -383,8 +347,6 @@ function restoreUIState(uiSnapshot) {
  */
 async function restoreProjectSnapshot(snapshot) {
     try {
-        console.log('Restoring project snapshot...');
-
         // 1. Restore video first but DON'T seek yet (needed for frame context)
         await restoreVideoState(snapshot.video, false);
 
@@ -404,8 +366,6 @@ async function restoreProjectSnapshot(snapshot) {
 
         // 5. Restore UI state
         restoreUIState(snapshot.ui);
-
-        console.log('Project fully restored');
     } catch (error) {
         console.error('Error restoring project:', error);
         throw error;

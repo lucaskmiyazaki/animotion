@@ -365,8 +365,6 @@ class Chain {
 
             item.position.x += dx * fraction;
             item.position.y += dy * fraction;
-
-            console.log(dr)
             item.rotation += dr * fraction;
 
         });

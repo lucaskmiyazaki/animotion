@@ -290,8 +290,6 @@ function calculateInitialAndFinalLineLengths() {
 
     restoreChainPose(chain, savedPose);
 
-    console.log(`L initial=${initialL.toFixed(2)}, L final=${finalL.toFixed(2)}`);
-
     return { initialL, finalL };
 }
 
@@ -312,6 +310,20 @@ function getJointAngleInitials(chain) {
         const prev = trapezoids[i - 1];
         const item = trapezoids[i];
         angles.push(shortestAngleDifference(prev.startRotation, item.startRotation));
+    }
+
+    return angles;
+}
+
+function getCurrentJointAngles(chain) {
+    const activeChain = chain || getMainChain();
+    const trapezoids = activeChain?.getTrapezoids?.() ?? [];
+    const angles = [];
+
+    for (let i = 1; i < trapezoids.length; i++) {
+        const prev = trapezoids[i - 1];
+        const item = trapezoids[i];
+        angles.push(shortestAngleDifference(prev.rotation, item.rotation));
     }
 
     return angles;
@@ -429,19 +441,23 @@ function solveMinimalEnergyAnglesForTargetL(chain, targetL, maxIterations = 80) 
     }
 
     const initialAngles = getJointAngleInitials(activeChain);
-    let angles = initialAngles.slice();
+    const currentAngles = getCurrentJointAngles(activeChain);
+    let angles = currentAngles.length === initialAngles.length
+        ? currentAngles.slice()
+        : initialAngles.slice();
     angles = clampJointAngles(activeChain, angles);
 
     const learningRate = 0.08;
     const penaltyWeight = 12;
     const epsilon = 0.25;
+    const minIterations = 10;
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
         applyJointAngles(activeChain, angles);
         const currentL = calculateTotalLineLength(activeChain);
         const lError = currentL - targetL;
 
-        if (Math.abs(lError) < 0.5) {
+        if (iteration >= minIterations && Math.abs(lError) < 0.5) {
             break;
         }
 
@@ -1166,7 +1182,6 @@ function buildChain() {
     drawingFinished = true;
 
     skeleton.updateAllGeometry();
-    console.log(skeleton);
 
     const chain = new Chain();
     chain.buildFromSkeleton(
@@ -1495,13 +1510,11 @@ function computeChainSkeletonError(chain, skeleton) {
 function findKsMinimizingChainSkeletonDistance() {
     const chain = getMainChain();
     if (!chain || chain.getTrapezoids().length <= 1) {
-        console.log('No chain to optimize');
         return;
     }
 
     const numJoints = getJointCount(chain);
     if (numJoints === 0) {
-        console.log('No joints to optimize');
         return;
     }
 
@@ -1512,7 +1525,6 @@ function findKsMinimizingChainSkeletonDistance() {
         .sort((a, b) => a - b);
 
     if (framesWithSkeletons.length === 0) {
-        console.log('No frames with skeletons found');
         return;
     }
 
@@ -1533,26 +1545,36 @@ function findKsMinimizingChainSkeletonDistance() {
 
         let totalError = 0;
         for (const frameIndex of framesWithSkeletons) {
+            // Keep each frame evaluation independent.
+            restoreChainPose(chain, savedPose);
+
             const t = maxFrameIndex > 0 ? Math.min(frameIndex / maxFrameIndex, 1) : 0;
             const rawTargetL = initialL + (finalL - initialL) * t;
             const targetL = Math.max(minL, Math.min(maxL, rawTargetL));
             applyChainAtTargetL(chain, targetL);
-            totalError += computeChainSkeletonError(chain, frameSkeletons[frameIndex]);
+
+            const skeleton = frameSkeletons[frameIndex];
+            alignChainRootToSkeleton(chain, skeleton);
+            totalError += computeChainSkeletonError(chain, skeleton);
         }
 
         return totalError;
     }
 
     let kValues = Array.from({ length: numJoints }, (_, i) => Math.max(0.01, getJointK(i)));
-    let bestError = evaluateTotalError(kValues);
+    const initialError = evaluateTotalError(kValues);
+    let bestError = initialError;
 
     // Global coordinate search over all joints.
     const maxPasses = 14;
     let additiveStep = 0.5;
     let multiplicativeStep = 0.35;
 
+    console.log(`Fit k start: error=${bestError.toFixed(4)}, joints=${numJoints}, frames=${framesWithSkeletons.length}`);
+
     for (let pass = 0; pass < maxPasses; pass++) {
         let improvedInPass = false;
+        const passStartError = bestError;
 
         for (let i = 0; i < numJoints; i++) {
             const base = Math.max(0.01, kValues[i]);
@@ -1593,10 +1615,16 @@ function findKsMinimizingChainSkeletonDistance() {
                 break;
             }
         }
+
+        console.log(
+            `Fit k pass ${pass + 1}: error ${passStartError.toFixed(4)} -> ${bestError.toFixed(4)}, ` +
+            `improved=${improvedInPass}, addStep=${additiveStep.toFixed(4)}, mulStep=${multiplicativeStep.toFixed(4)}`
+        );
     }
 
     // Fallback coarse absolute search.
     const absoluteCandidates = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10];
+    const fallbackStartError = bestError;
     for (let i = 0; i < numJoints; i++) {
         let localBestK = kValues[i];
         let localBestError = bestError;
@@ -1617,6 +1645,8 @@ function findKsMinimizingChainSkeletonDistance() {
         }
     }
 
+    console.log(`Fit k fallback: error ${fallbackStartError.toFixed(4)} -> ${bestError.toFixed(4)}`);
+
     // Restore the chain to the state it was in before optimization.
     restoreChainPose(chain, savedPose);
 
@@ -1625,7 +1655,8 @@ function findKsMinimizingChainSkeletonDistance() {
         setJointK(i, kValues[i]);
     }
 
-    console.log('Optimized k values:', kValues.map(k => k.toFixed(4)).join(', '));
+    console.log(`Fit k error: ${initialError.toFixed(4)} -> ${bestError.toFixed(4)}`);
+    console.log('Fit k values:', kValues.map(k => k.toFixed(4)).join(', '));
     return kValues;
 }
 
