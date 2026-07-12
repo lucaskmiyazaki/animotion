@@ -1321,6 +1321,15 @@ function switchToCreateMode() {
     return mode;
 }
 
+function switchToEditMode() {
+    mode = 'edit';
+    canvas.classList.remove('create-mode');
+    draggedPoint = null;
+    selectedPoint = null;
+    emitModeChange();
+    return mode;
+}
+
 function getMode() {
     return mode;
 }
@@ -1359,6 +1368,77 @@ function cloneSkeleton(sourceSkeleton) {
 
     newSkeleton.updateAllGeometry();
     return newSkeleton;
+}
+
+function resampleCurrentSkeleton(targetPointCount) {
+    if (!isSkeletonEditable()) return false;
+
+    const skeleton = getCurrentSkeleton();
+    if (!skeleton || !Array.isArray(skeleton.points) || skeleton.points.length < 2) {
+        return false;
+    }
+
+    const requestedCount = Math.round(Number(targetPointCount));
+    if (!Number.isInteger(requestedCount) || requestedCount < 2) {
+        return false;
+    }
+
+    const sourcePoints = skeleton.points;
+    const cumulative = [0];
+    let totalLength = 0;
+
+    for (let i = 1; i < sourcePoints.length; i++) {
+        const prev = sourcePoints[i - 1];
+        const curr = sourcePoints[i];
+        totalLength += Math.hypot(curr.x - prev.x, curr.y - prev.y);
+        cumulative.push(totalLength);
+    }
+
+    if (!Number.isFinite(totalLength) || totalLength <= 1e-8) {
+        return false;
+    }
+
+    const sampledPoints = [];
+    let segmentIndex = 1;
+
+    for (let i = 0; i < requestedCount; i++) {
+        const targetDistance = (totalLength * i) / (requestedCount - 1);
+
+        while (segmentIndex < cumulative.length - 1 && cumulative[segmentIndex] < targetDistance) {
+            segmentIndex += 1;
+        }
+
+        const startIdx = Math.max(segmentIndex - 1, 0);
+        const endIdx = Math.min(segmentIndex, sourcePoints.length - 1);
+        const startPoint = sourcePoints[startIdx];
+        const endPoint = sourcePoints[endIdx];
+        const segStartDistance = cumulative[startIdx];
+        const segEndDistance = cumulative[endIdx];
+        const segLength = Math.max(segEndDistance - segStartDistance, 1e-8);
+        const t = Math.max(0, Math.min(1, (targetDistance - segStartDistance) / segLength));
+
+        sampledPoints.push({
+            x: startPoint.x + (endPoint.x - startPoint.x) * t,
+            y: startPoint.y + (endPoint.y - startPoint.y) * t
+        });
+    }
+
+    const newSkeleton = new Skeleton();
+    sampledPoints.forEach((point) => {
+        newSkeleton.addPoint(point.x, point.y);
+    });
+    for (let i = 1; i < newSkeleton.points.length; i++) {
+        newSkeleton.addLine(newSkeleton.points[i - 1], newSkeleton.points[i]);
+    }
+    newSkeleton.updateAllGeometry();
+
+    frameSkeletons[currentFrameIndex] = newSkeleton;
+    hoveredPoint = null;
+    draggedPoint = null;
+    selectedPoint = null;
+    markCurrentFrameChainDirty();
+    redrawAll();
+    return true;
 }
 
 function exportSkeleton() {
@@ -1689,6 +1769,7 @@ window.appActions = {
     buildChain,
     toggleMode,
     switchToCreateMode,
+    switchToEditMode,
     getMode,
     setCurrentFrame,
     hasChainInCurrentFrame: () => hasChainInFrame(currentFrameIndex),
@@ -1774,6 +1855,8 @@ window.appActions = {
         emitChainStateChange();
         redrawAll();
     },
+    getCurrentSkeletonPointCount: () => getCurrentSkeleton()?.points?.length ?? 0,
+    resampleCurrentSkeleton: (pointCount) => resampleCurrentSkeleton(pointCount),
     getJointCount: () => getJointCount(),
     getJointK: (jointIndex) => getJointK(jointIndex),
     setJointK: (jointIndex, value) => setJointK(jointIndex, value),

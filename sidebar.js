@@ -72,20 +72,24 @@ function createIconButton(iconSVG, title, onClick) {
     return btn;
 }
 
-const addPointButton = createButton('Add Point', () => {
-    const mode = window.appActions?.getMode?.() || 'move';
-    if (mode === 'create') {
-        window.appActions?.toggleMode?.();
-    } else {
-        window.appActions?.switchToCreateMode?.();
-    }
+const addPointButton = document.createElement('button');
+addPointButton.type = 'button';
+addPointButton.className = 'draw-edit-toggle';
+addPointButton.innerHTML = `
+    <span class="draw-edit-thumb" aria-hidden="true"></span>
+    <span class="draw-edit-label draw-label">Draw</span>
+    <span class="draw-edit-label move-label">Move</span>
+`;
+addPointButton.addEventListener('click', () => {
+    window.appActions?.toggleMode?.();
 });
-addPointButton.classList.add('add-point-button');
 
 function updateAddPointButtonState(mode = window.appActions?.getMode?.()) {
     const isCreateMode = mode === 'create';
-    addPointButton.classList.toggle('active', isCreateMode);
+    addPointButton.classList.toggle('draw-mode', isCreateMode);
+    addPointButton.classList.toggle('move-mode', !isCreateMode);
     addPointButton.setAttribute('aria-pressed', isCreateMode ? 'true' : 'false');
+    addPointButton.setAttribute('aria-label', isCreateMode ? 'Mode: Draw' : 'Mode: Move');
 }
 
 const buildButton = createButton('Generate Chain', () => {
@@ -139,7 +143,7 @@ const chainOptionsSection = document.createElement('div');
 chainOptionsSection.className = 'chain-section';
 
 const chainHeader = createSectionToggle(
-    'Chain',
+    'Mechanism',
     window.appActions?.getChainVisible?.() ?? true,
     (visible) => {
         window.appActions?.setChainVisible?.(visible);
@@ -379,7 +383,7 @@ const frameSection = document.createElement('div');
 frameSection.className = 'frame-section';
 
 const frameHeader = createSectionToggle(
-    'Frames',
+    'Video',
     window.appActions?.getFramesVisible?.() ?? true,
     (visible) => {
         window.appActions?.setFramesVisible?.(visible);
@@ -398,6 +402,41 @@ const skeletonHeader = createSectionToggle(
         setSectionInteractive(skeletonSection, skeletonHeader.input, visible);
     }
 );
+
+const skeletonPointCountRow = document.createElement('div');
+skeletonPointCountRow.className = 'point-count-row';
+
+const skeletonPointCountLabel = document.createElement('label');
+skeletonPointCountLabel.className = 'joint-k-label';
+skeletonPointCountLabel.classList.add('point-count-label');
+skeletonPointCountLabel.textContent = 'Number of points';
+
+const skeletonPointCountInput = document.createElement('input');
+skeletonPointCountInput.className = 'joint-k-input';
+skeletonPointCountInput.classList.add('point-count-input');
+skeletonPointCountInput.type = 'number';
+skeletonPointCountInput.min = '2';
+skeletonPointCountInput.step = '1';
+skeletonPointCountInput.value = String(Math.max(2, window.appActions?.getCurrentSkeletonPointCount?.() ?? 2));
+
+const skeletonResampleButton = createButton('Change', () => {
+    const count = Number.parseInt(skeletonPointCountInput.value, 10);
+    if (!Number.isInteger(count) || count < 2) {
+        alert('Number of points must be at least 2');
+        return;
+    }
+
+    const ok = window.appActions?.resampleCurrentSkeleton?.(count);
+    if (!ok) {
+        alert('Could not regenerate skeleton. Draw at least 2 points first.');
+        return;
+    }
+
+    skeletonPointCountInput.value = String(count);
+});
+skeletonResampleButton.classList.add('point-count-button');
+
+skeletonPointCountRow.append(skeletonPointCountLabel, skeletonPointCountInput, skeletonResampleButton);
 
 const sideSpacer = document.createElement('div');
 sideSpacer.className = 'sidebar-spacer';
@@ -448,6 +487,7 @@ window.appActions?.onChainStateChange?.(() => {
     updateBuildControls();
     renderJointKInputs();
     updateEnergyAndLengthDisplay();
+    skeletonPointCountInput.value = String(Math.max(2, window.appActions?.getCurrentSkeletonPointCount?.() ?? 2));
     const skeletonVisible = window.appActions?.getSkeletonVisible?.() ?? true;
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
@@ -490,22 +530,9 @@ setSectionInteractive(
 const iconActionsRow = document.createElement('div');
 iconActionsRow.className = 'icon-actions-row frame-icon-actions-row';
 
-const skeletonIconActionsRow = document.createElement('div');
-skeletonIconActionsRow.className = 'icon-actions-row skeleton-icon-actions-row';
-
-const uploadIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 9h-4v4H7l5 5 5-5h-3zM5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5v-2h5V6H5v12h5v2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>';
-const downloadIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 15V9h4v6h3l-5 5-5-5h3zM5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5v-2h5V6H5v12h5v2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>';
-const videoIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h12a2 2 0 0 1 2 2v1.5l2.8-2A1 1 0 0 1 22 8.3v7.4a1 1 0 0 1-1.2.8L18 14.5V16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm0 2v8h12V8H4z"/></svg>';
+const videoIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5v2zM12 3l-5 5h3v6h4V8h3l-5-5z"/></svg>';
 const playIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
 const pauseIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h5v14H6zm7 0h5v14h-5z"/></svg>';
-
-const importSkeletonIconButton = createIconButton(uploadIcon, 'Import Skeleton', () => {
-    window.appActions?.importSkeleton();
-});
-
-const exportSkeletonIconButton = createIconButton(downloadIcon, 'Export Skeleton', () => {
-    window.appActions?.exportSkeleton();
-});
 
 const uploadVideoIconButton = createIconButton(videoIcon, 'Upload Video', () => {
     window.videoControls?.openVideoPicker();
@@ -528,10 +555,9 @@ window.videoControls?.onPlaybackChange?.(() => {
 
 updatePlaybackButton();
 
-skeletonIconActionsRow.append(importSkeletonIconButton, exportSkeletonIconButton);
 iconActionsRow.append(uploadVideoIconButton, playPauseButton);
 
-skeletonSection.append(skeletonHeader.header, skeletonIconActionsRow, addPointButton);
+skeletonSection.append(skeletonHeader.header, addPointButton, skeletonPointCountRow);
 frameSection.append(frameHeader.header, iconActionsRow, frameControl);
 
 // Add controls to sidebar
