@@ -1610,14 +1610,36 @@ function computeChainSkeletonError(chain, skeleton) {
 
 // Finds globally optimized k values (one per joint) minimizing summed
 // chain-skeleton error across all available frames.
-function findKsMinimizingChainSkeletonDistance() {
+async function findKsMinimizingChainSkeletonDistance(onProgress) {
+    const reportProgress = (percent, text) => {
+        if (typeof onProgress !== 'function') return;
+        try {
+            onProgress(Math.max(0, Math.min(100, percent)), text);
+        } catch {
+            // Ignore progress callback errors so fitting can continue.
+        }
+    };
+
+    const yieldToUI = () => new Promise(resolve => setTimeout(resolve, 0));
+    let yieldCounter = 0;
+    const maybeYield = async (force = false) => {
+        yieldCounter += 1;
+        if (force || yieldCounter % 8 === 0) {
+            await yieldToUI();
+        }
+    };
+
+    reportProgress(2, 'Preparing fit...');
+
     const chain = getMainChain();
     if (!chain || chain.getTrapezoids().length <= 1) {
+        reportProgress(100, 'No mechanism to fit');
         return;
     }
 
     const numJoints = getJointCount(chain);
     if (numJoints === 0) {
+        reportProgress(100, 'No joints to fit');
         return;
     }
 
@@ -1628,6 +1650,7 @@ function findKsMinimizingChainSkeletonDistance() {
         .sort((a, b) => a - b);
 
     if (framesWithSkeletons.length === 0) {
+        reportProgress(100, 'No skeleton frames to fit');
         return;
     }
 
@@ -1673,6 +1696,9 @@ function findKsMinimizingChainSkeletonDistance() {
     let additiveStep = 0.5;
     let multiplicativeStep = 0.35;
 
+    const totalGlobalJoints = maxPasses * numJoints;
+    let processedGlobalJoints = 0;
+
     console.log(`Fit k start: error=${bestError.toFixed(4)}, joints=${numJoints}, frames=${framesWithSkeletons.length}`);
 
     for (let pass = 0; pass < maxPasses; pass++) {
@@ -1709,6 +1735,14 @@ function findKsMinimizingChainSkeletonDistance() {
                 bestError = localBestError;
                 improvedInPass = true;
             }
+
+            processedGlobalJoints += 1;
+            const globalProgress = 6 + (processedGlobalJoints / Math.max(totalGlobalJoints, 1)) * 74;
+            reportProgress(
+                globalProgress,
+                `Fit k pass ${pass + 1}/${maxPasses} - joint ${i + 1}/${numJoints}`
+            );
+            await maybeYield();
         }
 
         if (!improvedInPass) {
@@ -1728,6 +1762,7 @@ function findKsMinimizingChainSkeletonDistance() {
     // Fallback coarse absolute search.
     const absoluteCandidates = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10];
     const fallbackStartError = bestError;
+    reportProgress(84, 'Refining fit...');
     for (let i = 0; i < numJoints; i++) {
         let localBestK = kValues[i];
         let localBestError = bestError;
@@ -1746,6 +1781,10 @@ function findKsMinimizingChainSkeletonDistance() {
             kValues[i] = localBestK;
             bestError = localBestError;
         }
+
+        const fallbackProgress = 84 + ((i + 1) / Math.max(numJoints, 1)) * 12;
+        reportProgress(fallbackProgress, `Refining joint ${i + 1}/${numJoints}`);
+        await maybeYield();
     }
 
     console.log(`Fit k fallback: error ${fallbackStartError.toFixed(4)} -> ${bestError.toFixed(4)}`);
@@ -1753,13 +1792,18 @@ function findKsMinimizingChainSkeletonDistance() {
     // Restore the chain to the state it was in before optimization.
     restoreChainPose(chain, savedPose);
 
-    // Apply the optimal k values via setJointK so the sidebar updates.
+    // Apply optimized k values in one batch to avoid repeated heavy redraws.
+    reportProgress(97, 'Applying fitted k...');
     for (let i = 0; i < numJoints; i++) {
-        setJointK(i, kValues[i]);
+        jointKByIndex[i] = Math.max(1, Math.min(10, kValues[i]));
+        await maybeYield();
     }
+    emitChainStateChange();
+    redrawAll();
 
     console.log(`Fit k error: ${initialError.toFixed(4)} -> ${bestError.toFixed(4)}`);
     console.log('Fit k values:', kValues.map(k => k.toFixed(4)).join(', '));
+    reportProgress(100, 'Fit complete');
     return kValues;
 }
 
@@ -1871,7 +1915,7 @@ window.appActions = {
     calculateInitialLineLength: () => calculateInitialLineLength(),
     calculateFinalLineLength: () => calculateFinalLineLength(),
     calculateInitialAndFinalLineLengths: () => calculateInitialAndFinalLineLengths(),
-    findKsMinimizingChainSkeletonDistance: () => findKsMinimizingChainSkeletonDistance()
+    findKsMinimizingChainSkeletonDistance: (onProgress) => findKsMinimizingChainSkeletonDistance(onProgress)
 };
 
 // Listen for video frame changes and sync canvas state

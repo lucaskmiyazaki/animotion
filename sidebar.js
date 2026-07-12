@@ -92,11 +92,64 @@ function updateAddPointButtonState(mode = window.appActions?.getMode?.()) {
     addPointButton.setAttribute('aria-label', isCreateMode ? 'Mode: Draw' : 'Mode: Move');
 }
 
-const buildButton = createButton('Generate Chain', () => {
-    window.appActions?.buildChain();
-    updateBuildControls();
+const buildButton = createButton('Generate Chain', async () => {
+    const hasSkeleton = (window.appActions?.getCurrentSkeletonPointCount?.() ?? 0) > 0;
+    if (!hasSkeleton) return;
+
+    const setProgress = (value, text) => {
+        chainBuildProgressWrap.style.display = 'grid';
+        chainBuildProgressBar.style.width = `${Math.max(0, Math.min(100, value))}%`;
+        chainBuildProgressText.textContent = text;
+    };
+
+    try {
+        buildButton.disabled = true;
+        setProgress(8, 'Building mechanism...');
+
+        // Yield to let the progress UI paint before heavy work.
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        window.appActions?.buildChain?.();
+        setProgress(62, 'Fitting k...');
+
+        // Yield again so stage transition is visible.
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        await window.appActions?.findKsMinimizingChainSkeletonDistance?.((percent, text) => {
+            const fitProgress = 62 + (Math.max(0, Math.min(100, percent)) * 0.36);
+            setProgress(fitProgress, text || 'Fitting k...');
+        });
+        setProgress(100, 'Done');
+
+        await new Promise(resolve => setTimeout(resolve, 350));
+    } catch (error) {
+        console.error('Build/Fit error:', error);
+        setProgress(100, 'Build failed');
+        await new Promise(resolve => setTimeout(resolve, 600));
+    } finally {
+        chainBuildProgressWrap.style.display = 'none';
+        updateBuildControls();
+    }
 });
 buildButton.classList.add('build-cta');
+
+const chainBuildProgressWrap = document.createElement('div');
+chainBuildProgressWrap.className = 'chain-build-progress';
+
+const chainBuildProgressTrack = document.createElement('div');
+chainBuildProgressTrack.className = 'chain-build-progress-track';
+
+const chainBuildProgressBar = document.createElement('div');
+chainBuildProgressBar.className = 'chain-build-progress-bar';
+chainBuildProgressBar.style.width = '0%';
+
+const chainBuildProgressText = document.createElement('div');
+chainBuildProgressText.className = 'chain-build-progress-text';
+chainBuildProgressText.textContent = 'Preparing...';
+
+chainBuildProgressTrack.append(chainBuildProgressBar);
+chainBuildProgressWrap.append(chainBuildProgressTrack, chainBuildProgressText);
+chainBuildProgressWrap.style.display = 'none';
 
 // Project Management Section (always visible)
 const projectActionsDiv = document.createElement('div');
@@ -268,16 +321,19 @@ function renderJointKInputs() {
     }
 }
 
-const fitKButton = createButton('Fit k to skeleton', () => {
+const fitKButton = createButton('Fit k to skeleton', async () => {
     fitKButton.disabled = true;
     fitKButton.textContent = 'Fitting…';
-    // Run asynchronously so the UI can repaint first.
-    setTimeout(() => {
-        window.appActions?.findKsMinimizingChainSkeletonDistance?.();
+    try {
+        await new Promise(resolve => setTimeout(resolve, 20));
+        await window.appActions?.findKsMinimizingChainSkeletonDistance?.((percent) => {
+            fitKButton.textContent = `Fitting… ${Math.round(percent)}%`;
+        });
         renderJointKInputs();
+    } finally {
         fitKButton.disabled = false;
         fitKButton.textContent = 'Fit k to skeleton';
-    }, 20);
+    }
 });
 fitKButton.classList.add('fit-k-button');
 
@@ -518,7 +574,7 @@ function updateProgressiveVisibility() {
     }
 }
 
-bottomActions.append(buildButton, bottomSecondaryActions);
+bottomActions.append(buildButton, chainBuildProgressWrap, bottomSecondaryActions);
 
 function updateFrameInput() {
     const current = window.videoControls?.getCurrentFrameIndex?.() ?? 0;

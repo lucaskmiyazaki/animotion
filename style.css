@@ -493,6 +493,34 @@ canvas.create-mode {
     gap: 8px;
 }
 
+.chain-build-progress {
+    display: grid;
+    gap: 5px;
+}
+
+.chain-build-progress-track {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    overflow: hidden;
+}
+
+.chain-build-progress-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #7dd3a6 0%, #58b48c 100%);
+    transition: width 180ms ease;
+}
+
+.chain-build-progress-text {
+    font-size: 11px;
+    color: var(--muted-text);
+    text-align: center;
+    letter-spacing: 0.02em;
+}
+
 .bottom-secondary-actions {
     display: grid;
     grid-template-columns: 1fr auto;
