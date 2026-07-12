@@ -84,7 +84,7 @@ function setJointK(jointIndex, value) {
     if (!Number.isFinite(parsed)) {
         delete jointKByIndex[idx];
     } else {
-        jointKByIndex[idx] = parsed;
+        jointKByIndex[idx] = Math.max(1, Math.min(10, parsed));
     }
 
     emitChainStateChange();
@@ -1561,7 +1561,7 @@ function findKsMinimizingChainSkeletonDistance() {
         return totalError;
     }
 
-    let kValues = Array.from({ length: numJoints }, (_, i) => Math.max(0.01, getJointK(i)));
+    let kValues = Array.from({ length: numJoints }, (_, i) => Math.max(1, Math.min(10, getJointK(i))));
     const initialError = evaluateTotalError(kValues);
     let bestError = initialError;
 
@@ -1577,14 +1577,14 @@ function findKsMinimizingChainSkeletonDistance() {
         const passStartError = bestError;
 
         for (let i = 0; i < numJoints; i++) {
-            const base = Math.max(0.01, kValues[i]);
+            const base = Math.max(1, Math.min(10, kValues[i]));
             const candidates = [
-                Math.max(0.01, base - additiveStep),
-                base + additiveStep,
-                Math.max(0.01, base * (1 - multiplicativeStep)),
-                base * (1 + multiplicativeStep),
-                Math.max(0.01, base * 0.5),
-                base * 1.8
+                Math.max(1, Math.min(10, base - additiveStep)),
+                Math.max(1, Math.min(10, base + additiveStep)),
+                Math.max(1, Math.min(10, base * (1 - multiplicativeStep))),
+                Math.max(1, Math.min(10, base * (1 + multiplicativeStep))),
+                Math.max(1, Math.min(10, base * 0.5)),
+                Math.max(1, Math.min(10, base * 1.8))
             ];
 
             let localBestK = base;
@@ -1631,11 +1631,11 @@ function findKsMinimizingChainSkeletonDistance() {
 
         for (const candidate of absoluteCandidates) {
             const testKValues = kValues.slice();
-            testKValues[i] = candidate;
+            testKValues[i] = Math.max(1, Math.min(10, candidate));
             const error = evaluateTotalError(testKValues);
             if (error + 1e-9 < localBestError) {
                 localBestError = error;
-                localBestK = candidate;
+                localBestK = testKValues[i];
             }
         }
 
