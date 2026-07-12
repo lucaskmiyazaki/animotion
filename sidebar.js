@@ -610,6 +610,10 @@ function updatePlaybackButton() {
     playPauseButton.innerHTML = playing ? pauseIcon : playIcon;
     playPauseButton.title = playing ? 'Pause' : 'Play';
     playPauseButton.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+
+    previewBottomButton.innerHTML = playing ? pauseIcon : playIcon;
+    previewBottomButton.title = playing ? 'Pause' : 'Preview';
+    previewBottomButton.setAttribute('aria-label', playing ? 'Pause' : 'Preview');
 }
 
 window.videoControls?.onPlaybackChange?.(() => {
