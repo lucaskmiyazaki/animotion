@@ -406,6 +406,10 @@ const skeletonHeader = createSectionToggle(
 const skeletonPointCountRow = document.createElement('div');
 skeletonPointCountRow.className = 'point-count-row';
 
+const skeletonDrawHint = document.createElement('div');
+skeletonDrawHint.className = 'skeleton-draw-hint';
+skeletonDrawHint.textContent = 'Click on the canvas to draw a skeleton';
+
 const skeletonPointCountLabel = document.createElement('label');
 skeletonPointCountLabel.className = 'joint-k-label';
 skeletonPointCountLabel.classList.add('point-count-label');
@@ -462,10 +466,56 @@ const bottomSecondaryActions = document.createElement('div');
 bottomSecondaryActions.className = 'bottom-secondary-actions';
 bottomSecondaryActions.append(exportBottomButton, previewBottomButton);
 
+let playPauseButton = null;
+let uploadVideoText = null;
+
+function hasLoadedVideo() {
+    const videoEl = window.videoControls?.video;
+    if (!videoEl) return false;
+    return Boolean(videoEl.currentSrc || videoEl.src);
+}
+
+function getCurrentSkeletonPointCount() {
+    return window.appActions?.getCurrentSkeletonPointCount?.() ?? 0;
+}
+
 function updateBuildControls() {
     const hasChain = window.appActions?.hasRenderableChain?.() ?? false;
+    const hasSkeleton = getCurrentSkeletonPointCount() > 0;
     buildButton.textContent = hasChain ? 'Regenerate Chain' : 'Generate Chain';
     bottomSecondaryActions.style.display = hasChain ? 'grid' : 'none';
+    buildButton.disabled = !hasSkeleton;
+}
+
+function updateProgressiveVisibility() {
+    const hasVideo = hasLoadedVideo();
+    const pointCount = getCurrentSkeletonPointCount();
+    const hasSkeleton = pointCount > 0;
+    const hasMechanism = window.appActions?.hasRenderableChain?.() ?? false;
+
+    const frameToggleControl = frameHeader.input?.parentElement;
+    if (frameToggleControl) {
+        frameToggleControl.style.display = hasVideo ? '' : 'none';
+    }
+
+    if (playPauseButton) {
+        playPauseButton.style.display = hasVideo ? '' : 'none';
+    }
+    if (uploadVideoText) {
+        uploadVideoText.style.display = hasVideo ? 'none' : '';
+    }
+    frameControl.style.display = hasVideo ? 'grid' : 'none';
+
+    skeletonSection.style.display = hasVideo ? '' : 'none';
+    chainOptionsSection.style.display = (hasVideo && hasMechanism) ? '' : 'none';
+
+    skeletonDrawHint.style.display = (hasVideo && !hasSkeleton) ? '' : 'none';
+    addPointButton.style.display = hasSkeleton ? '' : 'none';
+    skeletonPointCountRow.style.display = hasSkeleton ? 'grid' : 'none';
+
+    if (hasVideo && !hasSkeleton && window.appActions?.getMode?.() !== 'create') {
+        window.appActions?.switchToCreateMode?.();
+    }
 }
 
 bottomActions.append(buildButton, bottomSecondaryActions);
@@ -481,6 +531,7 @@ window.videoControls?.onFrameChange?.(() => {
     updateFrameInput();
     updateBuildControls();
     updateEnergyAndLengthDisplay();
+    updateProgressiveVisibility();
 });
 
 window.appActions?.onChainStateChange?.(() => {
@@ -499,7 +550,10 @@ window.appActions?.onChainStateChange?.(() => {
     setSectionInteractive(skeletonSection, skeletonHeader.input, skeletonVisible);
     setSectionInteractive(frameSection, frameHeader.input, framesVisible);
     setSectionInteractive(chainOptionsSection, chainHeader.input, chainVisible);
-    buildButton.disabled = !chainVisible;
+    if (!chainVisible) {
+        buildButton.disabled = true;
+    }
+    updateProgressiveVisibility();
 });
 
 window.appActions?.onModeChange?.((mode) => {
@@ -538,7 +592,16 @@ const uploadVideoIconButton = createIconButton(videoIcon, 'Upload Video', () => 
     window.videoControls?.openVideoPicker();
 });
 
-const playPauseButton = createIconButton(playIcon, 'Play', () => {
+const uploadVideoPrompt = document.createElement('div');
+uploadVideoPrompt.className = 'upload-video-prompt';
+
+uploadVideoText = document.createElement('span');
+uploadVideoText.className = 'upload-video-text';
+uploadVideoText.textContent = 'Upload video';
+
+uploadVideoPrompt.append(uploadVideoIconButton, uploadVideoText);
+
+playPauseButton = createIconButton(playIcon, 'Play', () => {
     window.videoControls?.togglePlayback?.();
 });
 
@@ -555,9 +618,11 @@ window.videoControls?.onPlaybackChange?.(() => {
 
 updatePlaybackButton();
 
-iconActionsRow.append(uploadVideoIconButton, playPauseButton);
+iconActionsRow.append(uploadVideoPrompt, playPauseButton);
 
-skeletonSection.append(skeletonHeader.header, addPointButton, skeletonPointCountRow);
+updateProgressiveVisibility();
+
+skeletonSection.append(skeletonHeader.header, skeletonDrawHint, addPointButton, skeletonPointCountRow);
 frameSection.append(frameHeader.header, iconActionsRow, frameControl);
 
 // Add controls to sidebar

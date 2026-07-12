@@ -68,6 +68,23 @@ canvas.create-mode {
     transform: translateY(1px);
 }
 
+#sidebar button:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
+    color: var(--muted-text);
+    transform: none;
+    box-shadow: none;
+}
+
+#sidebar button:disabled:hover,
+#sidebar button:disabled:active {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
+    transform: none;
+}
+
 .sidebar-header {
     font-size: 17px;
     font-weight: 800;
@@ -333,6 +350,16 @@ canvas.create-mode {
     margin: 0;
 }
 
+.skeleton-draw-hint {
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--muted-text);
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
 .point-count-input {
     grid-area: input;
     min-width: 72px;
@@ -399,6 +426,19 @@ canvas.create-mode {
 
 .frame-icon-actions-row {
     grid-template-columns: repeat(2, 1fr);
+}
+
+.upload-video-prompt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.upload-video-text {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted-text);
+    white-space: nowrap;
 }
 
 #sidebar .icon-button {
@@ -473,6 +513,15 @@ canvas.create-mode {
 #sidebar .build-cta:hover {
     background: var(--cta-bg-hover);
     border: 0;
+}
+
+#sidebar .build-cta:disabled,
+#sidebar .build-cta:disabled:hover,
+#sidebar .build-cta:disabled:active {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: var(--muted-text);
+    box-shadow: none;
 }
 
 #sidebar .bottom-export {
