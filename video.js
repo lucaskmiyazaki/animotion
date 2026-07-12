@@ -81,6 +81,29 @@
         currentFrameIndex = clampFrameIndex(currentFrameIndex);
     }
 
+    function normalizeFrameIndexMap(rawMap) {
+        if (!Array.isArray(rawMap)) return [];
+
+        const normalized = [];
+        rawMap.forEach((value) => {
+            const frame = Number.parseInt(value, 10);
+            if (!Number.isInteger(frame) || frame < 0) return;
+            normalized.push(frame);
+        });
+
+        if (normalized.length <= 1) {
+            return normalized;
+        }
+
+        const isMonotonic = normalized.every((value, index) => index === 0 || value > normalized[index - 1]);
+        if (isMonotonic) {
+            return normalized;
+        }
+
+        const uniqueSorted = Array.from(new Set(normalized)).sort((a, b) => a - b);
+        return uniqueSorted;
+    }
+
     function openVideoPicker() {
         fileInput.value = '';
         fileInput.click();
@@ -318,8 +341,9 @@
         getSerializableState,
         getFrameIndexMap: () => frameIndexMap.slice(),
         setFrameIndexMap: (newFrameIndexMap) => {
-            if (Array.isArray(newFrameIndexMap) && newFrameIndexMap.length > 0) {
-                frameIndexMap = newFrameIndexMap.slice();
+            const normalizedMap = normalizeFrameIndexMap(newFrameIndexMap);
+            if (normalizedMap.length > 0) {
+                frameIndexMap = normalizedMap;
                 maxFrameIndex = frameIndexMap.length - 1;
                 currentFrameIndex = clampFrameIndex(currentFrameIndex);
                 applyFrameVisuals();
