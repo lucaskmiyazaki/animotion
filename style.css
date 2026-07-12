@@ -115,6 +115,65 @@ canvas.create-mode {
     padding: 10px;
 }
 
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.section-header .section-title {
+    margin-bottom: 0;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+    background-color: rgba(255, 255, 255, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    transition: 0.2s;
+    border-radius: 999px;
+}
+
+.slider::before {
+    content: '';
+    position: absolute;
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    top: 2px;
+    background-color: #fff;
+    border-radius: 50%;
+    transition: 0.2s;
+}
+
+.switch input:checked + .slider {
+    background-color: rgba(116, 198, 157, 0.7);
+    border-color: rgba(116, 198, 157, 0.95);
+}
+
+.switch input:checked + .slider::before {
+    transform: translateX(18px);
+}
+
+.section-disabled {
+    opacity: 0.58;
+}
+
 .checkbox-option {
     display: flex;
     align-items: center;
@@ -143,7 +202,7 @@ canvas.create-mode {
 
 .joint-k-row {
     display: grid;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: minmax(110px, auto) 1fr;
     gap: 8px;
     align-items: center;
 }
@@ -207,6 +266,45 @@ canvas.create-mode {
 
 .skeleton-section > .add-point-button {
     margin-top: 8px;
+}
+
+.chain-section {
+    display: grid;
+    gap: 8px;
+}
+
+.chain-section .checkbox-option {
+    margin-top: 2px;
+}
+
+.advanced-details {
+    margin-top: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.advanced-details > summary {
+    cursor: pointer;
+    user-select: none;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted-text);
+}
+
+.advanced-details[open] > summary {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.advanced-content {
+    display: grid;
+    gap: 8px;
+    padding: 8px;
+}
+
+.advanced-content .energy-display {
+    margin-top: 0;
 }
 
 .icon-actions-row {

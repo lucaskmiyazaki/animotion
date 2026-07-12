@@ -81,6 +81,7 @@ async function getProjectStateSnapshot(stateRefs) {
         frameSkeletons,
         frameChains,
         frameChainBuilt,
+        jointKByIndex,
         currentFrameIndex,
         mode,
         selectedPoint,
@@ -108,7 +109,14 @@ async function getProjectStateSnapshot(stateRefs) {
             video: null
         },
         skeleton: gatherSkeletonState(frameSkeletons),
-        chain: gatherChainState(frameChains, frameChainBuilt)
+        chain: gatherChainState(frameChains, frameChainBuilt),
+        kValues: {
+            byIndex: Object.fromEntries(
+                Object.entries(jointKByIndex || {})
+                    .filter(([index, value]) => Number.isInteger(Number.parseInt(index, 10)) && Number.isFinite(Number(value)))
+                    .map(([index, value]) => [Number.parseInt(index, 10), Number(value)])
+            )
+        }
     };
 }
 
@@ -355,6 +363,9 @@ async function restoreProjectSnapshot(snapshot) {
 
         // 3. Restore chain (before seeking so canvas can render them)
         restoreChainState(snapshot.chain);
+
+        // 3b. Restore joint k values
+        window.appActions?.setJointKValues?.(snapshot.kValues?.byIndex ?? {});
 
         // Log initial and final L after the chain has been restored.
         window.appActions?.calculateInitialAndFinalLineLengths?.();

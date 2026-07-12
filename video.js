@@ -55,6 +55,7 @@
     const playbackChangeListeners = new Set();
     const PLAYBACK_FPS = 10;
     let playbackTimer = null;
+    let framesVisible = true;
 
     function emitFrameChange() {
         frameChangeListeners.forEach(listener => {
@@ -160,7 +161,7 @@
         const isVideoFrame = hasVideo && sourceFrameIndex !== undefined;
 
         if (isVideoFrame) {
-            video.style.visibility = 'visible';
+            video.style.visibility = framesVisible ? 'visible' : 'hidden';
             video.pause();
             video.currentTime = clampTime(sourceFrameIndex * FRAME_STEP);
             document.body.style.background = '';
@@ -366,6 +367,11 @@
             playbackChangeListeners.add(listener);
             return () => playbackChangeListeners.delete(listener);
         },
+        setFramesVisible: (visible) => {
+            framesVisible = Boolean(visible);
+            applyFrameVisuals();
+        },
+        getFramesVisible: () => framesVisible,
         video
     };
 })();

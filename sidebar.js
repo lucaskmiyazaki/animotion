@@ -10,6 +10,49 @@ const sidebarSubheader = document.createElement('div');
 sidebarSubheader.className = 'sidebar-subheader';
 sidebarSubheader.textContent = 'Skeleton Tools';
 
+function createSectionToggle(title, initialValue, onToggle) {
+    const header = document.createElement('div');
+    header.className = 'section-header';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'section-title';
+    titleEl.textContent = title;
+
+    const switchLabel = document.createElement('label');
+    switchLabel.className = 'switch';
+
+    const toggleInput = document.createElement('input');
+    toggleInput.type = 'checkbox';
+    toggleInput.checked = Boolean(initialValue);
+    toggleInput.setAttribute('aria-label', `${title} visibility`);
+
+    const slider = document.createElement('span');
+    slider.className = 'slider';
+
+    toggleInput.addEventListener('change', () => {
+        onToggle(toggleInput.checked);
+    });
+
+    switchLabel.append(toggleInput, slider);
+    header.append(titleEl, switchLabel);
+
+    return {
+        header,
+        input: toggleInput,
+        sync: (value) => {
+            toggleInput.checked = Boolean(value);
+        }
+    };
+}
+
+function setSectionInteractive(sectionEl, toggleInput, enabled) {
+    sectionEl.classList.toggle('section-disabled', !enabled);
+    sectionEl.querySelectorAll('button, input, select, textarea').forEach((control) => {
+        if (control === toggleInput) return;
+        control.disabled = !enabled;
+    });
+}
+
 // Helper to create buttons
 function createButton(label, onClick) {
     const btn = document.createElement('button');
@@ -95,9 +138,15 @@ projectActionsDiv.append(projectActionsTitle, projectButtonsRow);
 const chainOptionsSection = document.createElement('div');
 chainOptionsSection.className = 'chain-section';
 
-const chainOptionsTitle = document.createElement('div');
-chainOptionsTitle.className = 'section-title';
-chainOptionsTitle.textContent = 'Chain';
+const chainHeader = createSectionToggle(
+    'Chain',
+    window.appActions?.getChainVisible?.() ?? true,
+    (visible) => {
+        window.appActions?.setChainVisible?.(visible);
+        setSectionInteractive(chainOptionsSection, chainHeader.input, visible);
+        buildButton.disabled = !visible;
+    }
+);
 
 const holeOptionLabel = document.createElement('label');
 holeOptionLabel.className = 'checkbox-option';
@@ -142,7 +191,7 @@ chainThicknessInput.type = 'number';
 chainThicknessInput.min = '0.1';
 chainThicknessInput.step = '0.1';
 chainThicknessInput.value = String(window.appActions?.getChainThickness?.() ?? 50);
-chainThicknessInput.addEventListener('change', () => {
+chainThicknessInput.addEventListener('input', () => {
     const parsed = Number.parseFloat(chainThicknessInput.value);
     if (Number.isFinite(parsed) && parsed > 0) {
         window.appActions?.setChainThickness?.(parsed);
@@ -164,7 +213,7 @@ jointMinThicknessInput.type = 'number';
 jointMinThicknessInput.min = '0.1';
 jointMinThicknessInput.step = '0.1';
 jointMinThicknessInput.value = String(window.appActions?.getJointMinimumThickness?.() ?? 5);
-jointMinThicknessInput.addEventListener('change', () => {
+jointMinThicknessInput.addEventListener('input', () => {
     const parsed = Number.parseFloat(jointMinThicknessInput.value);
     if (Number.isFinite(parsed) && parsed > 0) {
         window.appActions?.setJointMinimumThickness?.(parsed);
@@ -244,6 +293,15 @@ const jointThicknessDisplay = document.createElement('div');
 jointThicknessDisplay.className = 'energy-display';
 jointThicknessDisplay.textContent = 'Joint Thicknesses: -';
 
+const advancedChainDetails = document.createElement('details');
+advancedChainDetails.className = 'advanced-details';
+
+const advancedChainSummary = document.createElement('summary');
+advancedChainSummary.textContent = 'Advanced';
+
+const advancedChainContent = document.createElement('div');
+advancedChainContent.className = 'advanced-content';
+
 function updateEnergyAndLengthDisplay() {
     const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
     const totalL = window.appActions?.calculateTotalLineLength?.() ?? 0;
@@ -257,18 +315,24 @@ function updateEnergyAndLengthDisplay() {
         : 'Joint Thicknesses: -';
 }
 
-chainOptionsSection.append(
-    chainOptionsTitle,
-    holeOptionLabel,
-    jointsOptionLabel,
-    chainThicknessRow,
-    jointMinThicknessRow,
+advancedChainContent.append(
     jointKContainer,
     fitKButton,
     energyDisplay,
     lineLengthDisplay,
     skeletonLengthDisplay,
     jointThicknessDisplay
+);
+
+advancedChainDetails.append(advancedChainSummary, advancedChainContent);
+
+chainOptionsSection.append(
+    chainHeader.header,
+    holeOptionLabel,
+    jointsOptionLabel,
+    chainThicknessRow,
+    jointMinThicknessRow,
+    advancedChainDetails
 );
 
 
@@ -314,16 +378,26 @@ frameControl.append(framePrevButton, frameInput, deleteFrameButton, frameNextBut
 const frameSection = document.createElement('div');
 frameSection.className = 'frame-section';
 
-const frameSectionTitle = document.createElement('div');
-frameSectionTitle.className = 'section-title';
-frameSectionTitle.textContent = 'Frames';
+const frameHeader = createSectionToggle(
+    'Frames',
+    window.appActions?.getFramesVisible?.() ?? true,
+    (visible) => {
+        window.appActions?.setFramesVisible?.(visible);
+        setSectionInteractive(frameSection, frameHeader.input, visible);
+    }
+);
 
 const skeletonSection = document.createElement('div');
 skeletonSection.className = 'skeleton-section';
 
-const skeletonSectionTitle = document.createElement('div');
-skeletonSectionTitle.className = 'section-title';
-skeletonSectionTitle.textContent = 'Skeleton';
+const skeletonHeader = createSectionToggle(
+    'Skeleton',
+    window.appActions?.getSkeletonVisible?.() ?? true,
+    (visible) => {
+        window.appActions?.setSkeletonVisible?.(visible);
+        setSectionInteractive(skeletonSection, skeletonHeader.input, visible);
+    }
+);
 
 const sideSpacer = document.createElement('div');
 sideSpacer.className = 'sidebar-spacer';
@@ -374,6 +448,18 @@ window.appActions?.onChainStateChange?.(() => {
     updateBuildControls();
     renderJointKInputs();
     updateEnergyAndLengthDisplay();
+    const skeletonVisible = window.appActions?.getSkeletonVisible?.() ?? true;
+    const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
+    const chainVisible = window.appActions?.getChainVisible?.() ?? true;
+
+    skeletonHeader.sync(skeletonVisible);
+    frameHeader.sync(framesVisible);
+    chainHeader.sync(chainVisible);
+
+    setSectionInteractive(skeletonSection, skeletonHeader.input, skeletonVisible);
+    setSectionInteractive(frameSection, frameHeader.input, framesVisible);
+    setSectionInteractive(chainOptionsSection, chainHeader.input, chainVisible);
+    buildButton.disabled = !chainVisible;
 });
 
 window.appActions?.onModeChange?.((mode) => {
@@ -385,6 +471,21 @@ updateBuildControls();
 updateAddPointButtonState();
 renderJointKInputs();
 updateEnergyAndLengthDisplay();
+setSectionInteractive(
+    skeletonSection,
+    skeletonHeader.input,
+    window.appActions?.getSkeletonVisible?.() ?? true
+);
+setSectionInteractive(
+    frameSection,
+    frameHeader.input,
+    window.appActions?.getFramesVisible?.() ?? true
+);
+setSectionInteractive(
+    chainOptionsSection,
+    chainHeader.input,
+    window.appActions?.getChainVisible?.() ?? true
+);
 
 const iconActionsRow = document.createElement('div');
 iconActionsRow.className = 'icon-actions-row frame-icon-actions-row';
@@ -430,17 +531,17 @@ updatePlaybackButton();
 skeletonIconActionsRow.append(importSkeletonIconButton, exportSkeletonIconButton);
 iconActionsRow.append(uploadVideoIconButton, playPauseButton);
 
-skeletonSection.append(skeletonSectionTitle, skeletonIconActionsRow, addPointButton);
-frameSection.append(frameSectionTitle, iconActionsRow, frameControl);
+skeletonSection.append(skeletonHeader.header, skeletonIconActionsRow, addPointButton);
+frameSection.append(frameHeader.header, iconActionsRow, frameControl);
 
 // Add controls to sidebar
 sidebar.append(
     sidebarHeader,
     sidebarSubheader,
-    skeletonSection,
-    frameSection,
-    chainOptionsSection,
     projectActionsDiv,
+    frameSection,
+    skeletonSection,
+    chainOptionsSection,
     sideSpacer,
     bottomActions
 );

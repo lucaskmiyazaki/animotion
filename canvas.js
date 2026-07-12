@@ -23,6 +23,8 @@ let hasDragged = false;
 let mode = 'move'; // 'create', 'edit', or 'move'
 let holeEnabled = false;
 let jointsEnabled = false;
+let skeletonVisible = true;
+let chainVisible = true;
 const jointKByIndex = {};
 
 // Default trapezoid thickness
@@ -619,6 +621,8 @@ function moveTailWithConstraints(skeleton, point, mouseX, mouseY) {
 }
 
 canvas.addEventListener('click', (e) => {
+    if (!isSkeletonEditable()) return;
+
     if (mode === 'create') {
         const skeleton = ensureCurrentSkeleton();
 
@@ -636,7 +640,7 @@ canvas.addEventListener('click', (e) => {
 
         markCurrentFrameChainDirty();
 
-        draw();
+        redrawAll();
     } else if (mode === 'edit' || mode === 'move') {
         if (hasDragged) return;
         const x = e.clientX;
@@ -647,6 +651,7 @@ canvas.addEventListener('click', (e) => {
 });
 
 canvas.addEventListener('mousedown', (e) => {
+    if (!isSkeletonEditable()) return;
     if (mode !== 'edit' && mode !== 'move') return;
 
     const x = e.clientX;
@@ -659,6 +664,14 @@ canvas.addEventListener('mousedown', (e) => {
 canvas.addEventListener('mousemove', (e) => {
     const mouseX = e.clientX;
     const mouseY = e.clientY;
+
+    if (!isSkeletonEditable()) {
+        hoveredPoint = null;
+        draggedPoint = null;
+        hasDragged = false;
+        redrawAll();
+        return;
+    }
 
     hoveredPoint = getPointAt(mouseX, mouseY);
 
@@ -868,8 +881,8 @@ function drawChain(chain) {
     }
 }
 
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function drawSkeletonOverlay() {
+    if (!skeletonVisible) return;
 
     const skeleton = getCurrentSkeleton();
     if (!skeleton) return;
@@ -913,9 +926,10 @@ function draw() {
 }
 
 function redrawAll() {
-    draw();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawSkeletonOverlay();
     const frameChain = getMainChain();
-    if (frameChain) {
+    if (chainVisible && frameChain) {
         drawChain(frameChain);
     }
 }
@@ -975,6 +989,10 @@ function getMainChain() {
         }
     }
     return null;
+}
+
+function isSkeletonEditable() {
+    return skeletonVisible;
 }
 
 // Position chain at interpolation factor t (0 = initial, 1 = final)
@@ -1209,6 +1227,7 @@ function buildChain() {
 }
 
 function deleteSelectedPoint() {
+    if (!isSkeletonEditable()) return;
     if (!selectedPoint) return;
     const skeleton = getCurrentSkeleton();
     if (!skeleton) return;
@@ -1313,6 +1332,7 @@ function exposeStateForSerialization() {
         frameSkeletons,
         frameChains,
         frameChainBuilt,
+        jointKByIndex,
         currentFrameIndex,
         mode,
         selectedPoint,
@@ -1393,6 +1413,7 @@ function importSkeleton() {
 }
 
 function copyPreviousFrameSkeleton() {
+    if (!isSkeletonEditable()) return;
     if (currentFrameIndex <= 0) return;
 
     const previousSkeleton = frameSkeletons[currentFrameIndex - 1];
@@ -1407,6 +1428,7 @@ function copyPreviousFrameSkeleton() {
 }
 
 function autoCopyPreviousSkeletonIfEmpty() {
+    if (!isSkeletonEditable()) return;
     if (currentFrameIndex <= 0) return;
     
     const currentSkeleton = frameSkeletons[currentFrameIndex];
@@ -1421,6 +1443,7 @@ function autoCopyPreviousSkeletonIfEmpty() {
 }
 
 function deleteCurrentFrame() {
+    if (!(window.videoControls?.getFramesVisible?.() ?? true)) return;
     const deletedFrameIndex = currentFrameIndex;
 
     removeLogicalFrameAt(deletedFrameIndex);
@@ -1715,6 +1738,42 @@ window.appActions = {
         redrawAll();
     },
     getJointsEnabled: () => jointsEnabled,
+    setSkeletonVisible: (visible) => {
+        skeletonVisible = Boolean(visible);
+        emitChainStateChange();
+        redrawAll();
+    },
+    getSkeletonVisible: () => skeletonVisible,
+    setChainVisible: (visible) => {
+        chainVisible = Boolean(visible);
+        emitChainStateChange();
+        redrawAll();
+    },
+    getChainVisible: () => chainVisible,
+    setFramesVisible: (visible) => {
+        window.videoControls?.setFramesVisible?.(Boolean(visible));
+        emitChainStateChange();
+        redrawAll();
+    },
+    getFramesVisible: () => window.videoControls?.getFramesVisible?.() ?? true,
+    setJointKValues: (kMap) => {
+        Object.keys(jointKByIndex).forEach((key) => {
+            delete jointKByIndex[key];
+        });
+
+        if (kMap && typeof kMap === 'object') {
+            Object.entries(kMap).forEach(([key, value]) => {
+                const idx = Number.parseInt(key, 10);
+                const parsed = Number(value);
+                if (Number.isInteger(idx) && idx >= 0 && Number.isFinite(parsed)) {
+                    jointKByIndex[idx] = Math.max(1, Math.min(10, parsed));
+                }
+            });
+        }
+
+        emitChainStateChange();
+        redrawAll();
+    },
     getJointCount: () => getJointCount(),
     getJointK: (jointIndex) => getJointK(jointIndex),
     setJointK: (jointIndex, value) => setJointK(jointIndex, value),
