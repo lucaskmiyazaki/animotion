@@ -1,8 +1,8 @@
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+let lastDisplayedVideoRect = null;
+let observedBackgroundVideo = null;
 
 // one chain per frame
 const frameChains = {};
@@ -33,6 +33,188 @@ let jointMinimumThickness = 5;
 const pointRadius = 5;
 const hoverRadius = 9;
 const hitRadius = 10;
+
+function getViewportRect() {
+    return {
+        left: 0,
+        top: 0,
+        width: window.innerWidth,
+        height: window.innerHeight
+    };
+}
+
+function getBackgroundVideoElement() {
+    return window.videoControls?.video || document.getElementById('backgroundVideo');
+}
+
+function getDisplayedVideoRect() {
+    const video = getBackgroundVideoElement();
+    if (!video) {
+        return getViewportRect();
+    }
+
+    const bounds = video.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) {
+        return getViewportRect();
+    }
+
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+    if (!videoWidth || !videoHeight) {
+        return {
+            left: bounds.left,
+            top: bounds.top,
+            width: bounds.width,
+            height: bounds.height
+        };
+    }
+
+    const fit = getComputedStyle(video).objectFit || 'fill';
+    if (fit !== 'contain' && fit !== 'scale-down') {
+        return {
+            left: bounds.left,
+            top: bounds.top,
+            width: bounds.width,
+            height: bounds.height
+        };
+    }
+
+    const containerAspect = bounds.width / bounds.height;
+    const mediaAspect = videoWidth / videoHeight;
+
+    let renderedWidth = bounds.width;
+    let renderedHeight = bounds.height;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (mediaAspect > containerAspect) {
+        renderedWidth = bounds.width;
+        renderedHeight = bounds.width / mediaAspect;
+        offsetY = (bounds.height - renderedHeight) / 2;
+    } else {
+        renderedHeight = bounds.height;
+        renderedWidth = bounds.height * mediaAspect;
+        offsetX = (bounds.width - renderedWidth) / 2;
+    }
+
+    return {
+        left: bounds.left + offsetX,
+        top: bounds.top + offsetY,
+        width: renderedWidth,
+        height: renderedHeight
+    };
+}
+
+function resizeCanvasToViewport() {
+    const cssWidth = window.innerWidth;
+    const cssHeight = window.innerHeight;
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.style.width = `${cssWidth}px`;
+    canvas.style.height = `${cssHeight}px`;
+    canvas.width = Math.max(1, Math.round(cssWidth * dpr));
+    canvas.height = Math.max(1, Math.round(cssHeight * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function transformPointToNewVideoRect(point, oldRect, newRect, scaleX, scaleY) {
+    point.x = newRect.left + (point.x - oldRect.left) * scaleX;
+    point.y = newRect.top + (point.y - oldRect.top) * scaleY;
+}
+
+function transformAllGeometryToNewVideoRect(oldRect, newRect) {
+    if (!oldRect || oldRect.width <= 0 || oldRect.height <= 0) {
+        return;
+    }
+
+    const scaleX = newRect.width / oldRect.width;
+    const scaleY = newRect.height / oldRect.height;
+    if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+        return;
+    }
+
+    Object.values(frameSkeletons).forEach((skeleton) => {
+        if (!skeleton || !Array.isArray(skeleton.points)) return;
+        skeleton.points.forEach((point) => {
+            transformPointToNewVideoRect(point, oldRect, newRect, scaleX, scaleY);
+        });
+        skeleton.updateAllGeometry();
+    });
+
+    const uniformScale = (scaleX + scaleY) / 2;
+    Object.values(frameChains).forEach((chain) => {
+        if (!chain || typeof chain.getTrapezoids !== 'function') return;
+
+        chain.getTrapezoids().forEach((item) => {
+            [item.flatPosition, item.finalPosition, item.position, item.pivotPoint].forEach((point) => {
+                if (!point) return;
+                transformPointToNewVideoRect(point, oldRect, newRect, scaleX, scaleY);
+            });
+
+            const trapezoid = item.trapezoid;
+            if (!trapezoid) return;
+            if (Number.isFinite(trapezoid.meanLineLength)) {
+                trapezoid.meanLineLength *= uniformScale;
+            }
+            if (Number.isFinite(trapezoid.thickness)) {
+                trapezoid.thickness *= uniformScale;
+            }
+            if (Array.isArray(trapezoid.localPoints)) {
+                trapezoid.localPoints.forEach((localPoint) => {
+                    localPoint.x *= uniformScale;
+                    localPoint.y *= uniformScale;
+                });
+            }
+        });
+    });
+
+    chainThickness *= uniformScale;
+    jointMinimumThickness *= uniformScale;
+}
+
+function handleViewportResize() {
+    const previousRect = lastDisplayedVideoRect;
+    const nextRect = getDisplayedVideoRect();
+
+    resizeCanvasToViewport();
+
+    if (previousRect) {
+        const moved = Math.abs(previousRect.left - nextRect.left) > 0.001 || Math.abs(previousRect.top - nextRect.top) > 0.001;
+        const resized = Math.abs(previousRect.width - nextRect.width) > 0.001 || Math.abs(previousRect.height - nextRect.height) > 0.001;
+        if (moved || resized) {
+            transformAllGeometryToNewVideoRect(previousRect, nextRect);
+        }
+    }
+
+    lastDisplayedVideoRect = nextRect;
+    redrawAll();
+}
+
+function attachBackgroundVideoListenersIfNeeded() {
+    const video = getBackgroundVideoElement();
+    if (!video || video === observedBackgroundVideo) {
+        return;
+    }
+
+    if (observedBackgroundVideo) {
+        observedBackgroundVideo.removeEventListener('loadedmetadata', handleViewportResize);
+        observedBackgroundVideo.removeEventListener('loadeddata', handleViewportResize);
+    }
+
+    observedBackgroundVideo = video;
+    observedBackgroundVideo.addEventListener('loadedmetadata', handleViewportResize);
+    observedBackgroundVideo.addEventListener('loadeddata', handleViewportResize);
+}
+
+window.addEventListener('resize', handleViewportResize);
+const videoAttachTimer = setInterval(() => {
+    attachBackgroundVideoListenersIfNeeded();
+    if (observedBackgroundVideo) {
+        clearInterval(videoAttachTimer);
+    }
+}, 150);
+
+handleViewportResize();
 
 function getCurrentSkeleton() {
     return frameSkeletons[currentFrameIndex] || null;
@@ -926,7 +1108,7 @@ function drawSkeletonOverlay() {
 }
 
 function redrawAll() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
     drawSkeletonOverlay();
     const frameChain = getMainChain();
     if (chainVisible && frameChain) {
