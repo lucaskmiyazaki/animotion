@@ -33,6 +33,20 @@ let jointMinimumThickness = 5;
 const pointRadius = 5;
 const hoverRadius = 9;
 const hitRadius = 10;
+const rulerHandleRadius = 10;
+const rulerLabelPaddingX = 8;
+const rulerLabelPaddingY = 5;
+
+const rulerState = {
+    visible: false,
+    start: { x: 0, y: 0 },
+    end: { x: 0, y: 0 },
+    mmLength: 1000,
+    initialized: false
+};
+
+let draggedRulerHandle = null;
+let currentRulerLabelBounds = null;
 
 function getViewportRect() {
     return {
@@ -45,6 +59,106 @@ function getViewportRect() {
 
 function getBackgroundVideoElement() {
     return window.videoControls?.video || document.getElementById('backgroundVideo');
+}
+
+function clampRulerMillimeters(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return 1000;
+    }
+    return parsed;
+}
+
+function getRulerPixelLength() {
+    return Math.hypot(rulerState.end.x - rulerState.start.x, rulerState.end.y - rulerState.start.y);
+}
+
+function getRulerScaleMmPerPixel() {
+    const px = getRulerPixelLength();
+    if (px <= 1e-8) {
+        return 1;
+    }
+    return clampRulerMillimeters(rulerState.mmLength) / px;
+}
+
+function ensureRulerInitialized() {
+    if (rulerState.initialized) {
+        return;
+    }
+
+    const rect = getDisplayedVideoRect();
+    const y = rect.top + rect.height * 0.15;
+    rulerState.start.x = rect.left + rect.width * 0.2;
+    rulerState.start.y = y;
+    rulerState.end.x = rect.left + rect.width * 0.8;
+    rulerState.end.y = y;
+    rulerState.initialized = true;
+}
+
+function pointHitsRulerHandle(x, y, handlePoint) {
+    return Math.hypot(x - handlePoint.x, y - handlePoint.y) <= rulerHandleRadius + 2;
+}
+
+function pointHitsRulerLabel(x, y) {
+    if (!currentRulerLabelBounds) return false;
+    return x >= currentRulerLabelBounds.left &&
+        x <= currentRulerLabelBounds.right &&
+        y >= currentRulerLabelBounds.top &&
+        y <= currentRulerLabelBounds.bottom;
+}
+
+function tryStartRulerDrag(x, y) {
+    if (!rulerState.visible) return false;
+    ensureRulerInitialized();
+
+    if (pointHitsRulerHandle(x, y, rulerState.start)) {
+        draggedRulerHandle = 'start';
+        return true;
+    }
+    if (pointHitsRulerHandle(x, y, rulerState.end)) {
+        draggedRulerHandle = 'end';
+        return true;
+    }
+
+    return false;
+}
+
+function tryHandleRulerClick(x, y) {
+    if (!rulerState.visible) return false;
+    ensureRulerInitialized();
+
+    if (!pointHitsRulerLabel(x, y)) {
+        return false;
+    }
+
+    const input = prompt('Ruler length (mm):', String(clampRulerMillimeters(rulerState.mmLength)));
+    if (input === null) {
+        return true;
+    }
+
+    const nextMm = Number.parseFloat(input);
+    if (!Number.isFinite(nextMm) || nextMm <= 0) {
+        alert('Please enter a positive numeric value in millimeters.');
+        return true;
+    }
+
+    rulerState.mmLength = nextMm;
+    redrawAll();
+    return true;
+}
+
+function updateDraggedRulerHandle(mouseX, mouseY) {
+    if (!draggedRulerHandle) return;
+    rulerState[draggedRulerHandle].x = mouseX;
+    rulerState[draggedRulerHandle].y = mouseY;
+}
+
+function isRulerInteractionMode() {
+    return rulerState.visible;
+}
+
+function syncCreateModeCursorClass() {
+    canvas.classList.toggle('create-mode', mode === 'create' && !isRulerInteractionMode());
 }
 
 function getDisplayedVideoRect() {
@@ -170,6 +284,11 @@ function transformAllGeometryToNewVideoRect(oldRect, newRect) {
 
     chainThickness *= uniformScale;
     jointMinimumThickness *= uniformScale;
+
+    if (rulerState.initialized) {
+        transformPointToNewVideoRect(rulerState.start, oldRect, newRect, scaleX, scaleY);
+        transformPointToNewVideoRect(rulerState.end, oldRect, newRect, scaleX, scaleY);
+    }
 }
 
 function handleViewportResize() {
@@ -803,6 +922,14 @@ function moveTailWithConstraints(skeleton, point, mouseX, mouseY) {
 }
 
 canvas.addEventListener('click', (e) => {
+    if (tryHandleRulerClick(e.clientX, e.clientY)) {
+        return;
+    }
+
+    if (isRulerInteractionMode()) {
+        return;
+    }
+
     if (!isSkeletonEditable()) return;
 
     if (mode === 'create') {
@@ -833,6 +960,15 @@ canvas.addEventListener('click', (e) => {
 });
 
 canvas.addEventListener('mousedown', (e) => {
+    if (tryStartRulerDrag(e.clientX, e.clientY)) {
+        return;
+    }
+
+    if (isRulerInteractionMode()) {
+        draggedPoint = null;
+        return;
+    }
+
     if (!isSkeletonEditable()) return;
     if (mode !== 'edit' && mode !== 'move') return;
 
@@ -846,6 +982,20 @@ canvas.addEventListener('mousedown', (e) => {
 canvas.addEventListener('mousemove', (e) => {
     const mouseX = e.clientX;
     const mouseY = e.clientY;
+
+    if (draggedRulerHandle) {
+        updateDraggedRulerHandle(mouseX, mouseY);
+        redrawAll();
+        return;
+    }
+
+    if (isRulerInteractionMode()) {
+        hoveredPoint = null;
+        draggedPoint = null;
+        hasDragged = false;
+        redrawAll();
+        return;
+    }
 
     if (!isSkeletonEditable()) {
         hoveredPoint = null;
@@ -878,11 +1028,13 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('mouseup', () => {
     draggedPoint = null;
+    draggedRulerHandle = null;
 });
 
 canvas.addEventListener('mouseleave', () => {
     hoveredPoint = null;
     draggedPoint = null;
+    draggedRulerHandle = null;
     redrawAll();
 });
 
@@ -1107,6 +1259,106 @@ function drawSkeletonOverlay() {
     });
 }
 
+function drawRulerOverlay() {
+    if (!rulerState.visible) {
+        currentRulerLabelBounds = null;
+        return;
+    }
+
+    ensureRulerInitialized();
+
+    const start = rulerState.start;
+    const end = rulerState.end;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+
+    ctx.save();
+
+    ctx.strokeStyle = 'rgba(255, 142, 38, 0.95)';
+    ctx.fillStyle = 'rgba(255, 142, 38, 0.28)';
+    ctx.lineWidth = 3;
+
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+
+    const drawHandle = (point) => {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, rulerHandleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    };
+
+    drawHandle(start);
+    drawHandle(end);
+
+    if (length > 1e-8) {
+        const nx = -(dy / length);
+        const ny = dx / length;
+        const tickSize = 8;
+        const tickCount = 10;
+
+        for (let i = 0; i <= tickCount; i++) {
+            const t = i / tickCount;
+            const px = start.x + dx * t;
+            const py = start.y + dy * t;
+            const major = i % 5 === 0;
+            const size = major ? tickSize : tickSize * 0.55;
+
+            ctx.beginPath();
+            ctx.moveTo(px - nx * size, py - ny * size);
+            ctx.lineTo(px + nx * size, py + ny * size);
+            ctx.stroke();
+        }
+
+        const label = `${Math.round(clampRulerMillimeters(rulerState.mmLength))} mm`;
+        const midX = (start.x + end.x) / 2;
+        const midY = (start.y + end.y) / 2;
+        const labelOffset = 22;
+        const labelX = midX + nx * labelOffset;
+        const labelY = midY + ny * labelOffset;
+
+        ctx.font = '700 14px Manrope, Segoe UI, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const textWidth = ctx.measureText(label).width;
+        const textHeight = 14;
+        const boxWidth = textWidth + rulerLabelPaddingX * 2;
+        const boxHeight = textHeight + rulerLabelPaddingY * 2;
+        const boxLeft = labelX - boxWidth / 2;
+        const boxTop = labelY - boxHeight / 2;
+
+        currentRulerLabelBounds = {
+            left: boxLeft,
+            top: boxTop,
+            right: boxLeft + boxWidth,
+            bottom: boxTop + boxHeight
+        };
+
+        ctx.fillStyle = 'rgba(255, 142, 38, 0.24)';
+        ctx.strokeStyle = 'rgba(255, 142, 38, 0.95)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(boxLeft, boxTop, boxWidth, boxHeight, 7);
+        } else {
+            ctx.rect(boxLeft, boxTop, boxWidth, boxHeight);
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
+        ctx.fillText(label, labelX, labelY + 0.5);
+    } else {
+        currentRulerLabelBounds = null;
+    }
+
+    ctx.restore();
+}
+
 function redrawAll() {
     ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
     drawSkeletonOverlay();
@@ -1114,6 +1366,7 @@ function redrawAll() {
     if (chainVisible && frameChain) {
         drawChain(frameChain);
     }
+    drawRulerOverlay();
 }
 
 function shortestAngleDifference(from, to) {
@@ -1234,7 +1487,8 @@ function exportDXF() {
     // Export whichever chain is currently renderable in the viewport.
     const chain = getCurrentChain() || getMainChain();
     if (!chain || chain.getTrapezoids().length === 0) return;
-    chain.exportCurrentDXF('chain_current.dxf', holeEnabled, jointsEnabled, getJointKValues(chain));
+    const scaleMmPerPixel = getRulerScaleMmPerPixel();
+    chain.exportCurrentDXF('chain_current.dxf', holeEnabled, jointsEnabled, getJointKValues(chain), scaleMmPerPixel);
 }
 
 function getStoredFrameIndices() {
@@ -1480,14 +1734,12 @@ function deleteAllEmptyPreviousFrames() {
 function toggleMode() {
     if (mode === 'create') {
         mode = 'move';
-        canvas.classList.remove('create-mode');
     } else if (mode === 'edit') {
         mode = 'move';
-        canvas.classList.remove('create-mode');
     } else {
         mode = 'create';
-        canvas.classList.add('create-mode');
     }
+    syncCreateModeCursorClass();
     draggedPoint = null;
     selectedPoint = null;
     emitModeChange();
@@ -1496,7 +1748,7 @@ function toggleMode() {
 
 function switchToCreateMode() {
     mode = 'create';
-    canvas.classList.add('create-mode');
+    syncCreateModeCursorClass();
     draggedPoint = null;
     selectedPoint = null;
     emitModeChange();
@@ -1505,7 +1757,7 @@ function switchToCreateMode() {
 
 function switchToEditMode() {
     mode = 'edit';
-    canvas.classList.remove('create-mode');
+    syncCreateModeCursorClass();
     draggedPoint = null;
     selectedPoint = null;
     emitModeChange();
@@ -1524,6 +1776,7 @@ function exposeStateForSerialization() {
         frameChains,
         frameChainBuilt,
         jointKByIndex,
+        rulerState,
         currentFrameIndex,
         mode,
         selectedPoint,
@@ -1730,7 +1983,7 @@ document.addEventListener('keydown', (e) => {
 
     if (e.key === 'Escape' && mode === 'create') {
         mode = 'move';
-        canvas.classList.remove('create-mode');
+        syncCreateModeCursorClass();
         draggedPoint = null;
         selectedPoint = null;
         emitModeChange();
@@ -2063,6 +2316,53 @@ window.appActions = {
         redrawAll();
     },
     getFramesVisible: () => window.videoControls?.getFramesVisible?.() ?? true,
+    toggleRulerVisible: () => {
+        ensureRulerInitialized();
+        rulerState.visible = !rulerState.visible;
+        syncCreateModeCursorClass();
+        emitChainStateChange();
+        redrawAll();
+        return rulerState.visible;
+    },
+    setRulerVisible: (visible) => {
+        ensureRulerInitialized();
+        rulerState.visible = Boolean(visible);
+        syncCreateModeCursorClass();
+        emitChainStateChange();
+        redrawAll();
+    },
+    getRulerVisible: () => rulerState.visible,
+    getRulerState: () => ({
+        visible: rulerState.visible,
+        mmLength: clampRulerMillimeters(rulerState.mmLength),
+        initialized: rulerState.initialized,
+        start: { x: rulerState.start.x, y: rulerState.start.y },
+        end: { x: rulerState.end.x, y: rulerState.end.y }
+    }),
+    setRulerState: (nextState) => {
+        if (!nextState || typeof nextState !== 'object') return;
+
+        if (nextState.start && Number.isFinite(Number(nextState.start.x)) && Number.isFinite(Number(nextState.start.y))) {
+            rulerState.start.x = Number(nextState.start.x);
+            rulerState.start.y = Number(nextState.start.y);
+        }
+
+        if (nextState.end && Number.isFinite(Number(nextState.end.x)) && Number.isFinite(Number(nextState.end.y))) {
+            rulerState.end.x = Number(nextState.end.x);
+            rulerState.end.y = Number(nextState.end.y);
+        }
+
+        if (nextState.mmLength !== undefined) {
+            rulerState.mmLength = clampRulerMillimeters(nextState.mmLength);
+        }
+
+        rulerState.visible = Boolean(nextState.visible);
+        rulerState.initialized = Boolean(nextState.initialized) || Boolean(nextState.start && nextState.end);
+        syncCreateModeCursorClass();
+        emitChainStateChange();
+        redrawAll();
+    },
+    getRulerScaleMmPerPixel: () => getRulerScaleMmPerPixel(),
     setJointKValues: (kMap) => {
         Object.keys(jointKByIndex).forEach((key) => {
             delete jointKByIndex[key];

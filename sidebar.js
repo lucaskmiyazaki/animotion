@@ -85,11 +85,13 @@ addPointButton.addEventListener('click', () => {
 });
 
 function updateAddPointButtonState(mode = window.appActions?.getMode?.()) {
+    const rulerActive = window.appActions?.getRulerVisible?.() ?? false;
     const isCreateMode = mode === 'create';
     addPointButton.classList.toggle('draw-mode', isCreateMode);
     addPointButton.classList.toggle('move-mode', !isCreateMode);
+    addPointButton.disabled = rulerActive;
     addPointButton.setAttribute('aria-pressed', isCreateMode ? 'true' : 'false');
-    addPointButton.setAttribute('aria-label', isCreateMode ? 'Mode: Draw' : 'Mode: Move');
+    addPointButton.setAttribute('aria-label', rulerActive ? 'Mode switch disabled while ruler is active' : (isCreateMode ? 'Mode: Draw' : 'Mode: Move'));
 }
 
 const buildButton = createButton('Generate Chain', async () => {
@@ -549,6 +551,10 @@ function updateProgressiveVisibility() {
     const hasSkeleton = pointCount > 0;
     const hasMechanism = window.appActions?.hasRenderableChain?.() ?? false;
 
+    if (!hasVideo && (window.appActions?.getRulerVisible?.() ?? false)) {
+        window.appActions?.setRulerVisible?.(false);
+    }
+
     const frameToggleControl = frameHeader.input?.parentElement;
     if (frameToggleControl) {
         frameToggleControl.style.display = hasVideo ? '' : 'none';
@@ -556,6 +562,9 @@ function updateProgressiveVisibility() {
 
     if (playPauseButton) {
         playPauseButton.style.display = hasVideo ? '' : 'none';
+    }
+    if (rulerButton) {
+        rulerButton.style.display = hasVideo ? '' : 'none';
     }
     if (uploadVideoText) {
         uploadVideoText.style.display = hasVideo ? 'none' : '';
@@ -572,6 +581,8 @@ function updateProgressiveVisibility() {
     if (hasVideo && !hasSkeleton && window.appActions?.getMode?.() !== 'create') {
         window.appActions?.switchToCreateMode?.();
     }
+
+    updateRulerButtonState();
 }
 
 bottomActions.append(buildButton, chainBuildProgressWrap, bottomSecondaryActions);
@@ -594,6 +605,7 @@ window.appActions?.onChainStateChange?.(() => {
     updateBuildControls();
     renderJointKInputs();
     updateEnergyAndLengthDisplay();
+    updateRulerButtonState();
     skeletonPointCountInput.value = String(Math.max(2, window.appActions?.getCurrentSkeletonPointCount?.() ?? 2));
     const skeletonVisible = window.appActions?.getSkeletonVisible?.() ?? true;
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
@@ -641,12 +653,19 @@ const iconActionsRow = document.createElement('div');
 iconActionsRow.className = 'icon-actions-row frame-icon-actions-row';
 
 const videoIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5v2zM12 3l-5 5h3v6h4V8h3l-5-5z"/></svg>';
+const rulerIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L19.81 7.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l9.94-9.94.92.92-9.94 9.94zm10.62-11.2l-.92-.92 1.27-1.27.92.92-1.27 1.27zM19.92 5.35L18.65 4.08 20.08 2.65c.36-.36.95-.36 1.31 0l.96.96c.36.36.36.95 0 1.31l-1.43 1.43z"/></svg>';
 const playIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
 const pauseIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h5v14H6zm7 0h5v14h-5z"/></svg>';
 
 const uploadVideoIconButton = createIconButton(videoIcon, 'Upload Video', () => {
     window.videoControls?.openVideoPicker();
 });
+
+const rulerButton = createIconButton(rulerIcon, 'Toggle Ruler', () => {
+    window.appActions?.toggleRulerVisible?.();
+    updateRulerButtonState();
+});
+rulerButton.classList.add('ruler-button');
 
 const uploadVideoPrompt = document.createElement('div');
 uploadVideoPrompt.className = 'upload-video-prompt';
@@ -672,13 +691,27 @@ function updatePlaybackButton() {
     previewBottomButton.setAttribute('aria-label', playing ? 'Pause' : 'Preview');
 }
 
+function updateRulerButtonState() {
+    const active = window.appActions?.getRulerVisible?.() ?? false;
+    rulerButton.classList.toggle('active', active);
+    rulerButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+
+    const hasSkeleton = (window.appActions?.getCurrentSkeletonPointCount?.() ?? 0) > 0;
+    const canEditSkeleton = !active;
+    addPointButton.disabled = !hasSkeleton || !canEditSkeleton;
+    skeletonPointCountInput.disabled = !hasSkeleton || !canEditSkeleton;
+    skeletonResampleButton.disabled = !hasSkeleton || !canEditSkeleton;
+}
+
 window.videoControls?.onPlaybackChange?.(() => {
     updatePlaybackButton();
 });
 
 updatePlaybackButton();
 
-iconActionsRow.append(uploadVideoPrompt, playPauseButton);
+iconActionsRow.append(uploadVideoPrompt, rulerButton, playPauseButton);
+
+updateRulerButtonState();
 
 updateProgressiveVisibility();
 

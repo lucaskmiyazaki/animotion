@@ -82,6 +82,7 @@ async function getProjectStateSnapshot(stateRefs) {
         frameChains,
         frameChainBuilt,
         jointKByIndex,
+        rulerState,
         currentFrameIndex,
         mode,
         selectedPoint,
@@ -110,6 +111,15 @@ async function getProjectStateSnapshot(stateRefs) {
         },
         skeleton: gatherSkeletonState(frameSkeletons),
         chain: gatherChainState(frameChains, frameChainBuilt),
+        ruler: rulerState
+            ? {
+                visible: Boolean(rulerState.visible),
+                mmLength: Number(rulerState.mmLength) || 1000,
+                initialized: Boolean(rulerState.initialized),
+                start: rulerState.start ? { x: Number(rulerState.start.x) || 0, y: Number(rulerState.start.y) || 0 } : null,
+                end: rulerState.end ? { x: Number(rulerState.end.x) || 0, y: Number(rulerState.end.y) || 0 } : null
+            }
+            : null,
         kValues: {
             byIndex: Object.fromEntries(
                 Object.entries(jointKByIndex || {})
@@ -366,6 +376,11 @@ async function restoreProjectSnapshot(snapshot) {
 
         // 3b. Restore joint k values
         window.appActions?.setJointKValues?.(snapshot.kValues?.byIndex ?? {});
+
+        // 3c. Restore ruler calibration and visibility
+        if (snapshot.ruler) {
+            window.appActions?.setRulerState?.(snapshot.ruler);
+        }
 
         // Log initial and final L after the chain has been restored.
         window.appActions?.calculateInitialAndFinalLineLengths?.();

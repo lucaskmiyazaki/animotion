@@ -425,7 +425,7 @@ canvas.create-mode {
 }
 
 .frame-icon-actions-row {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .upload-video-prompt {
@@ -452,6 +452,12 @@ canvas.create-mode {
     width: 18px;
     height: 18px;
     fill: currentColor;
+}
+
+#sidebar .icon-button.active {
+    background: rgba(255, 142, 38, 0.24);
+    border-color: rgba(255, 142, 38, 0.78);
+    color: #ffe6d0;
 }
 
 .frame-control {

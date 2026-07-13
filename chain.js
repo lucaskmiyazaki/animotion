@@ -642,10 +642,13 @@ class Chain {
 
     }
 
-    exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false, includeJoints = false, jointKValues = []) {
+    exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false, includeJoints = false, jointKValues = [], scaleFactor = 1) {
 
         const trapezoids = this.trapezoids;
         if (trapezoids.length === 0) return;
+        const safeScale = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+        const sx = (x) => x * safeScale;
+        const sy = (y) => -y * safeScale;
         let dxf = "";
 
         // DXF HEADER
@@ -670,12 +673,12 @@ class Chain {
                 dxf += "0\nLINE\n";
                 dxf += "8\n0\n"; // layer
 
-                dxf += "10\n" + p1.x + "\n";
-                dxf += "20\n" + (-p1.y) + "\n"; // invert Y for CAD
+                dxf += "10\n" + sx(p1.x) + "\n";
+                dxf += "20\n" + sy(p1.y) + "\n";
                 dxf += "30\n0\n";
 
-                dxf += "11\n" + p2.x + "\n";
-                dxf += "21\n" + (-p2.y) + "\n";
+                dxf += "11\n" + sx(p2.x) + "\n";
+                dxf += "21\n" + sy(p2.y) + "\n";
                 dxf += "31\n0\n";
 
             }
@@ -694,12 +697,12 @@ class Chain {
                 dxf += "0\nLINE\n";
                 dxf += "8\n0\n"; // layer
 
-                dxf += "10\n" + leftMid.x + "\n";
-                dxf += "20\n" + (-leftMid.y) + "\n";
+                dxf += "10\n" + sx(leftMid.x) + "\n";
+                dxf += "20\n" + sy(leftMid.y) + "\n";
                 dxf += "30\n0\n";
 
-                dxf += "11\n" + rightMid.x + "\n";
-                dxf += "21\n" + (-rightMid.y) + "\n";
+                dxf += "11\n" + sx(rightMid.x) + "\n";
+                dxf += "21\n" + sy(rightMid.y) + "\n";
                 dxf += "31\n0\n";
             }
 
@@ -809,12 +812,12 @@ class Chain {
                 dxf += "0\nLINE\n";
                 dxf += "8\n0\n";
 
-                dxf += "10\n" + chosen.start.x + "\n";
-                dxf += "20\n" + (-chosen.start.y) + "\n";
+                dxf += "10\n" + sx(chosen.start.x) + "\n";
+                dxf += "20\n" + sy(chosen.start.y) + "\n";
                 dxf += "30\n0\n";
 
-                dxf += "11\n" + chosen.end.x + "\n";
-                dxf += "21\n" + (-chosen.end.y) + "\n";
+                dxf += "11\n" + sx(chosen.end.x) + "\n";
+                dxf += "21\n" + sy(chosen.end.y) + "\n";
                 dxf += "31\n0\n";
             }
         }
