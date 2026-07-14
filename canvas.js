@@ -1146,6 +1146,16 @@ function drawChain(chain) {
 
     const drawBisectors = () => {
         const thicknesses = getJointThicknesses(chain);
+        const rays = [];
+        const connected = [];
+
+        const lineLineIntersection = (p, r, q, s) => {
+            const denom = cross(r, s);
+            if (Math.abs(denom) < 1e-8) return null;
+            const qp = sub(q, p);
+            const t = cross(qp, s) / denom;
+            return add(p, mul(r, t));
+        };
 
         for (let i = 1; i < trapezoids.length; i++) {
             const prev = trapezoids[i - 1];
@@ -1181,9 +1191,58 @@ function drawChain(chain) {
                 guideDir = mul(guideDir, -1);
             }
 
+            const tip = add(pivot, mul(guideDir, bisectorLength));
+            const currNormal = { x: -currDir.y, y: currDir.x };
+            const sameSideNextVertex = dot(guideDir, currNormal) >= 0 ? currPts[1] : currPts[2];
+            rays.push({
+                tip,
+                rayOrigin: pivot,
+                rayDir: guideDir,
+                baseDir: currDir,
+                nextVertex: sameSideNextVertex
+            });
+            connected.push(false);
+
             ctx.beginPath();
             ctx.moveTo(pivot.x, pivot.y);
-            ctx.lineTo(pivot.x + guideDir.x * bisectorLength, pivot.y + guideDir.y * bisectorLength);
+            ctx.lineTo(tip.x, tip.y);
+            ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Connect adjacent bisectors on the same side with a base-parallel segment.
+        for (let i = 0; i < rays.length - 1; i++) {
+            const a = rays[i];
+            const b = rays[i + 1];
+
+            if (dot(a.rayDir, b.rayDir) <= 0) continue;
+
+            const connectorDir = a.baseDir;
+            const end = lineLineIntersection(a.tip, connectorDir, b.rayOrigin, b.rayDir);
+            if (!end) continue;
+
+            ctx.beginPath();
+            ctx.moveTo(a.tip.x, a.tip.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            connected[i] = true;
+            connected[i + 1] = true;
+        }
+
+        // For interior bisectors left unconnected, create a triangle to next same-side vertex.
+        for (let i = 1; i < rays.length - 1; i++) {
+            if (connected[i]) continue;
+
+            const ray = rays[i];
+            if (!ray.nextVertex) continue;
+
+            ctx.beginPath();
+            ctx.moveTo(ray.tip.x, ray.tip.y);
+            ctx.lineTo(ray.nextVertex.x, ray.nextVertex.y);
             ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
             ctx.lineWidth = 2;
             ctx.stroke();
