@@ -1101,9 +1101,10 @@ function drawChain(chain) {
         }
     }
 
-    if (!jointsEnabled || trapezoids.length < 2) return;
+    if (trapezoids.length < 2) return;
 
     const cross = (a, b) => a.x * b.y - a.y * b.x;
+    const dot = (a, b) => a.x * b.x + a.y * b.y;
     const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
     const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y });
     const mul = (v, s) => ({ x: v.x * s, y: v.y * s });
@@ -1142,6 +1143,57 @@ function drawChain(chain) {
         });
         return hits;
     };
+
+    const drawBisectors = () => {
+        const thicknesses = getJointThicknesses(chain);
+
+        for (let i = 1; i < trapezoids.length; i++) {
+            const prev = trapezoids[i - 1];
+            const curr = trapezoids[i];
+
+            const prevPts = prev.trapezoid.getPoints(prev.position, prev.rotation);
+            const currPts = curr.trapezoid.getPoints(curr.position, curr.rotation);
+
+            const pivot = lineSegmentIntersection(
+                prevPts[1],
+                sub(prevPts[2], prevPts[1]),
+                currPts[0],
+                currPts[3]
+            ) || midpoint(midpoint(prevPts[1], prevPts[2]), midpoint(currPts[0], currPts[3]));
+
+            const prevDir = normalize(sub(midpoint(prevPts[1], prevPts[2]), midpoint(prevPts[0], prevPts[3])));
+            const currDir = normalize(sub(midpoint(currPts[1], currPts[2]), midpoint(currPts[0], currPts[3])));
+            let bisector = normalize(add(prevDir, currDir));
+            if (len(add(prevDir, currDir)) < 1e-8) {
+                bisector = prevDir;
+            }
+
+            const jointThickness = thicknesses[i - 1] ?? jointMinimumThickness;
+            const bisectorLength = Math.max(jointThickness * 3.2, 30);
+
+            // Perpendicular guide ray from the edge pivot point.
+            let guideDir = { x: -bisector.y, y: bisector.x };
+            const prevCenter = midpoint(midpoint(prevPts[0], prevPts[3]), midpoint(prevPts[1], prevPts[2]));
+            const currCenter = midpoint(midpoint(currPts[0], currPts[3]), midpoint(currPts[1], currPts[2]));
+            const localCenter = midpoint(prevCenter, currCenter);
+            const outwardHint = normalize(sub(pivot, localCenter));
+            if (dot(guideDir, outwardHint) < 0) {
+                guideDir = mul(guideDir, -1);
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(pivot.x, pivot.y);
+            ctx.lineTo(pivot.x + guideDir.x * bisectorLength, pivot.y + guideDir.y * bisectorLength);
+            ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    };
+
+    if (!jointsEnabled) {
+        drawBisectors();
+        return;
+    }
 
     for (let i = 1; i < trapezoids.length; i++) {
         const prev = trapezoids[i - 1];
@@ -1213,6 +1265,8 @@ function drawChain(chain) {
         ctx.lineWidth = 2;
         ctx.stroke();
     }
+
+    drawBisectors();
 }
 
 function drawSkeletonOverlay() {
