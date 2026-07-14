@@ -1147,7 +1147,8 @@ function drawChain(chain) {
     const drawBisectors = () => {
         const thicknesses = getJointThicknesses(chain);
         const rays = [];
-        const connected = [];
+        const connectedPrev = [];
+        const connectedNext = [];
 
         const lineLineIntersection = (p, r, q, s) => {
             const denom = cross(r, s);
@@ -1192,16 +1193,23 @@ function drawChain(chain) {
             }
 
             const tip = add(pivot, mul(guideDir, bisectorLength));
-            const currNormal = { x: -currDir.y, y: currDir.x };
-            const sameSideNextVertex = dot(guideDir, currNormal) >= 0 ? currPts[1] : currPts[2];
+            const pickAlignedVertex = (a, b) => {
+                const da = dot(normalize(sub(a, pivot)), guideDir);
+                const db = dot(normalize(sub(b, pivot)), guideDir);
+                return da >= db ? a : b;
+            };
+            const prevSideVertex = pickAlignedVertex(prevPts[0], prevPts[3]);
+            const nextSideVertex = pickAlignedVertex(currPts[1], currPts[2]);
             rays.push({
                 tip,
                 rayOrigin: pivot,
                 rayDir: guideDir,
                 baseDir: currDir,
-                nextVertex: sameSideNextVertex
+                prevSideVertex,
+                nextSideVertex
             });
-            connected.push(false);
+            connectedPrev.push(false);
+            connectedNext.push(false);
 
             ctx.beginPath();
             ctx.moveTo(pivot.x, pivot.y);
@@ -1229,23 +1237,31 @@ function drawChain(chain) {
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            connected[i] = true;
-            connected[i + 1] = true;
+            connectedNext[i] = true;
+            connectedPrev[i + 1] = true;
         }
 
-        // For interior bisectors left unconnected, create a triangle to next same-side vertex.
-        for (let i = 1; i < rays.length - 1; i++) {
-            if (connected[i]) continue;
-
+        // Any unconnected side is tied to the corresponding next vertex on that same spatial side.
+        for (let i = 0; i < rays.length; i++) {
             const ray = rays[i];
-            if (!ray.nextVertex) continue;
 
-            ctx.beginPath();
-            ctx.moveTo(ray.tip.x, ray.tip.y);
-            ctx.lineTo(ray.nextVertex.x, ray.nextVertex.y);
-            ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            if (!connectedPrev[i] && ray.prevSideVertex) {
+                ctx.beginPath();
+                ctx.moveTo(ray.tip.x, ray.tip.y);
+                ctx.lineTo(ray.prevSideVertex.x, ray.prevSideVertex.y);
+                ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            if (!connectedNext[i] && ray.nextSideVertex) {
+                ctx.beginPath();
+                ctx.moveTo(ray.tip.x, ray.tip.y);
+                ctx.lineTo(ray.nextSideVertex.x, ray.nextSideVertex.y);
+                ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
         }
     };
 
