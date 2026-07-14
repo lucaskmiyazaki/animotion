@@ -2,9 +2,8 @@
 
 Pangolin is a design tool for building a compliant mechanism from a user-drawn skeleton over video frames.
 
-The project is inspired by the X-String idea: represent motion with a geometric backbone, then realize that motion with a physically meaningful mechanism that can bend, store elastic energy, and follow a target path.
-
-Reference paper: [X-String (ACM DOI: 10.1145/3706598.3714282)](https://dl.acm.org/doi/10.1145/3706598.3714282).
+You can access the app on https://lucaskmiyazaki.github.io/animotion/
+or locally by using npx serve
 
 ## Core Idea
 
@@ -51,7 +50,7 @@ $$
 $$
 
 $$
-\phi_i^{\text{final}} = \operatorname{atan2}(s_{i,y}, s_{i,x})
+\phi_i^{\text{final}} = \mathrm{atan2}(s_{i,y}, s_{i,x})
 $$
 
 where $\mathbf{x}_i$ is link position and $\phi_i$ is link orientation.
@@ -160,7 +159,7 @@ $$
 Pangolin fits stiffness values $\{k_j\}$ to reduce path error:
 
 $$
-\mathbf{k}^* = \arg\min_{\mathbf{k}}\sum_f \varepsilon_f(\mathbf{k})
+\mathbf{k}^* = \mathrm{arg\,min}_{\mathbf{k}}\sum_f \varepsilon_f(\mathbf{k})
 $$
 
 with bounds (implemented in the app):
@@ -173,7 +172,7 @@ This links geometry and mechanics: the same drawn motion can produce different c
 
 ## Ruler Calibration and DXF Units
 
-If ruler endpoints are $\mathbf{r}_1,\mathbf{r}_2$ and the user-entered physical length is $L_{\text{mm}}$:
+If ruler endpoints are r1 and r2, and the user-entered physical length is L_mm:
 
 $$
 s = \frac{L_{\text{mm}}}{\|\mathbf{r}_2-\mathbf{r}_1\|} \quad [\text{mm/pixel}]
