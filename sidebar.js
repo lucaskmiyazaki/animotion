@@ -112,15 +112,21 @@ const buildButton = createButton('Generate Chain', async () => {
         await new Promise(resolve => setTimeout(resolve, 20));
 
         window.appActions?.buildChain?.();
-        setProgress(62, 'Fitting k...');
 
-        // Yield again so stage transition is visible.
-        await new Promise(resolve => setTimeout(resolve, 20));
+        if (fitKOnGenerateCheckbox.checked) {
+            setProgress(62, 'Fitting k...');
 
-        await window.appActions?.findKsMinimizingChainSkeletonDistance?.((percent, text) => {
-            const fitProgress = 62 + (Math.max(0, Math.min(100, percent)) * 0.36);
-            setProgress(fitProgress, text || 'Fitting k...');
-        });
+            // Yield again so stage transition is visible.
+            await new Promise(resolve => setTimeout(resolve, 20));
+
+            await window.appActions?.findKsMinimizingChainSkeletonDistance?.((percent, text) => {
+                const fitProgress = 62 + (Math.max(0, Math.min(100, percent)) * 0.36);
+                setProgress(fitProgress, text || 'Fitting k...');
+            });
+        } else {
+            setProgress(78, 'Skipping k fit');
+        }
+
         setProgress(100, 'Done');
 
         await new Promise(resolve => setTimeout(resolve, 350));
@@ -203,7 +209,6 @@ const chainHeader = createSectionToggle(
     (visible) => {
         window.appActions?.setChainVisible?.(visible);
         setSectionInteractive(chainOptionsSection, chainHeader.input, visible);
-        buildButton.disabled = !visible;
     }
 );
 
@@ -323,21 +328,17 @@ function renderJointKInputs() {
     }
 }
 
-const fitKButton = createButton('Fit k to skeleton', async () => {
-    fitKButton.disabled = true;
-    fitKButton.textContent = 'Fitting…';
-    try {
-        await new Promise(resolve => setTimeout(resolve, 20));
-        await window.appActions?.findKsMinimizingChainSkeletonDistance?.((percent) => {
-            fitKButton.textContent = `Fitting… ${Math.round(percent)}%`;
-        });
-        renderJointKInputs();
-    } finally {
-        fitKButton.disabled = false;
-        fitKButton.textContent = 'Fit k to skeleton';
-    }
-});
-fitKButton.classList.add('fit-k-button');
+const fitKOnGenerateLabel = document.createElement('label');
+fitKOnGenerateLabel.className = 'checkbox-option';
+
+const fitKOnGenerateCheckbox = document.createElement('input');
+fitKOnGenerateCheckbox.type = 'checkbox';
+fitKOnGenerateCheckbox.checked = true;
+
+const fitKOnGenerateText = document.createElement('span');
+fitKOnGenerateText.textContent = 'Auto-fit k on generate';
+
+fitKOnGenerateLabel.append(fitKOnGenerateCheckbox, fitKOnGenerateText);
 
 const energyDisplay = document.createElement('div');
 energyDisplay.className = 'energy-display';
@@ -378,8 +379,8 @@ function updateEnergyAndLengthDisplay() {
 }
 
 advancedChainContent.append(
+    fitKOnGenerateLabel,
     jointKContainer,
-    fitKButton,
     energyDisplay,
     lineLengthDisplay,
     skeletonLengthDisplay,
@@ -572,7 +573,11 @@ function updateProgressiveVisibility() {
     frameControl.style.display = hasVideo ? 'grid' : 'none';
 
     skeletonSection.style.display = hasVideo ? '' : 'none';
-    chainOptionsSection.style.display = (hasVideo && hasMechanism) ? '' : 'none';
+    chainOptionsSection.style.display = (hasVideo && hasSkeleton) ? '' : 'none';
+
+    chainHeader.header.style.display = hasMechanism ? '' : 'none';
+    holeOptionLabel.style.display = hasMechanism ? '' : 'none';
+    jointsOptionLabel.style.display = hasMechanism ? '' : 'none';
 
     skeletonDrawHint.style.display = (hasVideo && !hasSkeleton) ? '' : 'none';
     addPointButton.style.display = hasSkeleton ? '' : 'none';
@@ -617,10 +622,10 @@ window.appActions?.onChainStateChange?.(() => {
 
     setSectionInteractive(skeletonSection, skeletonHeader.input, skeletonVisible);
     setSectionInteractive(frameSection, frameHeader.input, framesVisible);
-    setSectionInteractive(chainOptionsSection, chainHeader.input, chainVisible);
-    if (!chainVisible) {
-        buildButton.disabled = true;
-    }
+    const hasSkeleton = getCurrentSkeletonPointCount() > 0;
+    const hasMechanism = window.appActions?.hasRenderableChain?.() ?? false;
+    const mechanismSectionEnabled = hasSkeleton && (!hasMechanism || chainVisible);
+    setSectionInteractive(chainOptionsSection, chainHeader.input, mechanismSectionEnabled);
     updateProgressiveVisibility();
 });
 
@@ -646,7 +651,7 @@ setSectionInteractive(
 setSectionInteractive(
     chainOptionsSection,
     chainHeader.input,
-    window.appActions?.getChainVisible?.() ?? true
+    getCurrentSkeletonPointCount() > 0
 );
 
 const iconActionsRow = document.createElement('div');
