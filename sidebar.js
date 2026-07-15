@@ -358,7 +358,13 @@ energyDisplay.textContent = 'Elastic Energy: 0';
 
 const lineLengthDisplay = document.createElement('div');
 lineLengthDisplay.className = 'energy-display';
-lineLengthDisplay.textContent = 'L: 0';
+lineLengthDisplay.textContent = 'Orange dL: 0';
+lineLengthDisplay.style.color = '#f58220';
+
+const companionLineLengthDisplay = document.createElement('div');
+companionLineLengthDisplay.className = 'energy-display';
+companionLineLengthDisplay.textContent = 'Pink dL: 0';
+companionLineLengthDisplay.style.color = '#f550aa';
 
 const skeletonLengthDisplay = document.createElement('div');
 skeletonLengthDisplay.className = 'energy-display';
@@ -380,10 +386,18 @@ advancedChainContent.className = 'advanced-content';
 function updateEnergyAndLengthDisplay() {
     const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
     const totalL = window.appActions?.calculateTotalLineLength?.() ?? 0;
+    const companionL = window.appActions?.calculateCompanionLineLength?.() ?? 0;
+    const orangeEnds = window.appActions?.calculateInitialAndFinalLineLengths?.() ?? { initialL: 0, finalL: 0 };
+    const pinkEnds = window.appActions?.calculateInitialAndFinalCompanionLineLengths?.() ?? { initialL: 0, finalL: 0 };
+    const orangeLongest = Math.max(orangeEnds.initialL ?? 0, orangeEnds.finalL ?? 0);
+    const pinkLongest = Math.max(pinkEnds.initialL ?? 0, pinkEnds.finalL ?? 0);
+    const orangeDelta = Math.max(0, orangeLongest - totalL);
+    const pinkDelta = Math.max(0, pinkLongest - companionL);
     const skeletonLength = window.appActions?.calculateCurrentSkeletonLength?.() ?? 0;
     const jointThicknesses = window.appActions?.getJointThicknesses?.() ?? [];
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
-    lineLengthDisplay.textContent = `L: ${totalL.toFixed(2)}`;
+    lineLengthDisplay.textContent = `Orange dL (max - current): ${orangeDelta.toFixed(2)}`;
+    companionLineLengthDisplay.textContent = `Pink dL (max - current): ${pinkDelta.toFixed(2)}`;
     skeletonLengthDisplay.textContent = `Skeleton Length: ${skeletonLength.toFixed(2)}`;
     jointThicknessDisplay.textContent = jointThicknesses.length > 0
         ? `Joint Thicknesses: ${jointThicknesses.map(v => v.toFixed(2)).join(', ')}`
@@ -395,6 +409,7 @@ advancedChainContent.append(
     jointKContainer,
     energyDisplay,
     lineLengthDisplay,
+    companionLineLengthDisplay,
     skeletonLengthDisplay,
     jointThicknessDisplay
 );

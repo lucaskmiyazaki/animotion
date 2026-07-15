@@ -560,6 +560,79 @@ function calculateTotalLineLength(chain = getMainChain()) {
     return totalLength;
 }
 
+function calculateCompanionLineLength(chain = getMainChain()) {
+    const activeChain = chain || getMainChain();
+    const trapezoids = activeChain?.getTrapezoids?.() ?? [];
+    if (!activeChain || trapezoids.length === 0) {
+        return 0;
+    }
+
+    const modelCenterLines = companionRigidModel?.centerLines;
+    if (!Array.isArray(modelCenterLines) || modelCenterLines.length === 0) {
+        return 0;
+    }
+
+    const linkLocalToWorld = (item, localPoint) => {
+        const rot = (item.rotation * Math.PI) / 180;
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        return {
+            x: cos * localPoint.x - sin * localPoint.y + item.position.x,
+            y: sin * localPoint.x + cos * localPoint.y + item.position.y
+        };
+    };
+
+    let totalLength = 0;
+    const worldCenterLines = [];
+
+    modelCenterLines.forEach((line) => {
+        const owner = trapezoids[line.ownerLink];
+        if (!owner) return;
+
+        const start = line.startLocal
+            ? linkLocalToWorld(owner, line.startLocal)
+            : line.start;
+        const end = line.endLocal
+            ? linkLocalToWorld(owner, line.endLocal)
+            : line.end;
+        if (!start || !end) return;
+
+        totalLength += Math.hypot(end.x - start.x, end.y - start.y);
+        worldCenterLines.push({ ownerLink: line.ownerLink, start, end });
+    });
+
+    for (let linkIndex = 0; linkIndex < trapezoids.length - 1; linkIndex++) {
+        const currentCandidates = worldCenterLines.filter((line) => line.ownerLink === linkIndex);
+        const nextCandidates = worldCenterLines.filter((line) => line.ownerLink === linkIndex + 1);
+        if (currentCandidates.length === 0 || nextCandidates.length === 0) continue;
+
+        let best = null;
+        currentCandidates.forEach((a) => {
+            nextCandidates.forEach((b) => {
+                const pairs = [
+                    { p1: a.start, p2: b.start },
+                    { p1: a.start, p2: b.end },
+                    { p1: a.end, p2: b.start },
+                    { p1: a.end, p2: b.end }
+                ];
+
+                pairs.forEach((pair) => {
+                    const d = Math.hypot(pair.p2.x - pair.p1.x, pair.p2.y - pair.p1.y);
+                    if (!best || d < best.d) {
+                        best = { d };
+                    }
+                });
+            });
+        });
+
+        if (best) {
+            totalLength += best.d;
+        }
+    }
+
+    return totalLength;
+}
+
 function snapshotChainPose(chain) {
     const trapezoids = chain?.getTrapezoids?.() ?? [];
     return trapezoids.map(item => ({
@@ -592,6 +665,25 @@ function calculateInitialAndFinalLineLengths() {
 
     applyChainAtT(chain, 1);
     const finalL = calculateTotalLineLength(chain);
+
+    restoreChainPose(chain, savedPose);
+
+    return { initialL, finalL };
+}
+
+function calculateInitialAndFinalCompanionLineLengths() {
+    const chain = getMainChain();
+    if (!chain || chain.getTrapezoids().length === 0) {
+        return { initialL: 0, finalL: 0 };
+    }
+
+    const savedPose = snapshotChainPose(chain);
+
+    applyChainAtT(chain, 0);
+    const initialL = calculateCompanionLineLength(chain);
+
+    applyChainAtT(chain, 1);
+    const finalL = calculateCompanionLineLength(chain);
 
     restoreChainPose(chain, savedPose);
 
@@ -1075,7 +1167,7 @@ function drawChain(chain) {
             ctx.beginPath();
             ctx.moveTo(leftMid.x, leftMid.y);
             ctx.lineTo(rightMid.x, rightMid.y);
-            ctx.strokeStyle = 'rgba(0, 80, 0, 0.9)';
+            ctx.strokeStyle = 'rgba(245, 130, 32, 0.95)';
             ctx.lineWidth = 2;
             ctx.stroke();
 
@@ -1087,7 +1179,7 @@ function drawChain(chain) {
 
     // Draw hole connection lines between adjacent links whenever Hole is enabled.
     if (holeEnabled && trapezoids.length >= 2) {
-        ctx.strokeStyle = 'rgba(0, 100, 0, 0.6)';
+        ctx.strokeStyle = 'rgba(210, 110, 24, 0.75)';
         ctx.lineWidth = 1;
 
         for (let i = 0; i < trapezoids.length - 1; i++) {
@@ -1430,7 +1522,7 @@ function drawChain(chain) {
                 ctx.beginPath();
                 ctx.moveTo(start.x, start.y);
                 ctx.lineTo(end.x, end.y);
-                ctx.strokeStyle = 'rgba(0, 80, 0, 0.9)';
+                ctx.strokeStyle = 'rgba(245, 80, 170, 0.95)';
                 ctx.lineWidth = 2;
                 ctx.stroke();
             });
@@ -1465,7 +1557,7 @@ function drawChain(chain) {
                 ctx.beginPath();
                 ctx.moveTo(best.p1.x, best.p1.y);
                 ctx.lineTo(best.p2.x, best.p2.y);
-                ctx.strokeStyle = 'rgba(0, 100, 0, 0.6)';
+                ctx.strokeStyle = 'rgba(215, 65, 150, 0.8)';
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
@@ -2729,6 +2821,8 @@ window.appActions = {
     getJointThicknesses: () => getJointThicknesses(),
     calculateTotalElasticEnergy: () => calculateTotalElasticEnergy(),
     calculateTotalLineLength: () => calculateTotalLineLength(),
+    calculateCompanionLineLength: () => calculateCompanionLineLength(),
+    calculateInitialAndFinalCompanionLineLengths: () => calculateInitialAndFinalCompanionLineLengths(),
     calculateCurrentSkeletonLength: () => calculateCurrentSkeletonLength(),
     calculateInitialLineLength: () => calculateInitialLineLength(),
     calculateFinalLineLength: () => calculateFinalLineLength(),
