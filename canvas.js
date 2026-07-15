@@ -31,6 +31,7 @@ const jointKByIndex = {};
 let chainThickness = 50;
 let jointMinimumThickness = 5;
 let lastBisectorThicknessLogAt = 0;
+let companionRigidModel = null;
 const pointRadius = 5;
 const hoverRadius = 9;
 const hitRadius = 10;
@@ -1146,7 +1147,6 @@ function drawChain(chain) {
     };
 
     const drawBisectors = () => {
-        const thicknesses = getJointThicknesses(chain);
         const chainSideOffset = getChainThickness();
         const rays = [];
         const connectedPrev = [];
@@ -1158,6 +1158,34 @@ function drawChain(chain) {
             const qp = sub(q, p);
             const t = cross(qp, s) / denom;
             return add(p, mul(r, t));
+        };
+
+        const worldToLinkLocal = (item, point) => {
+            const rot = (item.rotation * Math.PI) / 180;
+            const cos = Math.cos(rot);
+            const sin = Math.sin(rot);
+            const dx = point.x - item.position.x;
+            const dy = point.y - item.position.y;
+            return {
+                x: cos * dx + sin * dy,
+                y: -sin * dx + cos * dy
+            };
+        };
+
+        const linkLocalToWorld = (item, localPoint) => {
+            const rot = (item.rotation * Math.PI) / 180;
+            const cos = Math.cos(rot);
+            const sin = Math.sin(rot);
+            return {
+                x: cos * localPoint.x - sin * localPoint.y + item.position.x,
+                y: sin * localPoint.x + cos * localPoint.y + item.position.y
+            };
+        };
+
+        const currentSegments = [];
+        const addSegment = (ownerLink, start, end) => {
+            if (ownerLink < 0 || ownerLink >= trapezoids.length) return;
+            currentSegments.push({ ownerLink, start, end });
         };
 
         for (let i = 1; i < trapezoids.length; i++) {
@@ -1181,9 +1209,6 @@ function drawChain(chain) {
                 bisector = prevDir;
             }
 
-            const jointThickness = thicknesses[i - 1] ?? jointMinimumThickness;
-            const bisectorLength = Math.max(jointThickness * 3.2, 30);
-
             // Perpendicular guide ray from the edge pivot point.
             let guideDir = { x: -bisector.y, y: bisector.x };
             const prevCenter = midpoint(midpoint(prevPts[0], prevPts[3]), midpoint(prevPts[1], prevPts[2]));
@@ -1194,9 +1219,6 @@ function drawChain(chain) {
                 guideDir = mul(guideDir, -1);
             }
 
-            const tip = add(pivot, mul(guideDir, bisectorLength));
-            const offsetPoint = add(pivot, mul(guideDir, chainSideOffset));
-            const offsetDistance = Math.hypot(offsetPoint.x - pivot.x, offsetPoint.y - pivot.y);
             const pickAlignedVertex = (a, b) => {
                 const da = dot(normalize(sub(a, pivot)), guideDir);
                 const db = dot(normalize(sub(b, pivot)), guideDir);
@@ -1205,29 +1227,18 @@ function drawChain(chain) {
             const prevSideVertex = pickAlignedVertex(prevPts[0], prevPts[3]);
             const nextSideVertex = pickAlignedVertex(currPts[1], currPts[2]);
             rays.push({
-                tip,
-                offsetPoint,
-                offsetDistance,
                 rayOrigin: pivot,
                 rayDir: guideDir,
-                baseDir: currDir,
                 prevSideVertex,
                 nextSideVertex
             });
             connectedPrev.push(false);
             connectedNext.push(false);
-
-            ctx.beginPath();
-            ctx.moveTo(pivot.x, pivot.y);
-            ctx.lineTo(tip.x, tip.y);
-            ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
         }
 
         const now = Date.now();
         if (now - lastBisectorThicknessLogAt > 800 && rays.length > 0) {
-            const distances = rays.map((ray) => Number(ray.offsetDistance.toFixed(3)));
+            const distances = rays.map(() => Number(chainSideOffset.toFixed(3)));
             const uniqueDistances = Array.from(new Set(distances));
             console.log('[Bisector Thickness Debug]', {
                 chainSideOffset,
@@ -1238,50 +1249,112 @@ function drawChain(chain) {
             lastBisectorThicknessLogAt = now;
         }
 
-        // Connect adjacent bisectors on the same side with a base-parallel segment.
+        // Build companion parallelograms in current pose (later captured as rigid local geometry).
         for (let i = 0; i < rays.length - 1; i++) {
             const a = rays[i];
             const b = rays[i + 1];
 
             if (dot(a.rayDir, b.rayDir) <= 0) continue;
 
-            const connectorDir = a.baseDir;
-            const end = lineLineIntersection(a.offsetPoint, connectorDir, b.rayOrigin, b.rayDir);
-            if (!end) continue;
+            const baseVec = sub(b.rayOrigin, a.rayOrigin);
+            if (len(baseVec) < 1e-8) continue;
+            const baseDir = normalize(baseVec);
+            let normal = { x: -baseDir.y, y: baseDir.x };
+            const sideHint = normalize(add(a.rayDir, b.rayDir));
+            if (dot(normal, sideHint) < 0) {
+                normal = mul(normal, -1);
+            }
 
-            ctx.beginPath();
-            ctx.moveTo(a.offsetPoint.x, a.offsetPoint.y);
-            ctx.lineTo(end.x, end.y);
-            ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            const offsetBasePoint = add(a.rayOrigin, mul(normal, chainSideOffset));
+            const topA = lineLineIntersection(a.rayOrigin, a.rayDir, offsetBasePoint, baseDir);
+            const topB = lineLineIntersection(b.rayOrigin, b.rayDir, offsetBasePoint, baseDir);
+            if (!topA || !topB) continue;
+
+            const ownerLink = i + 1;
+            addSegment(ownerLink, a.rayOrigin, b.rayOrigin);
+            addSegment(ownerLink, b.rayOrigin, topB);
+            addSegment(ownerLink, topB, topA);
+            addSegment(ownerLink, topA, a.rayOrigin);
 
             connectedNext[i] = true;
             connectedPrev[i + 1] = true;
         }
 
-        // Any unconnected side is tied to the corresponding next vertex on that same spatial side.
+        // Triangle fallback for each unpaired side: one bisector + base edge + connector.
+        const addTriangleFallback = (ray, vertex, ownerLink) => {
+            if (!vertex) return;
+
+            const baseVec = sub(vertex, ray.rayOrigin);
+            if (len(baseVec) < 1e-8) return;
+            const baseDir = normalize(baseVec);
+            let normal = { x: -baseDir.y, y: baseDir.x };
+            if (dot(normal, ray.rayDir) < 0) {
+                normal = mul(normal, -1);
+            }
+
+            const offsetBasePoint = add(ray.rayOrigin, mul(normal, chainSideOffset));
+            const tip = lineLineIntersection(ray.rayOrigin, ray.rayDir, offsetBasePoint, baseDir);
+            if (!tip) return;
+
+            addSegment(ownerLink, ray.rayOrigin, vertex);
+            addSegment(ownerLink, vertex, tip);
+            addSegment(ownerLink, tip, ray.rayOrigin);
+        };
+
         for (let i = 0; i < rays.length; i++) {
             const ray = rays[i];
 
-            if (!connectedPrev[i] && ray.prevSideVertex) {
-                ctx.beginPath();
-                ctx.moveTo(ray.offsetPoint.x, ray.offsetPoint.y);
-                ctx.lineTo(ray.prevSideVertex.x, ray.prevSideVertex.y);
-                ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
-                ctx.lineWidth = 2;
-                ctx.stroke();
+            // Previous-side companion piece belongs to link i.
+            if (!connectedPrev[i]) {
+                addTriangleFallback(ray, ray.prevSideVertex, i);
             }
 
-            if (!connectedNext[i] && ray.nextSideVertex) {
-                ctx.beginPath();
-                ctx.moveTo(ray.offsetPoint.x, ray.offsetPoint.y);
-                ctx.lineTo(ray.nextSideVertex.x, ray.nextSideVertex.y);
-                ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
-                ctx.lineWidth = 2;
-                ctx.stroke();
+            // Next-side companion piece belongs to link i+1.
+            if (!connectedNext[i]) {
+                addTriangleFallback(ray, ray.nextSideVertex, i + 1);
             }
         }
+
+        const shouldCaptureRigid = currentFrameIndex === 0
+            || !companionRigidModel
+            || companionRigidModel.linkCount !== trapezoids.length;
+
+        if (shouldCaptureRigid) {
+            const localSegments = currentSegments.map((segment) => {
+                const owner = trapezoids[segment.ownerLink];
+                return {
+                    ownerLink: segment.ownerLink,
+                    startLocal: worldToLinkLocal(owner, segment.start),
+                    endLocal: worldToLinkLocal(owner, segment.end)
+                };
+            });
+
+            companionRigidModel = {
+                linkCount: trapezoids.length,
+                segments: localSegments
+            };
+        }
+
+        const segmentsToDraw = companionRigidModel?.segments ?? currentSegments;
+        segmentsToDraw.forEach((segment) => {
+            const owner = trapezoids[segment.ownerLink];
+            if (!owner) return;
+
+            const start = segment.startLocal
+                ? linkLocalToWorld(owner, segment.startLocal)
+                : segment.start;
+            const end = segment.endLocal
+                ? linkLocalToWorld(owner, segment.endLocal)
+                : segment.end;
+            if (!start || !end) return;
+
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        });
     };
 
     if (!jointsEnabled) {
