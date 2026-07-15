@@ -55,6 +55,7 @@
     const playbackChangeListeners = new Set();
     const PLAYBACK_FPS = 10;
     let playbackTimer = null;
+    let playbackDirection = 1;
     let framesVisible = true;
 
     function emitFrameChange() {
@@ -279,13 +280,27 @@
     function playFrames() {
         if (playbackTimer !== null) return;
 
+        if (currentFrameIndex >= maxFrameIndex) {
+            playbackDirection = -1;
+        } else if (currentFrameIndex <= 0) {
+            playbackDirection = 1;
+        }
+
         playbackTimer = setInterval(() => {
-            if (currentFrameIndex >= maxFrameIndex) {
-                showFrameIndex(0);
+            if (maxFrameIndex <= 0) {
                 return;
             }
 
-            showFrameIndex(currentFrameIndex + 1);
+            let nextIndex = currentFrameIndex + playbackDirection;
+            if (nextIndex > maxFrameIndex) {
+                playbackDirection = -1;
+                nextIndex = Math.max(maxFrameIndex - 1, 0);
+            } else if (nextIndex < 0) {
+                playbackDirection = 1;
+                nextIndex = Math.min(1, maxFrameIndex);
+            }
+
+            showFrameIndex(nextIndex);
         }, 1000 / PLAYBACK_FPS);
 
         emitPlaybackChange();
