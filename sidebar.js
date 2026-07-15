@@ -385,14 +385,9 @@ advancedChainContent.className = 'advanced-content';
 
 function updateEnergyAndLengthDisplay() {
     const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
-    const totalL = window.appActions?.calculateTotalLineLength?.() ?? 0;
-    const companionL = window.appActions?.calculateCompanionLineLength?.() ?? 0;
-    const orangeEnds = window.appActions?.calculateInitialAndFinalLineLengths?.() ?? { initialL: 0, finalL: 0 };
-    const pinkEnds = window.appActions?.calculateInitialAndFinalCompanionLineLengths?.() ?? { initialL: 0, finalL: 0 };
-    const orangeLongest = Math.max(orangeEnds.initialL ?? 0, orangeEnds.finalL ?? 0);
-    const pinkLongest = Math.max(pinkEnds.initialL ?? 0, pinkEnds.finalL ?? 0);
-    const orangeDelta = Math.max(0, orangeLongest - totalL);
-    const pinkDelta = Math.max(0, pinkLongest - companionL);
+    const lineDeltas = window.appActions?.calculateLineLengthDeltas?.() ?? { orangeDelta: 0, pinkDelta: 0 };
+    const orangeDelta = Number.isFinite(lineDeltas.orangeDelta) ? lineDeltas.orangeDelta : 0;
+    const pinkDelta = Number.isFinite(lineDeltas.pinkDelta) ? lineDeltas.pinkDelta : 0;
     const skeletonLength = window.appActions?.calculateCurrentSkeletonLength?.() ?? 0;
     const jointThicknesses = window.appActions?.getJointThicknesses?.() ?? [];
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;

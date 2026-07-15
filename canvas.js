@@ -633,6 +633,27 @@ function calculateCompanionLineLength(chain = getMainChain()) {
     return totalLength;
 }
 
+function calculateLineLengthDeltas(chain = getMainChain()) {
+    const activeChain = chain || getMainChain();
+    const trapezoids = activeChain?.getTrapezoids?.() ?? [];
+    if (!activeChain || trapezoids.length === 0) {
+        return { orangeDelta: 0, pinkDelta: 0 };
+    }
+
+    const orangeCurrent = calculateTotalLineLength(activeChain);
+    const orangeEnds = calculateInitialAndFinalLineLengths();
+    const orangeLongest = Math.max(orangeEnds.initialL ?? 0, orangeEnds.finalL ?? 0);
+
+    const pinkCurrent = calculateCompanionLineLength(activeChain);
+    const pinkEnds = calculateInitialAndFinalCompanionLineLengths();
+    const pinkLongest = Math.max(pinkEnds.initialL ?? 0, pinkEnds.finalL ?? 0);
+
+    return {
+        orangeDelta: Math.max(0, orangeLongest - orangeCurrent),
+        pinkDelta: Math.max(0, pinkLongest - pinkCurrent)
+    };
+}
+
 function snapshotChainPose(chain) {
     const trapezoids = chain?.getTrapezoids?.() ?? [];
     return trapezoids.map(item => ({
@@ -1134,6 +1155,9 @@ canvas.addEventListener('mouseleave', () => {
 
 function drawChain(chain) {
     const trapezoids = chain.getTrapezoids();
+    const lineDeltas = holeEnabled ? calculateLineLengthDeltas(chain) : { orangeDelta: 0, pinkDelta: 0 };
+    let primaryHoleStart = null;
+    const primaryHolePath = [];
 
     trapezoids.forEach(item => {
         const pts = item.trapezoid.getPoints(item.position, item.rotation);
@@ -1171,6 +1195,13 @@ function drawChain(chain) {
             ctx.lineWidth = 2;
             ctx.stroke();
 
+            if (!primaryHoleStart) {
+                primaryHoleStart = { x: leftMid.x, y: leftMid.y };
+                primaryHolePath.push({ x: leftMid.x, y: leftMid.y });
+            }
+
+            primaryHolePath.push({ x: rightMid.x, y: rightMid.y });
+
             // Keep for hole-to-hole connection drawing.
             item._holeLeftMid = leftMid;
             item._holeRightMid = rightMid;
@@ -1192,6 +1223,36 @@ function drawChain(chain) {
                 ctx.lineTo(next._holeLeftMid.x, next._holeLeftMid.y);
                 ctx.stroke();
             }
+        }
+    }
+
+    if (holeEnabled && primaryHoleStart && primaryHolePath.length >= 2 && lineDeltas.orangeDelta > 1e-8) {
+        const firstPoint = primaryHolePath[0];
+        const nextPoint = primaryHolePath[1];
+        const segLen = Math.hypot(nextPoint.x - firstPoint.x, nextPoint.y - firstPoint.y);
+        if (segLen <= 1e-8) {
+            // Degenerate final segment, skip continuation.
+        } else {
+            const primaryHoleFirstSegDir = {
+                x: (nextPoint.x - firstPoint.x) / segLen,
+                y: (nextPoint.y - firstPoint.y) / segLen
+            };
+        const extensionEnd = {
+            x: primaryHoleStart.x - primaryHoleFirstSegDir.x * (lineDeltas.orangeDelta + 100),
+            y: primaryHoleStart.y - primaryHoleFirstSegDir.y * (lineDeltas.orangeDelta + 100)
+        };
+        ctx.beginPath();
+        ctx.moveTo(primaryHoleStart.x, primaryHoleStart.y);
+        ctx.lineTo(extensionEnd.x, extensionEnd.y);
+        ctx.strokeStyle = 'rgba(245, 130, 32, 0.95)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(extensionEnd.x, extensionEnd.y, 5, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(245, 130, 32, 0.95)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
         }
     }
 
@@ -1505,6 +1566,7 @@ function drawChain(chain) {
         if (holeEnabled) {
             const centerLinesToDraw = companionRigidModel?.centerLines ?? currentCenterLines;
             const centerLineWorld = [];
+            const centerLineEndpointUsage = new Map();
             centerLinesToDraw.forEach((line) => {
                 const owner = trapezoids[line.ownerLink];
                 if (!owner) return;
@@ -1517,7 +1579,9 @@ function drawChain(chain) {
                     : line.end;
                 if (!start || !end) return;
 
-                centerLineWorld.push({ ownerLink: line.ownerLink, start, end });
+                const lineId = centerLineWorld.length;
+                centerLineWorld.push({ id: lineId, ownerLink: line.ownerLink, start, end });
+                centerLineEndpointUsage.set(lineId, { start: false, end: false });
 
                 ctx.beginPath();
                 ctx.moveTo(start.x, start.y);
@@ -1537,10 +1601,10 @@ function drawChain(chain) {
                 currentCandidates.forEach((a) => {
                     nextCandidates.forEach((b) => {
                         const pairs = [
-                            { p1: a.start, p2: b.start },
-                            { p1: a.start, p2: b.end },
-                            { p1: a.end, p2: b.start },
-                            { p1: a.end, p2: b.end }
+                            { p1: a.start, p2: b.start, p1Key: 'start', p2Key: 'start', lineA: a, lineB: b },
+                            { p1: a.start, p2: b.end, p1Key: 'start', p2Key: 'end', lineA: a, lineB: b },
+                            { p1: a.end, p2: b.start, p1Key: 'end', p2Key: 'start', lineA: a, lineB: b },
+                            { p1: a.end, p2: b.end, p1Key: 'end', p2Key: 'end', lineA: a, lineB: b }
                         ];
 
                         pairs.forEach((pair) => {
@@ -1560,6 +1624,79 @@ function drawChain(chain) {
                 ctx.strokeStyle = 'rgba(215, 65, 150, 0.8)';
                 ctx.lineWidth = 1;
                 ctx.stroke();
+
+                const usageA = centerLineEndpointUsage.get(best.lineA.id);
+                if (usageA) usageA[best.p1Key] = true;
+                const usageB = centerLineEndpointUsage.get(best.lineB.id);
+                if (usageB) usageB[best.p2Key] = true;
+            }
+
+            if (lineDeltas.pinkDelta > 1e-8 && centerLineWorld.length > 0) {
+                const minOwner = Math.min(...centerLineWorld.map((line) => line.ownerLink));
+                const maxOwner = Math.max(...centerLineWorld.map((line) => line.ownerLink));
+                const firstLines = centerLineWorld.filter((line) => line.ownerLink === minOwner);
+                const lastLines = centerLineWorld.filter((line) => line.ownerLink === maxOwner);
+
+                let startPoint = null;
+                firstLines.some((line) => {
+                    const usage = centerLineEndpointUsage.get(line.id) || { start: false, end: false };
+                    if (!usage.start) {
+                        startPoint = line.start;
+                        return true;
+                    }
+                    if (!usage.end) {
+                        startPoint = line.end;
+                        return true;
+                    }
+                    return false;
+                });
+                if (!startPoint && firstLines[0]) {
+                    startPoint = firstLines[0].start;
+                }
+
+                let firstDir = null;
+                firstLines.some((line) => {
+                    const usage = centerLineEndpointUsage.get(line.id) || { start: false, end: false };
+                    if (startPoint && Math.hypot(startPoint.x - line.start.x, startPoint.y - line.start.y) <= 1e-8) {
+                        firstDir = normalize(sub(line.end, line.start));
+                        return true;
+                    }
+                    if (startPoint && Math.hypot(startPoint.x - line.end.x, startPoint.y - line.end.y) <= 1e-8) {
+                        firstDir = normalize(sub(line.start, line.end));
+                        return true;
+                    }
+
+                    if (!usage.start) {
+                        firstDir = normalize(sub(line.end, line.start));
+                        startPoint = line.start;
+                        return true;
+                    }
+                    if (!usage.end) {
+                        firstDir = normalize(sub(line.start, line.end));
+                        startPoint = line.end;
+                        return true;
+                    }
+                    return false;
+                });
+                if (!firstDir && firstLines[0]) {
+                    firstDir = normalize(sub(firstLines[0].end, firstLines[0].start));
+                }
+
+                if (startPoint && firstDir && len(firstDir) > 1e-8) {
+                    const extensionEnd = add(startPoint, mul(firstDir, -(lineDeltas.pinkDelta + 100)));
+                    ctx.beginPath();
+                    ctx.moveTo(startPoint.x, startPoint.y);
+                    ctx.lineTo(extensionEnd.x, extensionEnd.y);
+                    ctx.strokeStyle = 'rgba(245, 80, 170, 0.95)';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.arc(extensionEnd.x, extensionEnd.y, 5, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(245, 80, 170, 0.95)';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
             }
         }
     };
@@ -2822,6 +2959,7 @@ window.appActions = {
     calculateTotalElasticEnergy: () => calculateTotalElasticEnergy(),
     calculateTotalLineLength: () => calculateTotalLineLength(),
     calculateCompanionLineLength: () => calculateCompanionLineLength(),
+    calculateLineLengthDeltas: () => calculateLineLengthDeltas(),
     calculateInitialAndFinalCompanionLineLengths: () => calculateInitialAndFinalCompanionLineLengths(),
     calculateCurrentSkeletonLength: () => calculateCurrentSkeletonLength(),
     calculateInitialLineLength: () => calculateInitialLineLength(),
