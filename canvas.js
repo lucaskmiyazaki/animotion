@@ -1183,9 +1183,14 @@ function drawChain(chain) {
         };
 
         const currentSegments = [];
+        const currentCenterLines = [];
         const addSegment = (ownerLink, start, end) => {
             if (ownerLink < 0 || ownerLink >= trapezoids.length) return;
             currentSegments.push({ ownerLink, start, end });
+        };
+        const addCenterLine = (ownerLink, start, end) => {
+            if (ownerLink < 0 || ownerLink >= trapezoids.length) return;
+            currentCenterLines.push({ ownerLink, start, end });
         };
 
         for (let i = 1; i < trapezoids.length; i++) {
@@ -1254,7 +1259,13 @@ function drawChain(chain) {
             const a = rays[i];
             const b = rays[i + 1];
 
-            if (dot(a.rayDir, b.rayDir) <= 0) continue;
+            if (dot(a.rayDir, b.rayDir) <= 0) {
+                // Side switch: connect bisector midpoints.
+                const midA = add(a.rayOrigin, mul(a.rayDir, chainSideOffset * 0.5));
+                const midB = add(b.rayOrigin, mul(b.rayDir, chainSideOffset * 0.5));
+                addCenterLine(i + 1, midA, midB);
+                continue;
+            }
 
             const baseVec = sub(b.rayOrigin, a.rayOrigin);
             if (len(baseVec) < 1e-8) continue;
@@ -1275,6 +1286,11 @@ function drawChain(chain) {
             addSegment(ownerLink, b.rayOrigin, topB);
             addSegment(ownerLink, topB, topA);
             addSegment(ownerLink, topA, a.rayOrigin);
+
+            // Companion centerline: midpoint-to-midpoint of the two bisector sides.
+            const bisectorMidA = midpoint(a.rayOrigin, topA);
+            const bisectorMidB = midpoint(b.rayOrigin, topB);
+            addCenterLine(ownerLink, bisectorMidA, bisectorMidB);
 
             connectedNext[i] = true;
             connectedPrev[i + 1] = true;
@@ -1301,17 +1317,47 @@ function drawChain(chain) {
             addSegment(ownerLink, tip, ray.rayOrigin);
         };
 
+        const addTerminalTriangleCenterLine = (ray, vertex, ownerLink) => {
+            if (!vertex) return;
+
+            const baseVec = sub(vertex, ray.rayOrigin);
+            if (len(baseVec) < 1e-8) return;
+            const baseDir = normalize(baseVec);
+            let normal = { x: -baseDir.y, y: baseDir.x };
+            if (dot(normal, ray.rayDir) < 0) {
+                normal = mul(normal, -1);
+            }
+
+            const offsetBasePoint = add(ray.rayOrigin, mul(normal, chainSideOffset));
+            const tip = lineLineIntersection(ray.rayOrigin, ray.rayDir, offsetBasePoint, baseDir);
+            if (!tip) return;
+
+            const bisectorMid = midpoint(ray.rayOrigin, tip);
+            const otherEdgeHit = lineSegmentIntersection(bisectorMid, baseDir, vertex, tip);
+            if (!otherEdgeHit) return;
+
+            addCenterLine(ownerLink, bisectorMid, otherEdgeHit);
+        };
+
         for (let i = 0; i < rays.length; i++) {
             const ray = rays[i];
+            const isFirstRay = i === 0;
+            const isLastRay = i === rays.length - 1;
 
             // Previous-side companion piece belongs to link i.
             if (!connectedPrev[i]) {
                 addTriangleFallback(ray, ray.prevSideVertex, i);
+                if (isFirstRay) {
+                    addTerminalTriangleCenterLine(ray, ray.prevSideVertex, i);
+                }
             }
 
             // Next-side companion piece belongs to link i+1.
             if (!connectedNext[i]) {
                 addTriangleFallback(ray, ray.nextSideVertex, i + 1);
+                if (isLastRay) {
+                    addTerminalTriangleCenterLine(ray, ray.nextSideVertex, i + 1);
+                }
             }
         }
 
@@ -1331,7 +1377,15 @@ function drawChain(chain) {
 
             companionRigidModel = {
                 linkCount: trapezoids.length,
-                segments: localSegments
+                segments: localSegments,
+                centerLines: currentCenterLines.map((line) => {
+                    const owner = trapezoids[line.ownerLink];
+                    return {
+                        ownerLink: line.ownerLink,
+                        startLocal: worldToLinkLocal(owner, line.start),
+                        endLocal: worldToLinkLocal(owner, line.end)
+                    };
+                })
             };
         }
 
@@ -1355,6 +1409,67 @@ function drawChain(chain) {
             ctx.lineWidth = 2;
             ctx.stroke();
         });
+
+        if (holeEnabled) {
+            const centerLinesToDraw = companionRigidModel?.centerLines ?? currentCenterLines;
+            const centerLineWorld = [];
+            centerLinesToDraw.forEach((line) => {
+                const owner = trapezoids[line.ownerLink];
+                if (!owner) return;
+
+                const start = line.startLocal
+                    ? linkLocalToWorld(owner, line.startLocal)
+                    : line.start;
+                const end = line.endLocal
+                    ? linkLocalToWorld(owner, line.endLocal)
+                    : line.end;
+                if (!start || !end) return;
+
+                centerLineWorld.push({ ownerLink: line.ownerLink, start, end });
+
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.strokeStyle = 'rgba(0, 80, 0, 0.9)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // Connect companion centerlines only between adjacent links (i -> i+1).
+            for (let linkIndex = 0; linkIndex < trapezoids.length - 1; linkIndex++) {
+                const currentCandidates = centerLineWorld.filter((line) => line.ownerLink === linkIndex);
+                const nextCandidates = centerLineWorld.filter((line) => line.ownerLink === linkIndex + 1);
+                if (currentCandidates.length === 0 || nextCandidates.length === 0) continue;
+
+                let best = null;
+                currentCandidates.forEach((a) => {
+                    nextCandidates.forEach((b) => {
+                        const pairs = [
+                            { p1: a.start, p2: b.start },
+                            { p1: a.start, p2: b.end },
+                            { p1: a.end, p2: b.start },
+                            { p1: a.end, p2: b.end }
+                        ];
+
+                        pairs.forEach((pair) => {
+                            const d = Math.hypot(pair.p2.x - pair.p1.x, pair.p2.y - pair.p1.y);
+                            if (!best || d < best.d) {
+                                best = { ...pair, d };
+                            }
+                        });
+                    });
+                });
+
+                if (!best) continue;
+
+                ctx.beginPath();
+                ctx.moveTo(best.p1.x, best.p1.y);
+                ctx.lineTo(best.p2.x, best.p2.y);
+                ctx.strokeStyle = 'rgba(0, 100, 0, 0.6)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
     };
 
     if (!jointsEnabled) {
