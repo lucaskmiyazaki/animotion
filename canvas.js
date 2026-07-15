@@ -32,6 +32,7 @@ const jointKByIndex = {};
 // Default trapezoid thickness
 let chainThickness = 50;
 let jointMinimumThickness = 5;
+let companionSlack = 10;
 let companionRigidModel = null;
 const pointRadius = 5;
 const hoverRadius = 9;
@@ -287,6 +288,7 @@ function transformAllGeometryToNewVideoRect(oldRect, newRect) {
 
     chainThickness *= uniformScale;
     jointMinimumThickness *= uniformScale;
+    companionSlack *= uniformScale;
 
     if (rulerState.initialized) {
         transformPointToNewVideoRect(rulerState.start, oldRect, newRect, scaleX, scaleY);
@@ -445,6 +447,19 @@ function setJointMinimumThickness(value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
     jointMinimumThickness = parsed;
+    markMechanismNeedsRegeneration();
+    emitChainStateChange();
+    redrawAll();
+}
+
+function getCompanionSlack() {
+    return companionSlack;
+}
+
+function setCompanionSlack(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+    companionSlack = parsed;
     markMechanismNeedsRegeneration();
     emitChainStateChange();
     redrawAll();
@@ -1456,9 +1471,20 @@ function drawChain(chain) {
             };
             const prevSideVertex = pickAlignedVertex(prevPts[0], prevPts[3]);
             const nextSideVertex = pickAlignedVertex(currPts[1], currPts[2]);
+            let rayOffsetNormal = { x: -guideDir.y, y: guideDir.x };
+            const centerBridge = normalize(sub(currCenter, prevCenter));
+            if (dot(rayOffsetNormal, centerBridge) < 0) {
+                rayOffsetNormal = mul(rayOffsetNormal, -1);
+            }
+
+            const halfSlack = getCompanionSlack() * 0.5;
+            const prevRayOrigin = add(pivot, mul(rayOffsetNormal, -halfSlack));
+            const nextRayOrigin = add(pivot, mul(rayOffsetNormal, halfSlack));
             rays.push({
                 rayOrigin: pivot,
                 rayDir: guideDir,
+                prevRayOrigin,
+                nextRayOrigin,
                 prevSideVertex,
                 nextSideVertex
             });
@@ -1470,16 +1496,18 @@ function drawChain(chain) {
         for (let i = 0; i < rays.length - 1; i++) {
             const a = rays[i];
             const b = rays[i + 1];
+            const aLinkOrigin = a.nextRayOrigin ?? a.rayOrigin;
+            const bLinkOrigin = b.prevRayOrigin ?? b.rayOrigin;
 
             if (dot(a.rayDir, b.rayDir) <= 0) {
                 // Side switch: connect bisector midpoints.
-                const midA = add(a.rayOrigin, mul(a.rayDir, chainSideOffset * 0.5));
-                const midB = add(b.rayOrigin, mul(b.rayDir, chainSideOffset * 0.5));
+                const midA = add(aLinkOrigin, mul(a.rayDir, chainSideOffset * 0.5));
+                const midB = add(bLinkOrigin, mul(b.rayDir, chainSideOffset * 0.5));
                 addCenterLine(i + 1, midA, midB);
                 continue;
             }
 
-            const baseVec = sub(b.rayOrigin, a.rayOrigin);
+            const baseVec = sub(bLinkOrigin, aLinkOrigin);
             if (len(baseVec) < 1e-8) continue;
             const baseDir = normalize(baseVec);
             let normal = { x: -baseDir.y, y: baseDir.x };
@@ -1488,20 +1516,20 @@ function drawChain(chain) {
                 normal = mul(normal, -1);
             }
 
-            const offsetBasePoint = add(a.rayOrigin, mul(normal, chainSideOffset));
-            const topA = lineLineIntersection(a.rayOrigin, a.rayDir, offsetBasePoint, baseDir);
-            const topB = lineLineIntersection(b.rayOrigin, b.rayDir, offsetBasePoint, baseDir);
+            const offsetBasePoint = add(aLinkOrigin, mul(normal, chainSideOffset));
+            const topA = lineLineIntersection(aLinkOrigin, a.rayDir, offsetBasePoint, baseDir);
+            const topB = lineLineIntersection(bLinkOrigin, b.rayDir, offsetBasePoint, baseDir);
             if (!topA || !topB) continue;
 
             const ownerLink = i + 1;
-            addSegment(ownerLink, a.rayOrigin, b.rayOrigin);
-            addSegment(ownerLink, b.rayOrigin, topB);
+            addSegment(ownerLink, aLinkOrigin, bLinkOrigin);
+            addSegment(ownerLink, bLinkOrigin, topB);
             addSegment(ownerLink, topB, topA);
-            addSegment(ownerLink, topA, a.rayOrigin);
+            addSegment(ownerLink, topA, aLinkOrigin);
 
             // Companion centerline: midpoint-to-midpoint of the two bisector sides.
-            const bisectorMidA = midpoint(a.rayOrigin, topA);
-            const bisectorMidB = midpoint(b.rayOrigin, topB);
+            const bisectorMidA = midpoint(aLinkOrigin, topA);
+            const bisectorMidB = midpoint(bLinkOrigin, topB);
             addCenterLine(ownerLink, bisectorMidA, bisectorMidB);
 
             connectedNext[i] = true;
@@ -1509,42 +1537,42 @@ function drawChain(chain) {
         }
 
         // Triangle fallback for each unpaired side: one bisector + base edge + connector.
-        const addTriangleFallback = (ray, vertex, ownerLink) => {
+        const addTriangleFallback = (rayOrigin, rayDir, vertex, ownerLink) => {
             if (!vertex) return;
 
-            const baseVec = sub(vertex, ray.rayOrigin);
+            const baseVec = sub(vertex, rayOrigin);
             if (len(baseVec) < 1e-8) return;
             const baseDir = normalize(baseVec);
             let normal = { x: -baseDir.y, y: baseDir.x };
-            if (dot(normal, ray.rayDir) < 0) {
+            if (dot(normal, rayDir) < 0) {
                 normal = mul(normal, -1);
             }
 
-            const offsetBasePoint = add(ray.rayOrigin, mul(normal, chainSideOffset));
-            const tip = lineLineIntersection(ray.rayOrigin, ray.rayDir, offsetBasePoint, baseDir);
+            const offsetBasePoint = add(rayOrigin, mul(normal, chainSideOffset));
+            const tip = lineLineIntersection(rayOrigin, rayDir, offsetBasePoint, baseDir);
             if (!tip) return;
 
-            addSegment(ownerLink, ray.rayOrigin, vertex);
+            addSegment(ownerLink, rayOrigin, vertex);
             addSegment(ownerLink, vertex, tip);
-            addSegment(ownerLink, tip, ray.rayOrigin);
+            addSegment(ownerLink, tip, rayOrigin);
         };
 
-        const addTerminalTriangleCenterLine = (ray, vertex, ownerLink) => {
+        const addTerminalTriangleCenterLine = (rayOrigin, rayDir, vertex, ownerLink) => {
             if (!vertex) return;
 
-            const baseVec = sub(vertex, ray.rayOrigin);
+            const baseVec = sub(vertex, rayOrigin);
             if (len(baseVec) < 1e-8) return;
             const baseDir = normalize(baseVec);
             let normal = { x: -baseDir.y, y: baseDir.x };
-            if (dot(normal, ray.rayDir) < 0) {
+            if (dot(normal, rayDir) < 0) {
                 normal = mul(normal, -1);
             }
 
-            const offsetBasePoint = add(ray.rayOrigin, mul(normal, chainSideOffset));
-            const tip = lineLineIntersection(ray.rayOrigin, ray.rayDir, offsetBasePoint, baseDir);
+            const offsetBasePoint = add(rayOrigin, mul(normal, chainSideOffset));
+            const tip = lineLineIntersection(rayOrigin, rayDir, offsetBasePoint, baseDir);
             if (!tip) return;
 
-            const bisectorMid = midpoint(ray.rayOrigin, tip);
+            const bisectorMid = midpoint(rayOrigin, tip);
             const otherEdgeHit = lineSegmentIntersection(bisectorMid, baseDir, vertex, tip);
             if (!otherEdgeHit) return;
 
@@ -1558,17 +1586,17 @@ function drawChain(chain) {
 
             // Previous-side companion piece belongs to link i.
             if (!connectedPrev[i]) {
-                addTriangleFallback(ray, ray.prevSideVertex, i);
+                addTriangleFallback(ray.prevRayOrigin ?? ray.rayOrigin, ray.rayDir, ray.prevSideVertex, i);
                 if (isFirstRay) {
-                    addTerminalTriangleCenterLine(ray, ray.prevSideVertex, i);
+                    addTerminalTriangleCenterLine(ray.prevRayOrigin ?? ray.rayOrigin, ray.rayDir, ray.prevSideVertex, i);
                 }
             }
 
             // Next-side companion piece belongs to link i+1.
             if (!connectedNext[i]) {
-                addTriangleFallback(ray, ray.nextSideVertex, i + 1);
+                addTriangleFallback(ray.nextRayOrigin ?? ray.rayOrigin, ray.rayDir, ray.nextSideVertex, i + 1);
                 if (isLastRay) {
-                    addTerminalTriangleCenterLine(ray, ray.nextSideVertex, i + 1);
+                    addTerminalTriangleCenterLine(ray.nextRayOrigin ?? ray.rayOrigin, ray.rayDir, ray.nextSideVertex, i + 1);
                 }
             }
         }
@@ -2524,6 +2552,7 @@ function exposeStateForSerialization() {
         mechanismNeedsRegeneration,
         chainThickness,
         jointMinimumThickness,
+        companionSlack,
         jointKByIndex,
         rulerState,
         currentFrameIndex,
@@ -3160,6 +3189,8 @@ window.appActions = {
     setChainThickness: (value) => setChainThickness(value),
     getJointMinimumThickness: () => getJointMinimumThickness(),
     setJointMinimumThickness: (value) => setJointMinimumThickness(value),
+    getCompanionSlack: () => getCompanionSlack(),
+    setCompanionSlack: (value) => setCompanionSlack(value),
     getJointThicknesses: () => getJointThicknesses(),
     calculateTotalElasticEnergy: () => calculateTotalElasticEnergy(),
     calculateTotalLineLength: () => calculateTotalLineLength(),

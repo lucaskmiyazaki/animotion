@@ -137,6 +137,7 @@ async function getProjectStateSnapshot(stateRefs) {
         mechanismNeedsRegeneration,
         chainThickness,
         jointMinimumThickness,
+        companionSlack,
         rulerState,
         currentFrameIndex,
         mode,
@@ -166,7 +167,8 @@ async function getProjectStateSnapshot(stateRefs) {
         },
         mechanism: {
             chainThickness: Number(chainThickness) || 50,
-            jointMinimumThickness: Number(jointMinimumThickness) || 5
+            jointMinimumThickness: Number(jointMinimumThickness) || 5,
+            companionSlack: Number(companionSlack) || 0
         },
         video: videoState ?? {
             currentFrameIndex: 0,
@@ -494,6 +496,9 @@ async function restoreProjectSnapshot(snapshot) {
         }
         if (snapshot?.mechanism?.jointMinimumThickness !== undefined) {
             window.appActions?.setJointMinimumThickness?.(snapshot.mechanism.jointMinimumThickness);
+        }
+        if (snapshot?.mechanism?.companionSlack !== undefined) {
+            window.appActions?.setCompanionSlack?.(snapshot.mechanism.companionSlack);
         }
 
         if (snapshot?.companion?.model !== undefined) {

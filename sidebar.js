@@ -294,6 +294,11 @@ function syncThicknessInputs() {
     if (Number.isFinite(liveJointMinThickness)) {
         jointMinThicknessInput.value = String(liveJointMinThickness);
     }
+
+    const liveSlack = window.appActions?.getCompanionSlack?.();
+    if (Number.isFinite(liveSlack)) {
+        slackInput.value = String(liveSlack);
+    }
 }
 
 chainThicknessRow.append(chainThicknessLabel, chainThicknessInput);
@@ -321,6 +326,29 @@ jointMinThicknessInput.addEventListener('input', () => {
 });
 
 jointMinThicknessRow.append(jointMinThicknessLabel, jointMinThicknessInput);
+
+const slackRow = document.createElement('div');
+slackRow.className = 'joint-k-row';
+
+const slackLabel = document.createElement('label');
+slackLabel.className = 'joint-k-label';
+slackLabel.textContent = 'Slack';
+
+const slackInput = document.createElement('input');
+slackInput.className = 'joint-k-input';
+slackInput.type = 'number';
+slackInput.min = '0';
+slackInput.step = '0.1';
+slackInput.value = String(window.appActions?.getCompanionSlack?.() ?? 10);
+slackInput.addEventListener('input', () => {
+    const parsed = Number.parseFloat(slackInput.value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+        window.appActions?.setCompanionSlack?.(parsed);
+        updateEnergyAndLengthDisplay();
+    }
+});
+
+slackRow.append(slackLabel, slackInput);
 
 const jointKContainer = document.createElement('div');
 jointKContainer.className = 'joint-k-container';
@@ -470,6 +498,7 @@ chainOptionsSection.append(
     companionOptionLabel,
     chainThicknessRow,
     jointMinThicknessRow,
+    slackRow,
     advancedChainDetails
 );
 
