@@ -643,6 +643,90 @@ class Chain {
     }
 
     exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false, includeJoints = false, jointKValues = [], scaleFactor = 1, companionModel = null) {
+        const getCompanionModelLinks = (model) => {
+            if (!model || typeof model !== 'object') {
+                return [];
+            }
+
+            if (Array.isArray(model.links)) {
+                return model.links.map((link, index) => ({
+                    ...link,
+                    ownerLink: Number.isInteger(link?.ownerLink)
+                        ? link.ownerLink
+                        : (Number.isInteger(link?.originalLinkIndex) ? link.originalLinkIndex : index),
+                    originalLinkIndex: Number.isInteger(link?.originalLinkIndex)
+                        ? link.originalLinkIndex
+                        : (Number.isInteger(link?.ownerLink) ? link.ownerLink : index)
+                }));
+            }
+
+            const grouped = new Map();
+            const ensureLink = (ownerLink) => {
+                if (!Number.isInteger(ownerLink) || ownerLink < 0) {
+                    return null;
+                }
+                if (!grouped.has(ownerLink)) {
+                    grouped.set(ownerLink, {
+                        ownerLink,
+                        originalLinkIndex: ownerLink,
+                        boundaryLines: [],
+                        holeLines: []
+                    });
+                }
+                return grouped.get(ownerLink);
+            };
+
+            (Array.isArray(model.segments) ? model.segments : []).forEach((segment) => {
+                const link = ensureLink(segment.ownerLink);
+                if (link) {
+                    link.boundaryLines.push(segment);
+                }
+            });
+
+            (Array.isArray(model.centerLines) ? model.centerLines : []).forEach((line) => {
+                const link = ensureLink(line.ownerLink);
+                if (link) {
+                    link.holeLines.push(line);
+                }
+            });
+
+            return Array.from(grouped.values()).sort((a, b) => a.ownerLink - b.ownerLink);
+        };
+
+        const getCompanionModelBoundaryLines = (model) => getCompanionModelLinks(model).flatMap((link) =>
+            (Array.isArray(link.boundaryLines) ? link.boundaryLines : []).map((line) => ({
+                ownerLink: link.ownerLink,
+                originalLinkIndex: link.originalLinkIndex,
+                ...line
+            }))
+        );
+
+        const getCompanionModelHoleLines = (model) => getCompanionModelLinks(model).flatMap((link) =>
+            (Array.isArray(link.holeLines) ? link.holeLines : []).map((line) => ({
+                ownerLink: link.ownerLink,
+                originalLinkIndex: link.originalLinkIndex,
+                ...line
+            }))
+        );
+
+        const getCompanionModelJoints = (model) => {
+            if (!model || typeof model !== 'object' || !Array.isArray(model.joints)) {
+                return [];
+            }
+
+            return model.joints.map((joint, index) => ({
+                jointIndex: Number.isInteger(joint?.jointIndex) ? joint.jointIndex : index,
+                prevLinkIndex: Number.isInteger(joint?.prevLinkIndex) ? joint.prevLinkIndex : index,
+                nextLinkIndex: Number.isInteger(joint?.nextLinkIndex) ? joint.nextLinkIndex : index + 1,
+                pivotOnPrevLocal: joint?.pivotOnPrevLocal ?? null,
+                pivotOnNextLocal: joint?.pivotOnNextLocal ?? null,
+                bisectorOnPrevLocal: joint?.bisectorOnPrevLocal ?? null,
+                bisectorOnNextLocal: joint?.bisectorOnNextLocal ?? null,
+                prevEdge: joint?.prevEdge ?? null,
+                nextEdge: joint?.nextEdge ?? null
+            }));
+        };
+
 
         const trapezoids = this.trapezoids;
         if (trapezoids.length === 0) return;
@@ -671,6 +755,15 @@ class Chain {
             return {
                 x: cos * localPoint.x - sin * localPoint.y + item.position.x,
                 y: sin * localPoint.x + cos * localPoint.y + item.position.y
+            };
+        };
+        const linkLocalVectorToWorld = (item, localVector) => {
+            const rot = (item.rotation * Math.PI) / 180;
+            const cos = Math.cos(rot);
+            const sin = Math.sin(rot);
+            return {
+                x: cos * localVector.x - sin * localVector.y,
+                y: sin * localVector.x + cos * localVector.y
             };
         };
         let dxf = "";
@@ -820,13 +913,14 @@ class Chain {
         }
 
         // Export companion mechanism and companion hole lines when rigid model is available.
-        const hasCompanionModel = companionModel
+        const companionBoundaryLines = getCompanionModelBoundaryLines(companionModel);
+        const companionHoleLines = getCompanionModelHoleLines(companionModel);
+        const hasCompanionModel = companionBoundaryLines.length > 0
             && typeof companionModel === 'object'
-            && Array.isArray(companionModel.segments)
             && companionModel.linkCount === trapezoids.length;
 
         if (hasCompanionModel) {
-            companionModel.segments.forEach((segment) => {
+            companionBoundaryLines.forEach((segment) => {
                 const owner = trapezoids[segment.ownerLink];
                 if (!owner) return;
 
@@ -841,8 +935,96 @@ class Chain {
                 writeLine(start, end, "0");
             });
 
-            if (includeHoles && Array.isArray(companionModel.centerLines)) {
-                companionModel.centerLines.forEach((line) => {
+            if (includeJoints) {
+                const worldJoints = getCompanionModelJoints(companionModel).map((joint) => {
+                    const prevOwner = trapezoids[joint.prevLinkIndex];
+                    const nextOwner = trapezoids[joint.nextLinkIndex];
+                    const toWorldEdge = (edge) => {
+                        if (!edge) return null;
+                        const owner = trapezoids[edge.ownerLink];
+                        if (!owner) return null;
+                        const start = edge.startLocal ? linkLocalToWorld(owner, edge.startLocal) : edge.start;
+                        const end = edge.endLocal ? linkLocalToWorld(owner, edge.endLocal) : edge.end;
+                        if (!start || !end) return null;
+                        return { ownerLink: edge.ownerLink, start, end };
+                    };
+
+                    const pivot = prevOwner && joint.pivotOnPrevLocal
+                        ? linkLocalToWorld(prevOwner, joint.pivotOnPrevLocal)
+                        : (nextOwner && joint.pivotOnNextLocal ? linkLocalToWorld(nextOwner, joint.pivotOnNextLocal) : null);
+                    const bisector = prevOwner && joint.bisectorOnPrevLocal
+                        ? linkLocalVectorToWorld(prevOwner, joint.bisectorOnPrevLocal)
+                        : (nextOwner && joint.bisectorOnNextLocal ? linkLocalVectorToWorld(nextOwner, joint.bisectorOnNextLocal) : null);
+
+                    return {
+                        jointIndex: joint.jointIndex,
+                        pivot,
+                        bisector,
+                        prevEdge: toWorldEdge(joint.prevEdge),
+                        nextEdge: toWorldEdge(joint.nextEdge)
+                    };
+                });
+
+                const getJointK = (jointIndex) => {
+                    const raw = Number(jointKValues?.[jointIndex]);
+                    return Number.isFinite(raw) ? raw : 1;
+                };
+
+                const closestEndpoints = (edgeA, edgeB) => {
+                    const candidates = [
+                        { p1: edgeA.start, p2: edgeB.start },
+                        { p1: edgeA.start, p2: edgeB.end },
+                        { p1: edgeA.end, p2: edgeB.start },
+                        { p1: edgeA.end, p2: edgeB.end }
+                    ];
+                    return candidates.reduce((best, pair) => {
+                        const length = Math.hypot(pair.p2.x - pair.p1.x, pair.p2.y - pair.p1.y);
+                        if (!best || length < best.length) {
+                            return { ...pair, length };
+                        }
+                        return best;
+                    }, null);
+                };
+
+                worldJoints.forEach((joint) => {
+                    if (!joint?.pivot || !joint?.bisector || !joint?.prevEdge || !joint?.nextEdge) return;
+
+                    const prev = trapezoids[joint.jointIndex];
+                    const curr = trapezoids[joint.jointIndex + 1];
+                    if (!prev || !curr) return;
+
+                    const jointThickness = (((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10) * getJointK(joint.jointIndex);
+                    const connectorDir = { x: -joint.bisector.y, y: joint.bisector.x };
+                    const anchors = [
+                        add(joint.pivot, mul(joint.bisector, jointThickness)),
+                        add(joint.pivot, mul(joint.bisector, -jointThickness))
+                    ];
+
+                    let best = null;
+                    anchors.forEach((anchor) => {
+                        const p1 = lineSegmentIntersection(anchor, connectorDir, joint.prevEdge.start, joint.prevEdge.end);
+                        const p2 = lineSegmentIntersection(anchor, connectorDir, joint.nextEdge.start, joint.nextEdge.end);
+                        if (!p1 || !p2) return;
+                        const length = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                        if (!best || length < best.length) {
+                            best = { p1, p2, length };
+                        }
+                    });
+
+                    if (best) {
+                        writeLine(best.p1, best.p2, "0");
+                        return;
+                    }
+
+                    const fallback = closestEndpoints(joint.prevEdge, joint.nextEdge);
+                    if (fallback) {
+                        writeLine(fallback.p1, fallback.p2, "0");
+                    }
+                });
+            }
+
+            if (includeHoles && companionHoleLines.length > 0) {
+                companionHoleLines.forEach((line) => {
                     const owner = trapezoids[line.ownerLink];
                     if (!owner) return;
 

@@ -636,6 +636,94 @@ function calculateTotalLineLength(chain = getMainChain()) {
     return totalLength;
 }
 
+function getCompanionModelLinks(model = companionRigidModel) {
+    if (!model || typeof model !== 'object') {
+        return [];
+    }
+
+    if (Array.isArray(model.links)) {
+        return model.links.map((link, index) => ({
+            ...link,
+            ownerLink: Number.isInteger(link?.ownerLink)
+                ? link.ownerLink
+                : (Number.isInteger(link?.originalLinkIndex) ? link.originalLinkIndex : index),
+            originalLinkIndex: Number.isInteger(link?.originalLinkIndex)
+                ? link.originalLinkIndex
+                : (Number.isInteger(link?.ownerLink) ? link.ownerLink : index)
+        }));
+    }
+
+    const grouped = new Map();
+    const ensureLink = (ownerLink) => {
+        if (!Number.isInteger(ownerLink) || ownerLink < 0) {
+            return null;
+        }
+        if (!grouped.has(ownerLink)) {
+            grouped.set(ownerLink, {
+                ownerLink,
+                originalLinkIndex: ownerLink,
+                boundaryLines: [],
+                holeLines: []
+            });
+        }
+        return grouped.get(ownerLink);
+    };
+
+    (Array.isArray(model.segments) ? model.segments : []).forEach((segment) => {
+        const link = ensureLink(segment.ownerLink);
+        if (link) {
+            link.boundaryLines.push(segment);
+        }
+    });
+
+    (Array.isArray(model.centerLines) ? model.centerLines : []).forEach((line) => {
+        const link = ensureLink(line.ownerLink);
+        if (link) {
+            link.holeLines.push(line);
+        }
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => a.ownerLink - b.ownerLink);
+}
+
+function getCompanionModelBoundaryLines(model = companionRigidModel) {
+    return getCompanionModelLinks(model).flatMap((link) =>
+        (Array.isArray(link.boundaryLines) ? link.boundaryLines : []).map((line) => ({
+            ownerLink: link.ownerLink,
+            originalLinkIndex: link.originalLinkIndex,
+            ...line
+        }))
+    );
+}
+
+function getCompanionModelHoleLines(model = companionRigidModel) {
+    return getCompanionModelLinks(model).flatMap((link) =>
+        (Array.isArray(link.holeLines) ? link.holeLines : []).map((line) => ({
+            ownerLink: link.ownerLink,
+            originalLinkIndex: link.originalLinkIndex,
+            ...line
+        }))
+    );
+}
+
+function getCompanionModelJoints(model = companionRigidModel) {
+    if (!model || typeof model !== 'object' || !Array.isArray(model.joints)) {
+        return [];
+    }
+
+    return model.joints.map((joint, index) => ({
+        jointIndex: Number.isInteger(joint?.jointIndex) ? joint.jointIndex : index,
+        prevLinkIndex: Number.isInteger(joint?.prevLinkIndex) ? joint.prevLinkIndex : index,
+        nextLinkIndex: Number.isInteger(joint?.nextLinkIndex) ? joint.nextLinkIndex : index + 1,
+        pivotOnPrevLocal: joint?.pivotOnPrevLocal ?? null,
+        pivotOnNextLocal: joint?.pivotOnNextLocal ?? null,
+        bisectorOnPrevLocal: joint?.bisectorOnPrevLocal ?? null,
+        bisectorOnNextLocal: joint?.bisectorOnNextLocal ?? null,
+        prevEdge: joint?.prevEdge ?? null,
+        nextEdge: joint?.nextEdge ?? null
+    }));
+}
+
 function calculateCompanionLineLength(chain = getMainChain()) {
     const activeChain = chain || getMainChain();
     const trapezoids = activeChain?.getTrapezoids?.() ?? [];
@@ -643,7 +731,7 @@ function calculateCompanionLineLength(chain = getMainChain()) {
         return 0;
     }
 
-    const modelCenterLines = companionRigidModel?.centerLines;
+    const modelCenterLines = getCompanionModelHoleLines(companionRigidModel);
     if (!Array.isArray(modelCenterLines) || modelCenterLines.length === 0) {
         return 0;
     }
@@ -1450,6 +1538,16 @@ function drawChain(chain) {
             };
         };
 
+        const worldVectorToLinkLocal = (item, vector) => {
+            const rot = (item.rotation * Math.PI) / 180;
+            const cos = Math.cos(rot);
+            const sin = Math.sin(rot);
+            return {
+                x: cos * vector.x + sin * vector.y,
+                y: -sin * vector.x + cos * vector.y
+            };
+        };
+
         const linkLocalToWorld = (item, localPoint) => {
             const rot = (item.rotation * Math.PI) / 180;
             const cos = Math.cos(rot);
@@ -1460,8 +1558,19 @@ function drawChain(chain) {
             };
         };
 
+        const linkLocalVectorToWorld = (item, localVector) => {
+            const rot = (item.rotation * Math.PI) / 180;
+            const cos = Math.cos(rot);
+            const sin = Math.sin(rot);
+            return {
+                x: cos * localVector.x - sin * localVector.y,
+                y: sin * localVector.x + cos * localVector.y
+            };
+        };
+
         const currentSegments = [];
         const currentCenterLines = [];
+        const currentJoints = [];
         const addSegment = (ownerLink, start, end) => {
             if (ownerLink < 0 || ownerLink >= trapezoids.length) return;
             currentSegments.push({ ownerLink, start, end });
@@ -1470,8 +1579,14 @@ function drawChain(chain) {
             if (ownerLink < 0 || ownerLink >= trapezoids.length) return;
             currentCenterLines.push({ ownerLink, start, end });
         };
+        const setJointEdge = (jointIndex, side, ownerLink, start, end) => {
+            const joint = currentJoints[jointIndex];
+            if (!joint || !start || !end) return;
+            joint[side] = { ownerLink, start, end };
+        };
 
         for (let i = 1; i < trapezoids.length; i++) {
+            const jointIndex = i - 1;
             const prev = trapezoids[i - 1];
             const curr = trapezoids[i];
 
@@ -1491,6 +1606,16 @@ function drawChain(chain) {
             if (len(add(prevDir, currDir)) < 1e-8) {
                 bisector = prevDir;
             }
+
+            currentJoints[jointIndex] = {
+                jointIndex,
+                prevLinkIndex: i - 1,
+                nextLinkIndex: i,
+                pivot,
+                bisector,
+                prevEdge: null,
+                nextEdge: null
+            };
 
             // Perpendicular guide ray from the edge pivot point.
             let guideDir = { x: -bisector.y, y: bisector.x };
@@ -1564,6 +1689,8 @@ function drawChain(chain) {
             addSegment(ownerLink, bLinkOrigin, topB);
             addSegment(ownerLink, topB, topA);
             addSegment(ownerLink, topA, aLinkOrigin);
+            setJointEdge(i, 'nextEdge', ownerLink, aLinkOrigin, topA);
+            setJointEdge(i + 1, 'prevEdge', ownerLink, bLinkOrigin, topB);
 
             // Companion centerline: midpoint-to-midpoint of the two bisector sides.
             const bisectorMidA = midpoint(aLinkOrigin, topA);
@@ -1576,10 +1703,10 @@ function drawChain(chain) {
 
         // Triangle fallback for each unpaired side: one bisector + base edge + connector.
         const addTriangleFallback = (rayOrigin, rayDir, vertex, ownerLink) => {
-            if (!vertex) return;
+            if (!vertex) return null;
 
             const baseVec = sub(vertex, rayOrigin);
-            if (len(baseVec) < 1e-8) return;
+            if (len(baseVec) < 1e-8) return null;
             const baseDir = normalize(baseVec);
             let normal = { x: -baseDir.y, y: baseDir.x };
             if (dot(normal, rayDir) < 0) {
@@ -1588,11 +1715,12 @@ function drawChain(chain) {
 
             const offsetBasePoint = add(rayOrigin, mul(normal, chainSideOffset));
             const tip = lineLineIntersection(rayOrigin, rayDir, offsetBasePoint, baseDir);
-            if (!tip) return;
+            if (!tip) return null;
 
             addSegment(ownerLink, rayOrigin, vertex);
             addSegment(ownerLink, vertex, tip);
             addSegment(ownerLink, tip, rayOrigin);
+            return tip;
         };
 
         const addTerminalTriangleCenterLine = (rayOrigin, rayDir, vertex, ownerLink) => {
@@ -1624,50 +1752,100 @@ function drawChain(chain) {
 
             // Previous-side companion piece belongs to link i.
             if (!connectedPrev[i]) {
-                addTriangleFallback(ray.prevRayOrigin ?? ray.rayOrigin, ray.rayDir, ray.prevSideVertex, i);
+                const prevOrigin = ray.prevRayOrigin ?? ray.rayOrigin;
+                const prevTip = addTriangleFallback(prevOrigin, ray.rayDir, ray.prevSideVertex, i);
+                if (prevTip) {
+                    setJointEdge(i, 'prevEdge', i, prevOrigin, prevTip);
+                }
                 if (isFirstRay) {
-                    addTerminalTriangleCenterLine(ray.prevRayOrigin ?? ray.rayOrigin, ray.rayDir, ray.prevSideVertex, i);
+                    addTerminalTriangleCenterLine(prevOrigin, ray.rayDir, ray.prevSideVertex, i);
                 }
             }
 
             // Next-side companion piece belongs to link i+1.
             if (!connectedNext[i]) {
-                addTriangleFallback(ray.nextRayOrigin ?? ray.rayOrigin, ray.rayDir, ray.nextSideVertex, i + 1);
+                const nextOrigin = ray.nextRayOrigin ?? ray.rayOrigin;
+                const nextTip = addTriangleFallback(nextOrigin, ray.rayDir, ray.nextSideVertex, i + 1);
+                if (nextTip) {
+                    setJointEdge(i, 'nextEdge', i + 1, nextOrigin, nextTip);
+                }
                 if (isLastRay) {
-                    addTerminalTriangleCenterLine(ray.nextRayOrigin ?? ray.rayOrigin, ray.rayDir, ray.nextSideVertex, i + 1);
+                    addTerminalTriangleCenterLine(nextOrigin, ray.rayDir, ray.nextSideVertex, i + 1);
                 }
             }
         }
 
+        const rigidJoints = getCompanionModelJoints(companionRigidModel);
+        const rigidJointsInvalid = rigidJoints.length !== currentJoints.length
+            || rigidJoints.some((joint) => !joint?.prevEdge || !joint?.nextEdge || (!joint?.pivotOnPrevLocal && !joint?.pivotOnNextLocal));
+
         const shouldCaptureRigid = currentFrameIndex === 0
             || !companionRigidModel
-            || companionRigidModel.linkCount !== trapezoids.length;
+            || companionRigidModel.linkCount !== trapezoids.length
+            || rigidJointsInvalid;
 
         if (shouldCaptureRigid) {
-            const localSegments = currentSegments.map((segment) => {
+            const groupedLinks = Array.from({ length: trapezoids.length }, (_, ownerLink) => ({
+                ownerLink,
+                originalLinkIndex: ownerLink,
+                boundaryLines: [],
+                holeLines: []
+            }));
+
+            currentSegments.forEach((segment) => {
                 const owner = trapezoids[segment.ownerLink];
-                return {
-                    ownerLink: segment.ownerLink,
+                if (!owner || !groupedLinks[segment.ownerLink]) return;
+                groupedLinks[segment.ownerLink].boundaryLines.push({
                     startLocal: worldToLinkLocal(owner, segment.start),
                     endLocal: worldToLinkLocal(owner, segment.end)
-                };
+                });
+            });
+
+            currentCenterLines.forEach((line) => {
+                const owner = trapezoids[line.ownerLink];
+                if (!owner || !groupedLinks[line.ownerLink]) return;
+                groupedLinks[line.ownerLink].holeLines.push({
+                    startLocal: worldToLinkLocal(owner, line.start),
+                    endLocal: worldToLinkLocal(owner, line.end)
+                });
             });
 
             companionRigidModel = {
                 linkCount: trapezoids.length,
-                segments: localSegments,
-                centerLines: currentCenterLines.map((line) => {
-                    const owner = trapezoids[line.ownerLink];
+                links: groupedLinks,
+                joints: currentJoints.map((joint) => {
+                    const prevLink = trapezoids[joint.prevLinkIndex];
+                    const nextLink = trapezoids[joint.nextLinkIndex];
+                    const toLocalEdge = (edge) => {
+                        if (!edge) return null;
+                        const owner = trapezoids[edge.ownerLink];
+                        if (!owner) return null;
+                        return {
+                            ownerLink: edge.ownerLink,
+                            originalLinkIndex: edge.ownerLink,
+                            startLocal: worldToLinkLocal(owner, edge.start),
+                            endLocal: worldToLinkLocal(owner, edge.end)
+                        };
+                    };
+
                     return {
-                        ownerLink: line.ownerLink,
-                        startLocal: worldToLinkLocal(owner, line.start),
-                        endLocal: worldToLinkLocal(owner, line.end)
+                        jointIndex: joint.jointIndex,
+                        prevLinkIndex: joint.prevLinkIndex,
+                        nextLinkIndex: joint.nextLinkIndex,
+                        pivotOnPrevLocal: prevLink ? worldToLinkLocal(prevLink, joint.pivot) : null,
+                        pivotOnNextLocal: nextLink ? worldToLinkLocal(nextLink, joint.pivot) : null,
+                        bisectorOnPrevLocal: prevLink ? worldVectorToLinkLocal(prevLink, joint.bisector) : null,
+                        bisectorOnNextLocal: nextLink ? worldVectorToLinkLocal(nextLink, joint.bisector) : null,
+                        prevEdge: toLocalEdge(joint.prevEdge),
+                        nextEdge: toLocalEdge(joint.nextEdge)
                     };
                 })
             };
         }
 
-        const segmentsToDraw = companionRigidModel?.segments ?? currentSegments;
+        const segmentsToDraw = getCompanionModelBoundaryLines(companionRigidModel).length > 0
+            ? getCompanionModelBoundaryLines(companionRigidModel)
+            : currentSegments;
         segmentsToDraw.forEach((segment) => {
             const owner = trapezoids[segment.ownerLink];
             if (!owner) return;
@@ -1688,8 +1866,134 @@ function drawChain(chain) {
             ctx.stroke();
         });
 
+        if (jointsEnabled) {
+            const drawCompanionJointLine = (p1, p2) => {
+                if (!p1 || !p2) return;
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.strokeStyle = 'rgba(0, 90, 0, 0.95)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            };
+
+            const sourceJoints = (() => {
+                const persisted = getCompanionModelJoints(companionRigidModel);
+                if (persisted.length > 0 && persisted.every((joint) => joint?.prevEdge && joint?.nextEdge)) {
+                    return persisted;
+                }
+
+                return currentJoints.map((joint) => {
+                    const prevLink = trapezoids[joint.prevLinkIndex];
+                    const nextLink = trapezoids[joint.nextLinkIndex];
+                    const toLocalEdge = (edge) => {
+                        if (!edge) return null;
+                        const owner = trapezoids[edge.ownerLink];
+                        if (!owner) return null;
+                        return {
+                            ownerLink: edge.ownerLink,
+                            originalLinkIndex: edge.ownerLink,
+                            startLocal: worldToLinkLocal(owner, edge.start),
+                            endLocal: worldToLinkLocal(owner, edge.end)
+                        };
+                    };
+
+                    return {
+                        jointIndex: joint.jointIndex,
+                        prevLinkIndex: joint.prevLinkIndex,
+                        nextLinkIndex: joint.nextLinkIndex,
+                        pivotOnPrevLocal: prevLink ? worldToLinkLocal(prevLink, joint.pivot) : null,
+                        pivotOnNextLocal: nextLink ? worldToLinkLocal(nextLink, joint.pivot) : null,
+                        bisectorOnPrevLocal: prevLink ? worldVectorToLinkLocal(prevLink, joint.bisector) : null,
+                        bisectorOnNextLocal: nextLink ? worldVectorToLinkLocal(nextLink, joint.bisector) : null,
+                        prevEdge: toLocalEdge(joint.prevEdge),
+                        nextEdge: toLocalEdge(joint.nextEdge)
+                    };
+                });
+            })();
+            const closestEndpoints = (edgeA, edgeB) => {
+                const candidates = [
+                    { p1: edgeA.start, p2: edgeB.start },
+                    { p1: edgeA.start, p2: edgeB.end },
+                    { p1: edgeA.end, p2: edgeB.start },
+                    { p1: edgeA.end, p2: edgeB.end }
+                ];
+                return candidates.reduce((best, pair) => {
+                    const length = Math.hypot(pair.p2.x - pair.p1.x, pair.p2.y - pair.p1.y);
+                    if (!best || length < best.length) {
+                        return { ...pair, length };
+                    }
+                    return best;
+                }, null);
+            };
+
+            const worldJoints = sourceJoints.map((joint) => {
+                const prevOwner = trapezoids[joint.prevLinkIndex];
+                const nextOwner = trapezoids[joint.nextLinkIndex];
+                const toWorldEdge = (edge) => {
+                    if (!edge) return null;
+                    const owner = trapezoids[edge.ownerLink];
+                    if (!owner) return null;
+                    const start = edge.startLocal ? linkLocalToWorld(owner, edge.startLocal) : edge.start;
+                    const end = edge.endLocal ? linkLocalToWorld(owner, edge.endLocal) : edge.end;
+                    if (!start || !end) return null;
+                    return { ownerLink: edge.ownerLink, start, end };
+                };
+
+                const pivot = prevOwner && joint.pivotOnPrevLocal
+                    ? linkLocalToWorld(prevOwner, joint.pivotOnPrevLocal)
+                    : (nextOwner && joint.pivotOnNextLocal ? linkLocalToWorld(nextOwner, joint.pivotOnNextLocal) : null);
+                const bisector = prevOwner && joint.bisectorOnPrevLocal
+                    ? linkLocalVectorToWorld(prevOwner, joint.bisectorOnPrevLocal)
+                    : (nextOwner && joint.bisectorOnNextLocal ? linkLocalVectorToWorld(nextOwner, joint.bisectorOnNextLocal) : null);
+
+                return {
+                    jointIndex: joint.jointIndex,
+                    pivot,
+                    bisector,
+                    prevEdge: toWorldEdge(joint.prevEdge),
+                    nextEdge: toWorldEdge(joint.nextEdge)
+                };
+            });
+
+            const thicknesses = getJointThicknesses(chain);
+            worldJoints.forEach((joint) => {
+                if (!joint?.pivot || !joint?.bisector || !joint?.prevEdge || !joint?.nextEdge) return;
+
+                const connectorDir = { x: -joint.bisector.y, y: joint.bisector.x };
+                const jointThickness = thicknesses[joint.jointIndex] ?? jointMinimumThickness;
+                const anchors = [
+                    add(joint.pivot, mul(joint.bisector, jointThickness)),
+                    add(joint.pivot, mul(joint.bisector, -jointThickness))
+                ];
+
+                let best = null;
+                anchors.forEach((anchor) => {
+                    const p1 = lineSegmentIntersection(anchor, connectorDir, joint.prevEdge.start, joint.prevEdge.end);
+                    const p2 = lineSegmentIntersection(anchor, connectorDir, joint.nextEdge.start, joint.nextEdge.end);
+                    if (!p1 || !p2) return;
+                    const length = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                    if (!best || length < best.length) {
+                        best = { p1, p2, length };
+                    }
+                });
+
+                if (best) {
+                    drawCompanionJointLine(best.p1, best.p2);
+                    return;
+                }
+
+                const fallback = closestEndpoints(joint.prevEdge, joint.nextEdge);
+                if (fallback) {
+                    drawCompanionJointLine(fallback.p1, fallback.p2);
+                }
+            });
+        }
+
         if (holeEnabled) {
-            const centerLinesToDraw = companionRigidModel?.centerLines ?? currentCenterLines;
+            const centerLinesToDraw = getCompanionModelHoleLines(companionRigidModel).length > 0
+                ? getCompanionModelHoleLines(companionRigidModel)
+                : currentCenterLines;
             const centerLineWorld = [];
             const centerLineEndpointUsage = new Map();
             const linkAxisCache = new Map();
