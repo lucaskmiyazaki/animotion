@@ -994,10 +994,11 @@ class Chain {
                     if (!prev || !curr) return;
 
                     const jointThickness = (((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10) * getJointK(joint.jointIndex);
-                    const connectorDir = { x: -joint.bisector.y, y: joint.bisector.x };
+                    const connectorDir = joint.bisector;
+                    const offsetDir = { x: -joint.bisector.y, y: joint.bisector.x };
                     const anchors = [
-                        add(joint.pivot, mul(joint.bisector, jointThickness)),
-                        add(joint.pivot, mul(joint.bisector, -jointThickness))
+                        add(joint.pivot, mul(offsetDir, jointThickness)),
+                        add(joint.pivot, mul(offsetDir, -jointThickness))
                     ];
 
                     let best = null;

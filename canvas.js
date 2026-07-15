@@ -1877,40 +1877,7 @@ function drawChain(chain) {
                 ctx.stroke();
             };
 
-            const sourceJoints = (() => {
-                const persisted = getCompanionModelJoints(companionRigidModel);
-                if (persisted.length > 0 && persisted.every((joint) => joint?.prevEdge && joint?.nextEdge)) {
-                    return persisted;
-                }
-
-                return currentJoints.map((joint) => {
-                    const prevLink = trapezoids[joint.prevLinkIndex];
-                    const nextLink = trapezoids[joint.nextLinkIndex];
-                    const toLocalEdge = (edge) => {
-                        if (!edge) return null;
-                        const owner = trapezoids[edge.ownerLink];
-                        if (!owner) return null;
-                        return {
-                            ownerLink: edge.ownerLink,
-                            originalLinkIndex: edge.ownerLink,
-                            startLocal: worldToLinkLocal(owner, edge.start),
-                            endLocal: worldToLinkLocal(owner, edge.end)
-                        };
-                    };
-
-                    return {
-                        jointIndex: joint.jointIndex,
-                        prevLinkIndex: joint.prevLinkIndex,
-                        nextLinkIndex: joint.nextLinkIndex,
-                        pivotOnPrevLocal: prevLink ? worldToLinkLocal(prevLink, joint.pivot) : null,
-                        pivotOnNextLocal: nextLink ? worldToLinkLocal(nextLink, joint.pivot) : null,
-                        bisectorOnPrevLocal: prevLink ? worldVectorToLinkLocal(prevLink, joint.bisector) : null,
-                        bisectorOnNextLocal: nextLink ? worldVectorToLinkLocal(nextLink, joint.bisector) : null,
-                        prevEdge: toLocalEdge(joint.prevEdge),
-                        nextEdge: toLocalEdge(joint.nextEdge)
-                    };
-                });
-            })();
+            const sourceJoints = getCompanionModelJoints(companionRigidModel);
             const closestEndpoints = (edgeA, edgeB) => {
                 const candidates = [
                     { p1: edgeA.start, p2: edgeB.start },
@@ -1960,11 +1927,12 @@ function drawChain(chain) {
             worldJoints.forEach((joint) => {
                 if (!joint?.pivot || !joint?.bisector || !joint?.prevEdge || !joint?.nextEdge) return;
 
-                const connectorDir = { x: -joint.bisector.y, y: joint.bisector.x };
+                const connectorDir = joint.bisector;
+                const offsetDir = { x: -joint.bisector.y, y: joint.bisector.x };
                 const jointThickness = thicknesses[joint.jointIndex] ?? jointMinimumThickness;
                 const anchors = [
-                    add(joint.pivot, mul(joint.bisector, jointThickness)),
-                    add(joint.pivot, mul(joint.bisector, -jointThickness))
+                    add(joint.pivot, mul(offsetDir, jointThickness)),
+                    add(joint.pivot, mul(offsetDir, -jointThickness))
                 ];
 
                 let best = null;
