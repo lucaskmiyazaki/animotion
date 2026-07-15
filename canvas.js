@@ -2053,7 +2053,7 @@ function exportDXF() {
     const chain = getCurrentChain() || getMainChain();
     if (!chain || chain.getTrapezoids().length === 0) return;
     const scaleMmPerPixel = getRulerScaleMmPerPixel();
-    chain.exportCurrentDXF('chain_current.dxf', holeEnabled, jointsEnabled, getJointKValues(chain), scaleMmPerPixel);
+    chain.exportCurrentDXF('chain_current.dxf', holeEnabled, jointsEnabled, getJointKValues(chain), scaleMmPerPixel, companionRigidModel);
 }
 
 function getStoredFrameIndices() {

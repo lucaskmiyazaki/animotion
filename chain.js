@@ -642,13 +642,37 @@ class Chain {
 
     }
 
-    exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false, includeJoints = false, jointKValues = [], scaleFactor = 1) {
+    exportCurrentDXF(filename = "chain_current.dxf", includeHoles = false, includeJoints = false, jointKValues = [], scaleFactor = 1, companionModel = null) {
 
         const trapezoids = this.trapezoids;
         if (trapezoids.length === 0) return;
         const safeScale = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
         const sx = (x) => x * safeScale;
         const sy = (y) => -y * safeScale;
+        const writeLine = (p1, p2, layer = "0") => {
+            if (!p1 || !p2) return;
+
+            dxf += "0\nLINE\n";
+            dxf += "8\n" + layer + "\n";
+
+            dxf += "10\n" + sx(p1.x) + "\n";
+            dxf += "20\n" + sy(p1.y) + "\n";
+            dxf += "30\n0\n";
+
+            dxf += "11\n" + sx(p2.x) + "\n";
+            dxf += "21\n" + sy(p2.y) + "\n";
+            dxf += "31\n0\n";
+        };
+
+        const linkLocalToWorld = (item, localPoint) => {
+            const rot = (item.rotation * Math.PI) / 180;
+            const cos = Math.cos(rot);
+            const sin = Math.sin(rot);
+            return {
+                x: cos * localPoint.x - sin * localPoint.y + item.position.x,
+                y: sin * localPoint.x + cos * localPoint.y + item.position.y
+            };
+        };
         let dxf = "";
 
         // DXF HEADER
@@ -670,16 +694,7 @@ class Chain {
                 const p1 = pts[i];
                 const p2 = pts[(i + 1) % 4];
 
-                dxf += "0\nLINE\n";
-                dxf += "8\n0\n"; // layer
-
-                dxf += "10\n" + sx(p1.x) + "\n";
-                dxf += "20\n" + sy(p1.y) + "\n";
-                dxf += "30\n0\n";
-
-                dxf += "11\n" + sx(p2.x) + "\n";
-                dxf += "21\n" + sy(p2.y) + "\n";
-                dxf += "31\n0\n";
+                writeLine(p1, p2, "0");
 
             }
 
@@ -694,16 +709,7 @@ class Chain {
                     y: (pts[1].y + pts[2].y) / 2
                 };
 
-                dxf += "0\nLINE\n";
-                dxf += "8\n0\n"; // layer
-
-                dxf += "10\n" + sx(leftMid.x) + "\n";
-                dxf += "20\n" + sy(leftMid.y) + "\n";
-                dxf += "30\n0\n";
-
-                dxf += "11\n" + sx(rightMid.x) + "\n";
-                dxf += "21\n" + sy(rightMid.y) + "\n";
-                dxf += "31\n0\n";
+                writeLine(leftMid, rightMid, "0");
             }
 
         });
@@ -809,16 +815,79 @@ class Chain {
 
                 const chosen = !segmentA ? segmentB : !segmentB ? segmentA : (segmentA.length <= segmentB.length ? segmentA : segmentB);
 
-                dxf += "0\nLINE\n";
-                dxf += "8\n0\n";
+                writeLine(chosen.start, chosen.end, "0");
+            }
+        }
 
-                dxf += "10\n" + sx(chosen.start.x) + "\n";
-                dxf += "20\n" + sy(chosen.start.y) + "\n";
-                dxf += "30\n0\n";
+        // Export companion mechanism and companion hole lines when rigid model is available.
+        const hasCompanionModel = companionModel
+            && typeof companionModel === 'object'
+            && Array.isArray(companionModel.segments)
+            && companionModel.linkCount === trapezoids.length;
 
-                dxf += "11\n" + sx(chosen.end.x) + "\n";
-                dxf += "21\n" + sy(chosen.end.y) + "\n";
-                dxf += "31\n0\n";
+        if (hasCompanionModel) {
+            companionModel.segments.forEach((segment) => {
+                const owner = trapezoids[segment.ownerLink];
+                if (!owner) return;
+
+                const start = segment.startLocal
+                    ? linkLocalToWorld(owner, segment.startLocal)
+                    : segment.start;
+                const end = segment.endLocal
+                    ? linkLocalToWorld(owner, segment.endLocal)
+                    : segment.end;
+                if (!start || !end) return;
+
+                writeLine(start, end, "0");
+            });
+
+            if (includeHoles && Array.isArray(companionModel.centerLines)) {
+                const centerLineWorld = [];
+
+                companionModel.centerLines.forEach((line) => {
+                    const owner = trapezoids[line.ownerLink];
+                    if (!owner) return;
+
+                    const start = line.startLocal
+                        ? linkLocalToWorld(owner, line.startLocal)
+                        : line.start;
+                    const end = line.endLocal
+                        ? linkLocalToWorld(owner, line.endLocal)
+                        : line.end;
+                    if (!start || !end) return;
+
+                    centerLineWorld.push({ ownerLink: line.ownerLink, start, end });
+                    writeLine(start, end, "0");
+                });
+
+                // Same adjacency rule as canvas: connect line(s) from link i to link i+1.
+                for (let linkIndex = 0; linkIndex < trapezoids.length - 1; linkIndex++) {
+                    const currentCandidates = centerLineWorld.filter((line) => line.ownerLink === linkIndex);
+                    const nextCandidates = centerLineWorld.filter((line) => line.ownerLink === linkIndex + 1);
+                    if (currentCandidates.length === 0 || nextCandidates.length === 0) continue;
+
+                    let best = null;
+                    currentCandidates.forEach((a) => {
+                        nextCandidates.forEach((b) => {
+                            const pairs = [
+                                { p1: a.start, p2: b.start },
+                                { p1: a.start, p2: b.end },
+                                { p1: a.end, p2: b.start },
+                                { p1: a.end, p2: b.end }
+                            ];
+
+                            pairs.forEach((pair) => {
+                                const d = Math.hypot(pair.p2.x - pair.p1.x, pair.p2.y - pair.p1.y);
+                                if (!best || d < best.d) {
+                                    best = { ...pair, d };
+                                }
+                            });
+                        });
+                    });
+
+                    if (!best) continue;
+                    writeLine(best.p1, best.p2, "0");
+                }
             }
         }
 
