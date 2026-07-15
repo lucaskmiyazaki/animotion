@@ -127,6 +127,9 @@ const buildButton = createButton('Generate Chain', async () => {
                 const fitProgress = 62 + (Math.max(0, Math.min(100, percent)) * 0.36);
                 setProgress(fitProgress, text || 'Fitting k...');
             });
+
+            setProgress(98, 'Updating frame poses...');
+            window.appActions?.rebuildCachedChainPoses?.();
         } else {
             setProgress(78, 'Manual k mode');
         }

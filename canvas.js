@@ -2312,6 +2312,49 @@ function deleteAllFramesWithoutPoints() {
     window.videoControls?.showFrameIndex?.(currentFrameIndex);
 }
 
+function rebuildCachedChainPoses(chain) {
+    if (!chain || chain.getTrapezoids().length === 0) {
+        return 0;
+    }
+
+    const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
+    const basePose = snapshotChainPose(chain);
+
+    // Compute endpoint lengths from this chain directly so cache rebuild is
+    // independent from whichever frame is currently selected.
+    applyChainAtT(chain, 0);
+    const initialL = calculateTotalLineLength(chain);
+    applyChainAtT(chain, 1);
+    const finalL = calculateTotalLineLength(chain);
+    restoreChainPose(chain, basePose);
+
+    Object.keys(frameChains).forEach((key) => delete frameChains[key]);
+    Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
+
+    const minL = Math.min(initialL, finalL);
+    const maxL = Math.max(initialL, finalL);
+
+    for (let frame = 0; frame <= maxFrameIndex; frame++) {
+        restoreChainPose(chain, basePose);
+
+        const t = maxFrameIndex > 0 ? Math.min(frame / maxFrameIndex, 1) : 0;
+        const rawTargetL = initialL + (finalL - initialL) * t;
+        const targetL = Math.max(minL, Math.min(maxL, rawTargetL));
+        applyChainAtTargetL(chain, targetL);
+
+        const skeletonForFrame = frameSkeletons[frame] || null;
+        alignChainRootToSkeleton(chain, skeletonForFrame);
+
+        const serialized = chain.toSerializable();
+        const cached = Chain.fromSerializable(serialized);
+        frameChains[frame] = cached;
+        frameChainBuilt[frame] = true;
+    }
+
+    restoreChainPose(chain, basePose);
+    return maxFrameIndex;
+}
+
 function buildChain() {
     deleteAllFramesWithoutPoints();
 
@@ -2339,23 +2382,7 @@ function buildChain() {
     chain.computeStartRotationsFromRefSkeleton(frameSkeletons[0]);
 
     // Precompute and cache chain poses for all logical frames.
-    const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
-
-    // Clear old cached chains first.
-    Object.keys(frameChains).forEach((key) => delete frameChains[key]);
-    Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
-
-    for (let frame = 0; frame <= maxFrameIndex; frame++) {
-        const t = maxFrameIndex > 0 ? Math.min(frame / maxFrameIndex, 1) : 0;
-        applyChainAtT(chain, t);
-        const skeletonForFrame = frameSkeletons[frame] || null;
-        alignChainRootToSkeleton(chain, skeletonForFrame);
-
-        const serialized = chain.toSerializable();
-        const cached = Chain.fromSerializable(serialized);
-        frameChains[frame] = cached;
-        frameChainBuilt[frame] = true;
-    }
+    const maxFrameIndex = rebuildCachedChainPoses(chain);
 
     // Force companion to be captured from frame 0 during generation.
     const previousFrame = currentFrameIndex;
@@ -3116,6 +3143,17 @@ window.appActions = {
     getCurrentSkeletonPointCount: () => getCurrentSkeleton()?.points?.length ?? 0,
     resampleCurrentSkeleton: (pointCount) => resampleCurrentSkeleton(pointCount),
     getJointCount: () => getJointCount(),
+    rebuildCachedChainPoses: () => {
+        const chain = getMainChain();
+        if (!chain || chain.getTrapezoids().length === 0) {
+            return false;
+        }
+
+        rebuildCachedChainPoses(chain);
+        emitChainStateChange();
+        redrawAll();
+        return true;
+    },
     getJointK: (jointIndex) => getJointK(jointIndex),
     setJointK: (jointIndex, value) => setJointK(jointIndex, value),
     getChainThickness: () => getChainThickness(),
