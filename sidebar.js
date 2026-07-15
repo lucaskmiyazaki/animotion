@@ -453,6 +453,12 @@ const jointThicknessDisplay = document.createElement('div');
 jointThicknessDisplay.className = 'energy-display';
 jointThicknessDisplay.textContent = 'Joint Thicknesses: -';
 
+const companionJointWarningDisplay = document.createElement('div');
+companionJointWarningDisplay.className = 'energy-display';
+companionJointWarningDisplay.style.color = '#b45309';
+companionJointWarningDisplay.style.display = 'none';
+companionJointWarningDisplay.textContent = '';
+
 const advancedChainDetails = document.createElement('details');
 advancedChainDetails.className = 'advanced-details';
 
@@ -469,6 +475,7 @@ function updateEnergyAndLengthDisplay() {
     const pinkDelta = Number.isFinite(lineDeltas.pinkDelta) ? lineDeltas.pinkDelta : 0;
     const skeletonLength = window.appActions?.calculateCurrentSkeletonLength?.() ?? 0;
     const jointThicknesses = window.appActions?.getJointThicknesses?.() ?? [];
+    const companionJointWarning = window.appActions?.getCompanionJointWarning?.() ?? '';
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
     lineLengthDisplay.textContent = `Orange dL (max - current): ${orangeDelta.toFixed(2)}`;
     companionLineLengthDisplay.textContent = `Pink dL (max - current): ${pinkDelta.toFixed(2)}`;
@@ -476,6 +483,8 @@ function updateEnergyAndLengthDisplay() {
     jointThicknessDisplay.textContent = jointThicknesses.length > 0
         ? `Joint Thicknesses: ${jointThicknesses.map(v => v.toFixed(2)).join(', ')}`
         : 'Joint Thicknesses: -';
+    companionJointWarningDisplay.textContent = companionJointWarning ? `Companion Joint Warning: ${companionJointWarning}` : '';
+    companionJointWarningDisplay.style.display = companionJointWarning ? '' : 'none';
 }
 
 advancedChainContent.append(
@@ -486,7 +495,8 @@ advancedChainContent.append(
     lineLengthDisplay,
     companionLineLengthDisplay,
     skeletonLengthDisplay,
-    jointThicknessDisplay
+    jointThicknessDisplay,
+    companionJointWarningDisplay
 );
 
 advancedChainDetails.append(advancedChainSummary, advancedChainContent);

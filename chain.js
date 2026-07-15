@@ -848,16 +848,41 @@ class Chain {
                 return hits;
             };
 
-            const closestToAnchor = (hits, anchor) => hits.reduce((best, p) => {
-                const d = Math.hypot(p.x - anchor.x, p.y - anchor.y);
-                if (!best || d < best.d) return { p, d };
-                return best;
-            }, null).p;
-
             const getJointK = (jointIndex) => {
                 const raw = Number(jointKValues?.[jointIndex]);
                 return Number.isFinite(raw) ? raw : 1;
             };
+            const getOffsetScalar = (point, pivot, offsetDir) =>
+                (point.x - pivot.x) * offsetDir.x + (point.y - pivot.y) * offsetDir.y;
+            const intersectOffsetIntervals = (edgeA, edgeB, pivot, offsetDir) => {
+                const valuesA = [
+                    getOffsetScalar(edgeA.start, pivot, offsetDir),
+                    getOffsetScalar(edgeA.end, pivot, offsetDir)
+                ];
+                const valuesB = [
+                    getOffsetScalar(edgeB.start, pivot, offsetDir),
+                    getOffsetScalar(edgeB.end, pivot, offsetDir)
+                ];
+
+                const minA = Math.min(...valuesA);
+                const maxA = Math.max(...valuesA);
+                const minB = Math.min(...valuesB);
+                const maxB = Math.max(...valuesB);
+                const min = Math.max(minA, minB);
+                const max = Math.min(maxA, maxB);
+                if (min > max + 1e-8) {
+                    return null;
+                }
+                return { min, max };
+            };
+            const chooseScalarWithinInterval = (requested, interval) => {
+                const candidates = [requested, -requested].filter((value) => value >= interval.min - 1e-8 && value <= interval.max + 1e-8);
+                if (candidates.length > 0) {
+                    return candidates.sort((a, b) => Math.abs(a) - Math.abs(b))[0];
+                }
+                return Math.abs(interval.max) >= Math.abs(interval.min) ? interval.max : interval.min;
+            };
+            const minFeasibleThickness = 1e-6;
 
             for (let i = 1; i < trapezoids.length; i++) {
                 const prev = trapezoids[i - 1];
@@ -883,32 +908,21 @@ class Chain {
                 const k = getJointK(i - 1);
                 const jointThickness = (((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10) * k;
                 const normal = { x: -bisector.y, y: bisector.x };
-                const anchorA = add(pivot, mul(normal, jointThickness));
-                const anchorB = add(pivot, mul(normal, -jointThickness));
+                const prevEdge = { start: prevPts[1], end: prevPts[2] };
+                const currEdge = { start: currPts[0], end: currPts[3] };
+                const interval = intersectOffsetIntervals(prevEdge, currEdge, pivot, normal);
+                if (!interval) continue;
 
-                const buildSegment = (anchor) => {
-                    const prevHits = polygonIntersections(prevPts, anchor, bisector);
-                    const currHits = polygonIntersections(currPts, anchor, bisector);
-                    if (prevHits.length === 0 || currHits.length === 0) return null;
+                const feasibleMaxThickness = Math.max(Math.abs(interval.min), Math.abs(interval.max));
+                if (feasibleMaxThickness <= minFeasibleThickness) continue;
 
-                    const start = closestToAnchor(prevHits, anchor);
-                    const end = closestToAnchor(currHits, anchor);
-                    if (!start || !end) return null;
+                const scalar = chooseScalarWithinInterval(jointThickness, interval);
+                const anchor = add(pivot, mul(normal, scalar));
+                const start = lineSegmentIntersection(anchor, bisector, prevEdge.start, prevEdge.end);
+                const end = lineSegmentIntersection(anchor, bisector, currEdge.start, currEdge.end);
+                if (!start || !end) continue;
 
-                    return {
-                        start,
-                        end,
-                        length: Math.hypot(end.x - start.x, end.y - start.y)
-                    };
-                };
-
-                const segmentA = buildSegment(anchorA);
-                const segmentB = buildSegment(anchorB);
-                if (!segmentA && !segmentB) continue;
-
-                const chosen = !segmentA ? segmentB : !segmentB ? segmentA : (segmentA.length <= segmentB.length ? segmentA : segmentB);
-
-                writeLine(chosen.start, chosen.end, "0");
+                writeLine(start, end, "0");
             }
         }
 
@@ -985,6 +999,36 @@ class Chain {
                         return best;
                     }, null);
                 };
+                const getOffsetScalar = (point, pivot, offsetDir) =>
+                    (point.x - pivot.x) * offsetDir.x + (point.y - pivot.y) * offsetDir.y;
+                const intersectOffsetIntervals = (edgeA, edgeB, pivot, offsetDir) => {
+                    const valuesA = [
+                        getOffsetScalar(edgeA.start, pivot, offsetDir),
+                        getOffsetScalar(edgeA.end, pivot, offsetDir)
+                    ];
+                    const valuesB = [
+                        getOffsetScalar(edgeB.start, pivot, offsetDir),
+                        getOffsetScalar(edgeB.end, pivot, offsetDir)
+                    ];
+
+                    const minA = Math.min(...valuesA);
+                    const maxA = Math.max(...valuesA);
+                    const minB = Math.min(...valuesB);
+                    const maxB = Math.max(...valuesB);
+                    const min = Math.max(minA, minB);
+                    const max = Math.min(maxA, maxB);
+                    if (min > max + 1e-8) {
+                        return null;
+                    }
+                    return { min, max };
+                };
+                const chooseScalarWithinInterval = (requested, interval) => {
+                    const candidates = [requested, -requested].filter((value) => value >= interval.min - 1e-8 && value <= interval.max + 1e-8);
+                    if (candidates.length > 0) {
+                        return candidates.sort((a, b) => Math.abs(a) - Math.abs(b))[0];
+                    }
+                    return Math.abs(interval.max) >= Math.abs(interval.min) ? interval.max : interval.min;
+                };
 
                 worldJoints.forEach((joint) => {
                     if (!joint?.pivot || !joint?.bisector || !joint?.prevEdge || !joint?.nextEdge) return;
@@ -996,10 +1040,17 @@ class Chain {
                     const jointThickness = (((prev.trapezoid.thickness + curr.trapezoid.thickness) / 2) / 10) * getJointK(joint.jointIndex);
                     const connectorDir = joint.bisector;
                     const offsetDir = { x: -joint.bisector.y, y: joint.bisector.x };
-                    const anchors = [
-                        add(joint.pivot, mul(offsetDir, jointThickness)),
-                        add(joint.pivot, mul(offsetDir, -jointThickness))
-                    ];
+                    const interval = intersectOffsetIntervals(joint.prevEdge, joint.nextEdge, joint.pivot, offsetDir);
+                    if (!interval) {
+                        const fallback = closestEndpoints(joint.prevEdge, joint.nextEdge);
+                        if (fallback) {
+                            writeLine(fallback.p1, fallback.p2, "0");
+                        }
+                        return;
+                    }
+
+                    const scalar = chooseScalarWithinInterval(jointThickness, interval);
+                    const anchors = [add(joint.pivot, mul(offsetDir, scalar))];
 
                     let best = null;
                     anchors.forEach((anchor) => {
