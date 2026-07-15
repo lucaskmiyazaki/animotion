@@ -1394,19 +1394,6 @@ function drawChain(chain) {
             connectedNext.push(false);
         }
 
-        const now = Date.now();
-        if (now - lastBisectorThicknessLogAt > 800 && rays.length > 0) {
-            const distances = rays.map(() => Number(chainSideOffset.toFixed(3)));
-            const uniqueDistances = Array.from(new Set(distances));
-            console.log('[Bisector Thickness Debug]', {
-                chainSideOffset,
-                rayCount: rays.length,
-                distances,
-                uniqueDistances
-            });
-            lastBisectorThicknessLogAt = now;
-        }
-
         // Build companion parallelograms in current pose (later captured as rigid local geometry).
         for (let i = 0; i < rays.length - 1; i++) {
             const a = rays[i];
@@ -2699,8 +2686,6 @@ async function findKsMinimizingChainSkeletonDistance(onProgress) {
     const totalGlobalJoints = maxPasses * numJoints;
     let processedGlobalJoints = 0;
 
-    console.log(`Fit k start: error=${bestError.toFixed(4)}, joints=${numJoints}, frames=${framesWithSkeletons.length}`);
-
     for (let pass = 0; pass < maxPasses; pass++) {
         let improvedInPass = false;
         const passStartError = bestError;
@@ -2753,10 +2738,6 @@ async function findKsMinimizingChainSkeletonDistance(onProgress) {
             }
         }
 
-        console.log(
-            `Fit k pass ${pass + 1}: error ${passStartError.toFixed(4)} -> ${bestError.toFixed(4)}, ` +
-            `improved=${improvedInPass}, addStep=${additiveStep.toFixed(4)}, mulStep=${multiplicativeStep.toFixed(4)}`
-        );
     }
 
     // Fallback coarse absolute search.
@@ -2787,8 +2768,6 @@ async function findKsMinimizingChainSkeletonDistance(onProgress) {
         await maybeYield();
     }
 
-    console.log(`Fit k fallback: error ${fallbackStartError.toFixed(4)} -> ${bestError.toFixed(4)}`);
-
     // Restore the chain to the state it was in before optimization.
     restoreChainPose(chain, savedPose);
 
@@ -2801,8 +2780,6 @@ async function findKsMinimizingChainSkeletonDistance(onProgress) {
     emitChainStateChange();
     redrawAll();
 
-    console.log(`Fit k error: ${initialError.toFixed(4)} -> ${bestError.toFixed(4)}`);
-    console.log('Fit k values:', kValues.map(k => k.toFixed(4)).join(', '));
     reportProgress(100, 'Fit complete');
     return kValues;
 }
