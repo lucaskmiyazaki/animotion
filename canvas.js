@@ -30,6 +30,7 @@ const jointKByIndex = {};
 // Default trapezoid thickness
 let chainThickness = 50;
 let jointMinimumThickness = 5;
+let lastBisectorThicknessLogAt = 0;
 const pointRadius = 5;
 const hoverRadius = 9;
 const hitRadius = 10;
@@ -1146,6 +1147,7 @@ function drawChain(chain) {
 
     const drawBisectors = () => {
         const thicknesses = getJointThicknesses(chain);
+        const chainSideOffset = getChainThickness();
         const rays = [];
         const connectedPrev = [];
         const connectedNext = [];
@@ -1193,6 +1195,8 @@ function drawChain(chain) {
             }
 
             const tip = add(pivot, mul(guideDir, bisectorLength));
+            const offsetPoint = add(pivot, mul(guideDir, chainSideOffset));
+            const offsetDistance = Math.hypot(offsetPoint.x - pivot.x, offsetPoint.y - pivot.y);
             const pickAlignedVertex = (a, b) => {
                 const da = dot(normalize(sub(a, pivot)), guideDir);
                 const db = dot(normalize(sub(b, pivot)), guideDir);
@@ -1202,6 +1206,8 @@ function drawChain(chain) {
             const nextSideVertex = pickAlignedVertex(currPts[1], currPts[2]);
             rays.push({
                 tip,
+                offsetPoint,
+                offsetDistance,
                 rayOrigin: pivot,
                 rayDir: guideDir,
                 baseDir: currDir,
@@ -1219,6 +1225,19 @@ function drawChain(chain) {
             ctx.stroke();
         }
 
+        const now = Date.now();
+        if (now - lastBisectorThicknessLogAt > 800 && rays.length > 0) {
+            const distances = rays.map((ray) => Number(ray.offsetDistance.toFixed(3)));
+            const uniqueDistances = Array.from(new Set(distances));
+            console.log('[Bisector Thickness Debug]', {
+                chainSideOffset,
+                rayCount: rays.length,
+                distances,
+                uniqueDistances
+            });
+            lastBisectorThicknessLogAt = now;
+        }
+
         // Connect adjacent bisectors on the same side with a base-parallel segment.
         for (let i = 0; i < rays.length - 1; i++) {
             const a = rays[i];
@@ -1227,11 +1246,11 @@ function drawChain(chain) {
             if (dot(a.rayDir, b.rayDir) <= 0) continue;
 
             const connectorDir = a.baseDir;
-            const end = lineLineIntersection(a.tip, connectorDir, b.rayOrigin, b.rayDir);
+            const end = lineLineIntersection(a.offsetPoint, connectorDir, b.rayOrigin, b.rayDir);
             if (!end) continue;
 
             ctx.beginPath();
-            ctx.moveTo(a.tip.x, a.tip.y);
+            ctx.moveTo(a.offsetPoint.x, a.offsetPoint.y);
             ctx.lineTo(end.x, end.y);
             ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
             ctx.lineWidth = 2;
@@ -1247,7 +1266,7 @@ function drawChain(chain) {
 
             if (!connectedPrev[i] && ray.prevSideVertex) {
                 ctx.beginPath();
-                ctx.moveTo(ray.tip.x, ray.tip.y);
+                ctx.moveTo(ray.offsetPoint.x, ray.offsetPoint.y);
                 ctx.lineTo(ray.prevSideVertex.x, ray.prevSideVertex.y);
                 ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
                 ctx.lineWidth = 2;
@@ -1256,7 +1275,7 @@ function drawChain(chain) {
 
             if (!connectedNext[i] && ray.nextSideVertex) {
                 ctx.beginPath();
-                ctx.moveTo(ray.tip.x, ray.tip.y);
+                ctx.moveTo(ray.offsetPoint.x, ray.offsetPoint.y);
                 ctx.lineTo(ray.nextSideVertex.x, ray.nextSideVertex.y);
                 ctx.strokeStyle = 'rgba(0, 150, 0, 0.95)';
                 ctx.lineWidth = 2;

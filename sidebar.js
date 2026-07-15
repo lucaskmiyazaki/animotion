@@ -262,6 +262,18 @@ chainThicknessInput.addEventListener('input', () => {
     }
 });
 
+function syncThicknessInputs() {
+    const liveChainThickness = window.appActions?.getChainThickness?.();
+    if (Number.isFinite(liveChainThickness)) {
+        chainThicknessInput.value = String(liveChainThickness);
+    }
+
+    const liveJointMinThickness = window.appActions?.getJointMinimumThickness?.();
+    if (Number.isFinite(liveJointMinThickness)) {
+        jointMinThicknessInput.value = String(liveJointMinThickness);
+    }
+}
+
 chainThicknessRow.append(chainThicknessLabel, chainThicknessInput);
 
 const jointMinThicknessRow = document.createElement('div');
@@ -607,6 +619,7 @@ window.videoControls?.onFrameChange?.(() => {
 });
 
 window.appActions?.onChainStateChange?.(() => {
+    syncThicknessInputs();
     updateBuildControls();
     renderJointKInputs();
     updateEnergyAndLengthDisplay();
@@ -636,6 +649,7 @@ window.appActions?.onModeChange?.((mode) => {
 updateFrameInput();
 updateBuildControls();
 updateAddPointButtonState();
+syncThicknessInputs();
 renderJointKInputs();
 updateEnergyAndLengthDisplay();
 setSectionInteractive(
