@@ -85,18 +85,56 @@ function getRulerScaleMmPerPixel() {
     return clampRulerMillimeters(rulerState.mmLength) / px;
 }
 
-function ensureRulerInitialized() {
-    if (rulerState.initialized) {
-        return;
-    }
-
-    const rect = getDisplayedVideoRect();
+function placeRulerInDefaultPosition(rect = getDisplayedVideoRect()) {
     const y = rect.top + rect.height * 0.15;
     rulerState.start.x = rect.left + rect.width * 0.2;
     rulerState.start.y = y;
     rulerState.end.x = rect.left + rect.width * 0.8;
     rulerState.end.y = y;
     rulerState.initialized = true;
+}
+
+function isRulerCompletelyOffscreen(rect = getDisplayedVideoRect()) {
+    const isFinitePoint = (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y);
+    if (!isFinitePoint(rulerState.start) || !isFinitePoint(rulerState.end)) {
+        return true;
+    }
+
+    const margin = rulerHandleRadius + 6;
+    const inExpandedRect = (p) => (
+        p.x >= rect.left - margin
+        && p.x <= rect.left + rect.width + margin
+        && p.y >= rect.top - margin
+        && p.y <= rect.top + rect.height + margin
+    );
+
+    const startInside = inExpandedRect(rulerState.start);
+    const endInside = inExpandedRect(rulerState.end);
+    if (startInside || endInside) {
+        return false;
+    }
+
+    // If neither endpoint is visible, keep it only when the segment still crosses the viewport.
+    const minX = Math.min(rulerState.start.x, rulerState.end.x);
+    const maxX = Math.max(rulerState.start.x, rulerState.end.x);
+    const minY = Math.min(rulerState.start.y, rulerState.end.y);
+    const maxY = Math.max(rulerState.start.y, rulerState.end.y);
+
+    const overlapsX = maxX >= rect.left && minX <= rect.left + rect.width;
+    const overlapsY = maxY >= rect.top && minY <= rect.top + rect.height;
+    return !(overlapsX && overlapsY);
+}
+
+function ensureRulerInitialized() {
+    const rect = getDisplayedVideoRect();
+    if (!rulerState.initialized) {
+        placeRulerInDefaultPosition(rect);
+        return;
+    }
+
+    if (isRulerCompletelyOffscreen(rect)) {
+        placeRulerInDefaultPosition(rect);
+    }
 }
 
 function pointHitsRulerHandle(x, y, handlePoint) {
