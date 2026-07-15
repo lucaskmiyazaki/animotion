@@ -842,56 +842,6 @@ class Chain {
             });
 
             if (includeHoles && Array.isArray(companionModel.centerLines)) {
-                const centerLineWorld = [];
-                const linkAxisCache = new Map();
-
-                const getLinkAxis = (linkIndex) => {
-                    if (linkAxisCache.has(linkIndex)) {
-                        return linkAxisCache.get(linkIndex);
-                    }
-
-                    const item = trapezoids[linkIndex];
-                    if (!item) return null;
-
-                    const pts = item.trapezoid.getPoints(item.position, item.rotation);
-                    const leftMid = {
-                        x: (pts[0].x + pts[3].x) / 2,
-                        y: (pts[0].y + pts[3].y) / 2
-                    };
-                    const rightMid = {
-                        x: (pts[1].x + pts[2].x) / 2,
-                        y: (pts[1].y + pts[2].y) / 2
-                    };
-
-                    const axis = {
-                        origin: leftMid,
-                        dir: {
-                            x: rightMid.x - leftMid.x,
-                            y: rightMid.y - leftMid.y
-                        }
-                    };
-                    linkAxisCache.set(linkIndex, axis);
-                    return axis;
-                };
-
-                const getOrientedEndpoints = (line) => {
-                    const axis = getLinkAxis(line.ownerLink);
-                    if (!axis) return null;
-
-                    const startT = (line.start.x - axis.origin.x) * axis.dir.x + (line.start.y - axis.origin.y) * axis.dir.y;
-                    const endT = (line.end.x - axis.origin.x) * axis.dir.x + (line.end.y - axis.origin.y) * axis.dir.y;
-                    if (startT <= endT) {
-                        return {
-                            leftPoint: line.start,
-                            rightPoint: line.end
-                        };
-                    }
-                    return {
-                        leftPoint: line.end,
-                        rightPoint: line.start
-                    };
-                };
-
                 companionModel.centerLines.forEach((line) => {
                     const owner = trapezoids[line.ownerLink];
                     if (!owner) return;
@@ -904,40 +854,8 @@ class Chain {
                         : line.end;
                     if (!start || !end) return;
 
-                    centerLineWorld.push({ ownerLink: line.ownerLink, start, end });
                     writeLine(start, end, "0");
                 });
-
-                // Same adjacency rule as canvas: connect line(s) from link i to link i+1.
-                for (let linkIndex = 0; linkIndex < trapezoids.length - 1; linkIndex++) {
-                    const currentCandidates = centerLineWorld.filter((line) => line.ownerLink === linkIndex);
-                    const nextCandidates = centerLineWorld.filter((line) => line.ownerLink === linkIndex + 1);
-                    if (currentCandidates.length === 0 || nextCandidates.length === 0) continue;
-
-                    let best = null;
-                    currentCandidates.forEach((a) => {
-                        nextCandidates.forEach((b) => {
-                            const aOriented = getOrientedEndpoints(a);
-                            const bOriented = getOrientedEndpoints(b);
-                            if (!aOriented || !bOriented) return;
-
-                            const d = Math.hypot(
-                                bOriented.leftPoint.x - aOriented.rightPoint.x,
-                                bOriented.leftPoint.y - aOriented.rightPoint.y
-                            );
-                            if (!best || d < best.d) {
-                                best = {
-                                    p1: aOriented.rightPoint,
-                                    p2: bOriented.leftPoint,
-                                    d
-                                };
-                            }
-                        });
-                    });
-
-                    if (!best) continue;
-                    writeLine(best.p1, best.p2, "0");
-                }
             }
         }
 
