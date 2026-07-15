@@ -364,6 +364,7 @@ canvas.create-mode {
     grid-area: input;
     min-width: 72px;
     text-align: left;
+    width: 100%;
 }
 
 #sidebar .point-count-button {
@@ -371,6 +372,10 @@ canvas.create-mode {
     padding: 8px 10px;
     font-size: 12px;
     white-space: nowrap;
+}
+
+.skeleton-advanced-details {
+    margin-top: 0;
 }
 
 .chain-section {
@@ -425,13 +430,23 @@ canvas.create-mode {
 }
 
 .frame-icon-actions-row {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
+.frame-icon-actions-row.no-video {
+    grid-template-columns: 1fr;
 }
 
 .upload-video-prompt {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
+    min-width: 0;
+}
+
+.frame-icon-actions-row.no-video .upload-video-prompt {
+    justify-content: flex-start;
 }
 
 .upload-video-text {
@@ -464,6 +479,14 @@ canvas.create-mode {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr;
     gap: 7px;
+}
+
+.joint-k-value-input.manual-disabled {
+    opacity: 0.58;
+    color: var(--muted-text);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+    cursor: not-allowed;
 }
 
 .frame-control button {

@@ -843,6 +843,54 @@ class Chain {
 
             if (includeHoles && Array.isArray(companionModel.centerLines)) {
                 const centerLineWorld = [];
+                const linkAxisCache = new Map();
+
+                const getLinkAxis = (linkIndex) => {
+                    if (linkAxisCache.has(linkIndex)) {
+                        return linkAxisCache.get(linkIndex);
+                    }
+
+                    const item = trapezoids[linkIndex];
+                    if (!item) return null;
+
+                    const pts = item.trapezoid.getPoints(item.position, item.rotation);
+                    const leftMid = {
+                        x: (pts[0].x + pts[3].x) / 2,
+                        y: (pts[0].y + pts[3].y) / 2
+                    };
+                    const rightMid = {
+                        x: (pts[1].x + pts[2].x) / 2,
+                        y: (pts[1].y + pts[2].y) / 2
+                    };
+
+                    const axis = {
+                        origin: leftMid,
+                        dir: {
+                            x: rightMid.x - leftMid.x,
+                            y: rightMid.y - leftMid.y
+                        }
+                    };
+                    linkAxisCache.set(linkIndex, axis);
+                    return axis;
+                };
+
+                const getOrientedEndpoints = (line) => {
+                    const axis = getLinkAxis(line.ownerLink);
+                    if (!axis) return null;
+
+                    const startT = (line.start.x - axis.origin.x) * axis.dir.x + (line.start.y - axis.origin.y) * axis.dir.y;
+                    const endT = (line.end.x - axis.origin.x) * axis.dir.x + (line.end.y - axis.origin.y) * axis.dir.y;
+                    if (startT <= endT) {
+                        return {
+                            leftPoint: line.start,
+                            rightPoint: line.end
+                        };
+                    }
+                    return {
+                        leftPoint: line.end,
+                        rightPoint: line.start
+                    };
+                };
 
                 companionModel.centerLines.forEach((line) => {
                     const owner = trapezoids[line.ownerLink];
@@ -869,19 +917,21 @@ class Chain {
                     let best = null;
                     currentCandidates.forEach((a) => {
                         nextCandidates.forEach((b) => {
-                            const pairs = [
-                                { p1: a.start, p2: b.start },
-                                { p1: a.start, p2: b.end },
-                                { p1: a.end, p2: b.start },
-                                { p1: a.end, p2: b.end }
-                            ];
+                            const aOriented = getOrientedEndpoints(a);
+                            const bOriented = getOrientedEndpoints(b);
+                            if (!aOriented || !bOriented) return;
 
-                            pairs.forEach((pair) => {
-                                const d = Math.hypot(pair.p2.x - pair.p1.x, pair.p2.y - pair.p1.y);
-                                if (!best || d < best.d) {
-                                    best = { ...pair, d };
-                                }
-                            });
+                            const d = Math.hypot(
+                                bOriented.leftPoint.x - aOriented.rightPoint.x,
+                                bOriented.leftPoint.y - aOriented.rightPoint.y
+                            );
+                            if (!best || d < best.d) {
+                                best = {
+                                    p1: aOriented.rightPoint,
+                                    p2: bOriented.leftPoint,
+                                    d
+                                };
+                            }
                         });
                     });
 

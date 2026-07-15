@@ -52,16 +52,66 @@ function gatherChainState(frameChains, frameChainBuilt) {
         .filter(Number.isInteger)
         .sort((a, b) => a - b);
 
+    const builtFrames = frameIndices
+        .filter((frameIndex) => Boolean(frameChainBuilt[frameIndex] && frameChains[frameIndex]))
+        .sort((a, b) => a - b);
+
+    if (builtFrames.length === 0) {
+        return {
+            format: 'template+poses',
+            frameCount: 0,
+            template: null,
+            frames: []
+        };
+    }
+
+    const firstSerialized = frameChains[builtFrames[0]]?.toSerializable?.();
+    if (!firstSerialized || !Array.isArray(firstSerialized.trapezoids)) {
+        return {
+            format: 'legacy',
+            frameCount: frameIndices.length,
+            frames: frameIndices.map(frameIndex => {
+                const chain = frameChains[frameIndex];
+                const chainBuilt = Boolean(frameChainBuilt[frameIndex]);
+                const serialized = chain?.toSerializable?.();
+                return {
+                    frameIndex,
+                    chainBuilt,
+                    chain: serialized ?? null
+                };
+            })
+        };
+    }
+
+    const template = {
+        trapezoids: firstSerialized.trapezoids.map((item) => ({
+            trapezoid: item.trapezoid,
+            flatOffset: item.flatOffset,
+            flatPosition: item.flatPosition,
+            flatRotation: item.flatRotation,
+            finalPosition: item.finalPosition,
+            finalRotation: item.finalRotation,
+            startRotation: item.startRotation,
+            pivotPoint: item.pivotPoint,
+            position: item.position,
+            rotation: item.rotation
+        }))
+    };
+
     return {
-        frameCount: frameIndices.length,
-        frames: frameIndices.map(frameIndex => {
-            const chain = frameChains[frameIndex];
-            const chainBuilt = Boolean(frameChainBuilt[frameIndex]);
-            const serialized = chain?.toSerializable?.();
+        format: 'template+poses',
+        frameCount: builtFrames.length,
+        template,
+        frames: builtFrames.map((frameIndex) => {
+            const serialized = frameChains[frameIndex]?.toSerializable?.();
+            const pose = (serialized?.trapezoids ?? []).map((item) => ({
+                position: item.position,
+                rotation: item.rotation
+            }));
             return {
                 frameIndex,
-                chainBuilt,
-                chain: serialized ?? null
+                chainBuilt: true,
+                pose
             };
         })
     };
@@ -82,6 +132,11 @@ async function getProjectStateSnapshot(stateRefs) {
         frameChains,
         frameChainBuilt,
         jointKByIndex,
+        companionRigidModel,
+        companionEnabled,
+        mechanismNeedsRegeneration,
+        chainThickness,
+        jointMinimumThickness,
         rulerState,
         currentFrameIndex,
         mode,
@@ -92,15 +147,26 @@ async function getProjectStateSnapshot(stateRefs) {
     const videoState = await window.videoControls?.getSerializableState?.();
 
     return {
-        version: 1,
+        version: 2,
         ui: {
             currentFrameIndex,
             mode,
+            holeEnabled: window.appActions?.getHoleEnabled?.() ?? false,
+            jointsEnabled: window.appActions?.getJointsEnabled?.() ?? false,
+            companionEnabled: Boolean(companionEnabled),
+            chainVisible: window.appActions?.getChainVisible?.() ?? true,
+            skeletonVisible: window.appActions?.getSkeletonVisible?.() ?? true,
+            framesVisible: window.appActions?.getFramesVisible?.() ?? true,
+            mechanismNeedsRegeneration: Boolean(mechanismNeedsRegeneration),
             selectedPointIndex: (() => {
                 if (!selectedPoint) return null;
                 const skeleton = getCurrentSkeleton();
                 return skeleton ? skeleton.points.indexOf(selectedPoint) : null;
             })()
+        },
+        mechanism: {
+            chainThickness: Number(chainThickness) || 50,
+            jointMinimumThickness: Number(jointMinimumThickness) || 5
         },
         video: videoState ?? {
             currentFrameIndex: 0,
@@ -111,6 +177,9 @@ async function getProjectStateSnapshot(stateRefs) {
         },
         skeleton: gatherSkeletonState(frameSkeletons),
         chain: gatherChainState(frameChains, frameChainBuilt),
+        companion: {
+            model: companionRigidModel ?? null
+        },
         ruler: rulerState
             ? {
                 visible: Boolean(rulerState.visible),
@@ -193,7 +262,7 @@ async function loadProjectFromFile(file) {
         reader.onload = (e) => {
             try {
                 const snapshot = JSON.parse(e.target.result);
-                if (snapshot.version !== 1) {
+                if (snapshot.version !== 1 && snapshot.version !== 2) {
                     throw new Error(`Unsupported project version: ${snapshot.version}`);
                 }
                 resolve(snapshot);
@@ -318,13 +387,35 @@ function restoreChainState(chainSnapshot) {
     }
 
     try {
+        const ChainCtor = window.Chain || (typeof Chain !== 'undefined' ? Chain : null);
+        if (!ChainCtor || !ChainCtor.fromSerializable) {
+            return;
+        }
+
+        if (chainSnapshot.format === 'template+poses' && chainSnapshot.template && Array.isArray(chainSnapshot.frames)) {
+            chainSnapshot.frames.forEach(({ frameIndex, chainBuilt, pose }) => {
+                if (!chainBuilt || !Array.isArray(pose)) return;
+
+                const serialized = {
+                    trapezoids: (chainSnapshot.template.trapezoids ?? []).map((templateItem, idx) => ({
+                        ...templateItem,
+                        position: pose[idx]?.position ?? templateItem.position,
+                        rotation: pose[idx]?.rotation ?? templateItem.rotation
+                    }))
+                };
+
+                const restoredChain = ChainCtor.fromSerializable(serialized);
+                window.appActions?.setChainForFrame?.(frameIndex, restoredChain, true);
+            });
+            return;
+        }
+
         chainSnapshot.frames.forEach(({ frameIndex, chainBuilt, chain }) => {
             if (!chainBuilt || !chain) {
                 return;
             }
 
             // Reconstruct chain from serialized data
-            const ChainCtor = window.Chain || (typeof Chain !== 'undefined' ? Chain : null);
             if (ChainCtor && ChainCtor.fromSerializable) {
                 const restoredChain = ChainCtor.fromSerializable(chain);
                 window.appActions?.setChainForFrame?.(frameIndex, restoredChain, chainBuilt);
@@ -347,6 +438,30 @@ function restoreUIState(uiSnapshot) {
     try {
         if (uiSnapshot.mode && window.appActions?.switchMode) {
             window.appActions.switchMode(uiSnapshot.mode);
+        }
+
+        if (uiSnapshot.holeEnabled !== undefined) {
+            window.appActions?.setHoleEnabled?.(uiSnapshot.holeEnabled);
+        }
+        if (uiSnapshot.jointsEnabled !== undefined) {
+            window.appActions?.setJointsEnabled?.(uiSnapshot.jointsEnabled);
+        }
+        if (uiSnapshot.companionEnabled !== undefined) {
+            window.appActions?.setCompanionEnabled?.(uiSnapshot.companionEnabled);
+        }
+        if (uiSnapshot.chainVisible !== undefined) {
+            window.appActions?.setChainVisible?.(uiSnapshot.chainVisible);
+        }
+        if (uiSnapshot.skeletonVisible !== undefined) {
+            window.appActions?.setSkeletonVisible?.(uiSnapshot.skeletonVisible);
+        }
+        if (uiSnapshot.framesVisible !== undefined) {
+            window.appActions?.setFramesVisible?.(uiSnapshot.framesVisible);
+        }
+        if (uiSnapshot.mechanismNeedsRegeneration) {
+            window.appActions?.markMechanismNeedsRegeneration?.();
+        } else {
+            window.appActions?.clearMechanismNeedsRegeneration?.();
         }
 
     } catch (error) {
@@ -373,6 +488,17 @@ async function restoreProjectSnapshot(snapshot) {
 
         // 3. Restore chain (before seeking so canvas can render them)
         restoreChainState(snapshot.chain);
+
+        if (snapshot?.mechanism?.chainThickness !== undefined) {
+            window.appActions?.setChainThickness?.(snapshot.mechanism.chainThickness);
+        }
+        if (snapshot?.mechanism?.jointMinimumThickness !== undefined) {
+            window.appActions?.setJointMinimumThickness?.(snapshot.mechanism.jointMinimumThickness);
+        }
+
+        if (snapshot?.companion?.model !== undefined) {
+            window.appActions?.setCompanionRigidModel?.(snapshot.companion.model);
+        }
 
         // 3b. Restore joint k values
         window.appActions?.setJointKValues?.(snapshot.kValues?.byIndex ?? {});

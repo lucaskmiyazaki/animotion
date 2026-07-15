@@ -266,7 +266,6 @@
         } else {
             showFrameIndex(currentFrameIndex + 1);
         }
-        window.appActions?.autoCopyPreviousSkeletonIfEmpty?.();
     }
 
     function prevFrame() {

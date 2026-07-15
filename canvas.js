@@ -23,14 +23,15 @@ let hasDragged = false;
 let mode = 'move'; // 'create', 'edit', or 'move'
 let holeEnabled = false;
 let jointsEnabled = false;
+let companionEnabled = true;
 let skeletonVisible = true;
 let chainVisible = true;
+let mechanismNeedsRegeneration = false;
 const jointKByIndex = {};
 
 // Default trapezoid thickness
 let chainThickness = 50;
 let jointMinimumThickness = 5;
-let lastBisectorThicknessLogAt = 0;
 let companionRigidModel = null;
 const pointRadius = 5;
 const hoverRadius = 9;
@@ -362,9 +363,20 @@ function setFrameChainBuilt(frameIndex, built) {
     emitChainStateChange();
 }
 
+function markMechanismNeedsRegeneration() {
+    mechanismNeedsRegeneration = true;
+    emitChainStateChange();
+}
+
+function clearMechanismNeedsRegeneration() {
+    mechanismNeedsRegeneration = false;
+    emitChainStateChange();
+}
+
 function markCurrentFrameChainDirty() {
     delete frameChains[currentFrameIndex];
     setFrameChainBuilt(currentFrameIndex, false);
+    markMechanismNeedsRegeneration();
 }
 
 function hasChainInFrame(frameIndex) {
@@ -392,6 +404,7 @@ function setJointK(jointIndex, value) {
         jointKByIndex[idx] = Math.max(1, Math.min(10, parsed));
     }
 
+    markMechanismNeedsRegeneration();
     emitChainStateChange();
     redrawAll();
 }
@@ -419,6 +432,7 @@ function setChainThickness(value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
     chainThickness = parsed;
+    markMechanismNeedsRegeneration();
     emitChainStateChange();
     redrawAll();
 }
@@ -431,8 +445,17 @@ function setJointMinimumThickness(value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
     jointMinimumThickness = parsed;
+    markMechanismNeedsRegeneration();
     emitChainStateChange();
     redrawAll();
+}
+
+function getLastFrameWithSkeleton() {
+    const indices = Object.keys(frameSkeletons)
+        .map((k) => Number.parseInt(k, 10))
+        .filter((idx) => Number.isInteger(idx) && frameSkeletons[idx]?.points?.length > 0)
+        .sort((a, b) => b - a);
+    return indices.length > 0 ? indices[0] : -1;
 }
 
 function getJointGammaDegrees(chain, linkIndex) {
@@ -584,6 +607,8 @@ function calculateCompanionLineLength(chain = getMainChain()) {
 
     let totalLength = 0;
     const worldCenterLines = [];
+    const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+    const dot = (a, b) => a.x * b.x + a.y * b.y;
 
     modelCenterLines.forEach((line) => {
         const owner = trapezoids[line.ownerLink];
@@ -601,6 +626,48 @@ function calculateCompanionLineLength(chain = getMainChain()) {
         worldCenterLines.push({ ownerLink: line.ownerLink, start, end });
     });
 
+    const linkAxisCache = new Map();
+    const getLinkAxis = (linkIndex) => {
+        if (linkAxisCache.has(linkIndex)) {
+            return linkAxisCache.get(linkIndex);
+        }
+
+        const item = trapezoids[linkIndex];
+        if (!item) return null;
+
+        const pts = item.trapezoid.getPoints(item.position, item.rotation);
+        const leftMid = {
+            x: (pts[0].x + pts[3].x) / 2,
+            y: (pts[0].y + pts[3].y) / 2
+        };
+        const rightMid = {
+            x: (pts[1].x + pts[2].x) / 2,
+            y: (pts[1].y + pts[2].y) / 2
+        };
+        const dir = sub(rightMid, leftMid);
+        const axis = { origin: leftMid, dir };
+        linkAxisCache.set(linkIndex, axis);
+        return axis;
+    };
+
+    const getOrientedEndpoints = (line) => {
+        const axis = getLinkAxis(line.ownerLink);
+        if (!axis) return null;
+
+        const startT = dot(sub(line.start, axis.origin), axis.dir);
+        const endT = dot(sub(line.end, axis.origin), axis.dir);
+        if (startT <= endT) {
+            return {
+                leftPoint: line.start,
+                rightPoint: line.end
+            };
+        }
+        return {
+            leftPoint: line.end,
+            rightPoint: line.start
+        };
+    };
+
     for (let linkIndex = 0; linkIndex < trapezoids.length - 1; linkIndex++) {
         const currentCandidates = worldCenterLines.filter((line) => line.ownerLink === linkIndex);
         const nextCandidates = worldCenterLines.filter((line) => line.ownerLink === linkIndex + 1);
@@ -609,19 +676,17 @@ function calculateCompanionLineLength(chain = getMainChain()) {
         let best = null;
         currentCandidates.forEach((a) => {
             nextCandidates.forEach((b) => {
-                const pairs = [
-                    { p1: a.start, p2: b.start },
-                    { p1: a.start, p2: b.end },
-                    { p1: a.end, p2: b.start },
-                    { p1: a.end, p2: b.end }
-                ];
+                const aOriented = getOrientedEndpoints(a);
+                const bOriented = getOrientedEndpoints(b);
+                if (!aOriented || !bOriented) return;
 
-                pairs.forEach((pair) => {
-                    const d = Math.hypot(pair.p2.x - pair.p1.x, pair.p2.y - pair.p1.y);
-                    if (!best || d < best.d) {
-                        best = { d };
-                    }
-                });
+                const d = Math.hypot(
+                    bOriented.leftPoint.x - aOriented.rightPoint.x,
+                    bOriented.leftPoint.y - aOriented.rightPoint.y
+                );
+                if (!best || d < best.d) {
+                    best = { d };
+                }
             });
         });
 
@@ -956,13 +1021,17 @@ function setCurrentFrame(frameIndex) {
     hoveredPoint = null;
     draggedPoint = null;
 
-    // Interpolate target L and solve for the minimum-energy theta values.
-    const chain = getMainChain();
-    if (chain) {
-        updateChainForCurrentFrameByLength(chain, frameIndex);
+    // Draw-only frame changes when per-frame chain pose is already cached.
+    const frameChain = getCurrentChain();
+    if (!frameChain) {
+        // Fallback for legacy projects that don't have per-frame cached poses yet.
+        const chain = getMainChain();
+        if (chain) {
+            updateChainForCurrentFrameByLength(chain, frameIndex);
 
-        const skeleton = getCurrentSkeleton();
-        alignChainRootToSkeleton(chain, skeleton);
+            const skeleton = getCurrentSkeleton();
+            alignChainRootToSkeleton(chain, skeleton);
+        }
     }
 
     emitChainStateChange();
@@ -1300,6 +1369,9 @@ function drawChain(chain) {
     };
 
     const drawBisectors = () => {
+        if (!companionEnabled) {
+            return;
+        }
         const chainSideOffset = getChainThickness();
         const rays = [];
         const connectedPrev = [];
@@ -1554,6 +1626,55 @@ function drawChain(chain) {
             const centerLinesToDraw = companionRigidModel?.centerLines ?? currentCenterLines;
             const centerLineWorld = [];
             const centerLineEndpointUsage = new Map();
+            const linkAxisCache = new Map();
+            const getLinkAxis = (linkIndex) => {
+                if (linkAxisCache.has(linkIndex)) {
+                    return linkAxisCache.get(linkIndex);
+                }
+
+                const item = trapezoids[linkIndex];
+                if (!item) return null;
+
+                const pts = item.trapezoid.getPoints(item.position, item.rotation);
+                const leftMid = {
+                    x: (pts[0].x + pts[3].x) / 2,
+                    y: (pts[0].y + pts[3].y) / 2
+                };
+                const rightMid = {
+                    x: (pts[1].x + pts[2].x) / 2,
+                    y: (pts[1].y + pts[2].y) / 2
+                };
+
+                const axis = {
+                    origin: leftMid,
+                    dir: sub(rightMid, leftMid)
+                };
+                linkAxisCache.set(linkIndex, axis);
+                return axis;
+            };
+
+            const getOrientedEndpoints = (line) => {
+                const axis = getLinkAxis(line.ownerLink);
+                if (!axis) return null;
+
+                const startT = dot(sub(line.start, axis.origin), axis.dir);
+                const endT = dot(sub(line.end, axis.origin), axis.dir);
+                if (startT <= endT) {
+                    return {
+                        leftPoint: line.start,
+                        rightPoint: line.end,
+                        leftKey: 'start',
+                        rightKey: 'end'
+                    };
+                }
+                return {
+                    leftPoint: line.end,
+                    rightPoint: line.start,
+                    leftKey: 'end',
+                    rightKey: 'start'
+                };
+            };
+
             centerLinesToDraw.forEach((line) => {
                 const owner = trapezoids[line.ownerLink];
                 if (!owner) return;
@@ -1587,19 +1708,25 @@ function drawChain(chain) {
                 let best = null;
                 currentCandidates.forEach((a) => {
                     nextCandidates.forEach((b) => {
-                        const pairs = [
-                            { p1: a.start, p2: b.start, p1Key: 'start', p2Key: 'start', lineA: a, lineB: b },
-                            { p1: a.start, p2: b.end, p1Key: 'start', p2Key: 'end', lineA: a, lineB: b },
-                            { p1: a.end, p2: b.start, p1Key: 'end', p2Key: 'start', lineA: a, lineB: b },
-                            { p1: a.end, p2: b.end, p1Key: 'end', p2Key: 'end', lineA: a, lineB: b }
-                        ];
+                        const aOriented = getOrientedEndpoints(a);
+                        const bOriented = getOrientedEndpoints(b);
+                        if (!aOriented || !bOriented) return;
 
-                        pairs.forEach((pair) => {
-                            const d = Math.hypot(pair.p2.x - pair.p1.x, pair.p2.y - pair.p1.y);
-                            if (!best || d < best.d) {
-                                best = { ...pair, d };
-                            }
-                        });
+                        const d = Math.hypot(
+                            bOriented.leftPoint.x - aOriented.rightPoint.x,
+                            bOriented.leftPoint.y - aOriented.rightPoint.y
+                        );
+                        if (!best || d < best.d) {
+                            best = {
+                                p1: aOriented.rightPoint,
+                                p2: bOriented.leftPoint,
+                                p1Key: aOriented.rightKey,
+                                p2Key: bOriented.leftKey,
+                                lineA: a,
+                                lineB: b,
+                                d
+                            };
+                        }
                     });
                 });
 
@@ -1969,6 +2096,10 @@ function alignChainRootToSkeleton(chain, skeleton) {
 
 // Get the main chain (the one built from the skeleton)
 function getMainChain() {
+    if (frameChains[currentFrameIndex]) {
+        return frameChains[currentFrameIndex];
+    }
+
     // Find the frame that has a chain
     for (const frameIndex in frameChains) {
         if (frameChains[frameIndex]) {
@@ -2182,7 +2313,14 @@ function deleteAllFramesWithoutPoints() {
 }
 
 function buildChain() {
-    const skeleton = getCurrentSkeleton();
+    deleteAllFramesWithoutPoints();
+
+    const targetFrameIndex = getLastFrameWithSkeleton();
+    if (targetFrameIndex < 0) {
+        return;
+    }
+
+    const skeleton = frameSkeletons[targetFrameIndex];
     if (!skeleton || skeleton.points.length === 0) return;
 
     drawingFinished = true;
@@ -2197,19 +2335,46 @@ function buildChain() {
         skeleton.points[0].y
     );
 
-    frameChains[currentFrameIndex] = chain;
-
-    setFrameChainBuilt(currentFrameIndex, true);
-
-    deleteAllFramesWithoutPoints();
-
     // frameSkeletons[0] is guaranteed to exist after deleteAllFramesWithoutPoints remaps frames
     chain.computeStartRotationsFromRefSkeleton(frameSkeletons[0]);
 
-    // Show initial position (t=0) for current frame
+    // Precompute and cache chain poses for all logical frames.
     const maxFrameIndex = window.videoControls?.getMaxFrameIndex?.() ?? 0;
-    const t = maxFrameIndex > 0 ? Math.min(currentFrameIndex / maxFrameIndex, 1) : 0;
-    applyChainAtT(chain, t);
+
+    // Clear old cached chains first.
+    Object.keys(frameChains).forEach((key) => delete frameChains[key]);
+    Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
+
+    for (let frame = 0; frame <= maxFrameIndex; frame++) {
+        const t = maxFrameIndex > 0 ? Math.min(frame / maxFrameIndex, 1) : 0;
+        applyChainAtT(chain, t);
+        const skeletonForFrame = frameSkeletons[frame] || null;
+        alignChainRootToSkeleton(chain, skeletonForFrame);
+
+        const serialized = chain.toSerializable();
+        const cached = Chain.fromSerializable(serialized);
+        frameChains[frame] = cached;
+        frameChainBuilt[frame] = true;
+    }
+
+    // Force companion to be captured from frame 0 during generation.
+    const previousFrame = currentFrameIndex;
+    const previousCompanionEnabled = companionEnabled;
+    companionRigidModel = null;
+    companionEnabled = true;
+    currentFrameIndex = 0;
+    redrawAll();
+    companionEnabled = previousCompanionEnabled;
+
+    currentFrameIndex = targetFrameIndex;
+    clearMechanismNeedsRegeneration();
+
+    // Keep UI/current frame consistent after generation.
+    const targetViewFrame = Math.min(targetFrameIndex, maxFrameIndex);
+    window.videoControls?.showFrameIndex?.(targetViewFrame);
+    if (previousFrame !== targetViewFrame) {
+        currentFrameIndex = targetViewFrame;
+    }
 
     redrawAll();
 }
@@ -2327,6 +2492,11 @@ function exposeStateForSerialization() {
         frameSkeletons,
         frameChains,
         frameChainBuilt,
+        companionRigidModel,
+        companionEnabled,
+        mechanismNeedsRegeneration,
+        chainThickness,
+        jointMinimumThickness,
         jointKByIndex,
         rulerState,
         currentFrameIndex,
@@ -2741,7 +2911,7 @@ async function findKsMinimizingChainSkeletonDistance(onProgress) {
     }
 
     // Fallback coarse absolute search.
-    const absoluteCandidates = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10];
+    const absoluteCandidates = [1, 1.1, 1.25, 1.5, 2, 3, 5, 7.5, 10];
     const fallbackStartError = bestError;
     reportProgress(84, 'Refining fit...');
     for (let i = 0; i < numJoints; i++) {
@@ -2830,16 +3000,29 @@ window.appActions = {
     },
     setHoleEnabled: (enabled) => {
         holeEnabled = Boolean(enabled);
+        markMechanismNeedsRegeneration();
         emitChainStateChange();
         redrawAll();
     },
     getHoleEnabled: () => holeEnabled,
     setJointsEnabled: (enabled) => {
         jointsEnabled = Boolean(enabled);
+        markMechanismNeedsRegeneration();
         emitChainStateChange();
         redrawAll();
     },
     getJointsEnabled: () => jointsEnabled,
+    setCompanionEnabled: (enabled) => {
+        companionEnabled = Boolean(enabled);
+        markMechanismNeedsRegeneration();
+        emitChainStateChange();
+        redrawAll();
+    },
+    getCompanionEnabled: () => companionEnabled,
+    getMechanismNeedsRegeneration: () => mechanismNeedsRegeneration,
+    clearMechanismNeedsRegeneration: () => clearMechanismNeedsRegeneration(),
+    markMechanismNeedsRegeneration: () => markMechanismNeedsRegeneration(),
+    getLastSkeletonFrameIndex: () => getLastFrameWithSkeleton(),
     setSkeletonVisible: (visible) => {
         skeletonVisible = Boolean(visible);
         emitChainStateChange();
@@ -2920,9 +3103,16 @@ window.appActions = {
             });
         }
 
+        markMechanismNeedsRegeneration();
         emitChainStateChange();
         redrawAll();
     },
+    setCompanionRigidModel: (model) => {
+        companionRigidModel = model && typeof model === 'object' ? model : null;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getCompanionRigidModel: () => companionRigidModel,
     getCurrentSkeletonPointCount: () => getCurrentSkeleton()?.points?.length ?? 0,
     resampleCurrentSkeleton: (pointCount) => resampleCurrentSkeleton(pointCount),
     getJointCount: () => getJointCount(),

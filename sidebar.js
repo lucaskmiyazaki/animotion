@@ -51,6 +51,10 @@ function setSectionInteractive(sectionEl, toggleInput, enabled) {
         if (control === toggleInput) return;
         control.disabled = !enabled;
     });
+
+    if (sectionEl === chainOptionsSection) {
+        syncJointKInputEditability();
+    }
 }
 
 // Helper to create buttons
@@ -95,8 +99,8 @@ function updateAddPointButtonState(mode = window.appActions?.getMode?.()) {
 }
 
 const buildButton = createButton('Generate Chain', async () => {
-    const hasSkeleton = (window.appActions?.getCurrentSkeletonPointCount?.() ?? 0) > 0;
-    if (!hasSkeleton) return;
+    const hasAnySkeleton = (window.appActions?.getLastSkeletonFrameIndex?.() ?? -1) >= 0;
+    if (!hasAnySkeleton) return;
 
     const setProgress = (value, text) => {
         chainBuildProgressWrap.style.display = 'grid';
@@ -113,7 +117,7 @@ const buildButton = createButton('Generate Chain', async () => {
 
         window.appActions?.buildChain?.();
 
-        if (fitKOnGenerateCheckbox.checked) {
+        if (!manualFillCheckbox.checked) {
             setProgress(62, 'Fitting k...');
 
             // Yield again so stage transition is visible.
@@ -124,7 +128,7 @@ const buildButton = createButton('Generate Chain', async () => {
                 setProgress(fitProgress, text || 'Fitting k...');
             });
         } else {
-            setProgress(78, 'Skipping k fit');
+            setProgress(78, 'Manual k mode');
         }
 
         setProgress(100, 'Done');
@@ -242,6 +246,21 @@ jointsOptionText.textContent = 'Joints';
 
 jointsOptionLabel.append(jointsCheckbox, jointsOptionText);
 
+const companionOptionLabel = document.createElement('label');
+companionOptionLabel.className = 'checkbox-option';
+
+const companionCheckbox = document.createElement('input');
+companionCheckbox.type = 'checkbox';
+companionCheckbox.checked = window.appActions?.getCompanionEnabled?.() ?? true;
+companionCheckbox.addEventListener('change', () => {
+    window.appActions?.setCompanionEnabled?.(companionCheckbox.checked);
+});
+
+const companionOptionText = document.createElement('span');
+companionOptionText.textContent = 'Companion';
+
+companionOptionLabel.append(companionCheckbox, companionOptionText);
+
 const chainThicknessRow = document.createElement('div');
 chainThicknessRow.className = 'joint-k-row';
 
@@ -324,33 +343,62 @@ function renderJointKInputs() {
         label.textContent = `k${i + 1}`;
 
         const input = document.createElement('input');
-        input.className = 'joint-k-input';
-        input.type = 'number';
-        input.step = '0.1';
-        input.min = '0';
-        input.value = String(window.appActions?.getJointK?.(i) ?? 1);
+        input.className = 'joint-k-input joint-k-value-input';
+        input.type = 'text';
+        input.inputMode = 'decimal';
+        input.autocomplete = 'off';
+        const rawK = Number(window.appActions?.getJointK?.(i));
+        input.value = Number.isFinite(rawK) ? rawK.toFixed(2) : '1.00';
         input.addEventListener('change', () => {
             const parsed = Number.parseFloat(input.value);
-            const nextValue = Number.isFinite(parsed) ? parsed : 1;
+            const bounded = Number.isFinite(parsed) ? Math.max(1, Math.min(10, parsed)) : (Number(window.appActions?.getJointK?.(i)) || 1);
+            const nextValue = Math.round(bounded * 100) / 100;
+            input.value = nextValue.toFixed(2);
+            if (!manualFillCheckbox.checked) {
+                return;
+            }
             window.appActions?.setJointK?.(i, nextValue);
         });
 
         row.append(label, input);
         jointKContainer.append(row);
     }
+
+    syncJointKInputEditability();
 }
 
-const fitKOnGenerateLabel = document.createElement('label');
-fitKOnGenerateLabel.className = 'checkbox-option';
+function syncJointKInputEditability() {
+    const manualMode = manualFillCheckbox.checked;
+    const sectionEnabled = !chainOptionsSection.classList.contains('section-disabled');
+    const editable = manualMode && sectionEnabled;
 
-const fitKOnGenerateCheckbox = document.createElement('input');
-fitKOnGenerateCheckbox.type = 'checkbox';
-fitKOnGenerateCheckbox.checked = true;
+    jointKContainer.querySelectorAll('.joint-k-value-input').forEach((input) => {
+        input.disabled = !editable;
+        input.classList.toggle('manual-disabled', !manualMode);
+    });
+}
 
-const fitKOnGenerateText = document.createElement('span');
-fitKOnGenerateText.textContent = 'Auto-fit k on generate';
+const manualFillLabel = document.createElement('label');
+manualFillLabel.className = 'checkbox-option';
 
-fitKOnGenerateLabel.append(fitKOnGenerateCheckbox, fitKOnGenerateText);
+const manualFillCheckbox = document.createElement('input');
+manualFillCheckbox.type = 'checkbox';
+manualFillCheckbox.checked = false;
+manualFillCheckbox.addEventListener('change', () => {
+    syncJointKInputEditability();
+    window.appActions?.markMechanismNeedsRegeneration?.();
+});
+
+const manualFillText = document.createElement('span');
+manualFillText.textContent = 'Manual fill k';
+
+manualFillLabel.append(manualFillCheckbox, manualFillText);
+
+const regenerateWarning = document.createElement('div');
+regenerateWarning.className = 'energy-display';
+regenerateWarning.style.color = '#d97706';
+regenerateWarning.textContent = 'Warning: parameters changed. Regenerate mechanism.';
+regenerateWarning.style.display = 'none';
 
 const energyDisplay = document.createElement('div');
 energyDisplay.className = 'energy-display';
@@ -400,8 +448,9 @@ function updateEnergyAndLengthDisplay() {
 }
 
 advancedChainContent.append(
-    fitKOnGenerateLabel,
+    manualFillLabel,
     jointKContainer,
+    regenerateWarning,
     energyDisplay,
     lineLengthDisplay,
     companionLineLengthDisplay,
@@ -415,6 +464,7 @@ chainOptionsSection.append(
     chainHeader.header,
     holeOptionLabel,
     jointsOptionLabel,
+    companionOptionLabel,
     chainThicknessRow,
     jointMinThicknessRow,
     advancedChainDetails
@@ -521,7 +571,20 @@ const skeletonResampleButton = createButton('Change', () => {
 });
 skeletonResampleButton.classList.add('point-count-button');
 
+const copyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4c-1.1 0-2 .9-2 2v12h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>';
 skeletonPointCountRow.append(skeletonPointCountLabel, skeletonPointCountInput, skeletonResampleButton);
+
+const skeletonAdvancedDetails = document.createElement('details');
+skeletonAdvancedDetails.className = 'advanced-details skeleton-advanced-details';
+
+const skeletonAdvancedSummary = document.createElement('summary');
+skeletonAdvancedSummary.textContent = 'Advanced';
+
+const skeletonAdvancedContent = document.createElement('div');
+skeletonAdvancedContent.className = 'advanced-content';
+skeletonAdvancedContent.append(skeletonPointCountRow);
+
+skeletonAdvancedDetails.append(skeletonAdvancedSummary, skeletonAdvancedContent);
 
 const sideSpacer = document.createElement('div');
 sideSpacer.className = 'sidebar-spacer';
@@ -549,6 +612,8 @@ bottomSecondaryActions.append(exportBottomButton, previewBottomButton);
 
 let playPauseButton = null;
 let uploadVideoText = null;
+let frameCopySkeletonButton = null;
+let iconActionsRow = null;
 
 function hasLoadedVideo() {
     const videoEl = window.videoControls?.video;
@@ -562,10 +627,13 @@ function getCurrentSkeletonPointCount() {
 
 function updateBuildControls() {
     const hasChain = window.appActions?.hasRenderableChain?.() ?? false;
-    const hasSkeleton = getCurrentSkeletonPointCount() > 0;
+    const hasAnySkeleton = (window.appActions?.getLastSkeletonFrameIndex?.() ?? -1) >= 0;
     buildButton.textContent = hasChain ? 'Regenerate Chain' : 'Generate Chain';
     bottomSecondaryActions.style.display = hasChain ? 'grid' : 'none';
-    buildButton.disabled = !hasSkeleton;
+    buildButton.disabled = !hasAnySkeleton;
+
+    const needsRegeneration = window.appActions?.getMechanismNeedsRegeneration?.() ?? false;
+    regenerateWarning.style.display = (needsRegeneration && hasChain) ? '' : 'none';
 }
 
 function updateProgressiveVisibility() {
@@ -586,11 +654,17 @@ function updateProgressiveVisibility() {
     if (playPauseButton) {
         playPauseButton.style.display = hasVideo ? '' : 'none';
     }
+    if (frameCopySkeletonButton) {
+        frameCopySkeletonButton.style.display = hasVideo ? '' : 'none';
+    }
     if (rulerButton) {
         rulerButton.style.display = hasVideo ? '' : 'none';
     }
     if (uploadVideoText) {
         uploadVideoText.style.display = hasVideo ? 'none' : '';
+    }
+    if (iconActionsRow) {
+        iconActionsRow.classList.toggle('no-video', !hasVideo);
     }
     frameControl.style.display = hasVideo ? 'grid' : 'none';
 
@@ -600,10 +674,11 @@ function updateProgressiveVisibility() {
     chainHeader.header.style.display = hasMechanism ? '' : 'none';
     holeOptionLabel.style.display = hasMechanism ? '' : 'none';
     jointsOptionLabel.style.display = hasMechanism ? '' : 'none';
+    companionOptionLabel.style.display = hasMechanism ? '' : 'none';
 
     skeletonDrawHint.style.display = (hasVideo && !hasSkeleton) ? '' : 'none';
     addPointButton.style.display = hasSkeleton ? '' : 'none';
-    skeletonPointCountRow.style.display = hasSkeleton ? 'grid' : 'none';
+    skeletonAdvancedDetails.style.display = hasSkeleton ? '' : 'none';
 
     if (hasVideo && !hasSkeleton && window.appActions?.getMode?.() !== 'create') {
         window.appActions?.switchToCreateMode?.();
@@ -638,10 +713,12 @@ window.appActions?.onChainStateChange?.(() => {
     const skeletonVisible = window.appActions?.getSkeletonVisible?.() ?? true;
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
+    const companionVisible = window.appActions?.getCompanionEnabled?.() ?? true;
 
     skeletonHeader.sync(skeletonVisible);
     frameHeader.sync(framesVisible);
     chainHeader.sync(chainVisible);
+    companionCheckbox.checked = companionVisible;
 
     setSectionInteractive(skeletonSection, skeletonHeader.input, skeletonVisible);
     setSectionInteractive(frameSection, frameHeader.input, framesVisible);
@@ -649,6 +726,7 @@ window.appActions?.onChainStateChange?.(() => {
     const hasMechanism = window.appActions?.hasRenderableChain?.() ?? false;
     const mechanismSectionEnabled = hasSkeleton && (!hasMechanism || chainVisible);
     setSectionInteractive(chainOptionsSection, chainHeader.input, mechanismSectionEnabled);
+    syncJointKInputEditability();
     updateProgressiveVisibility();
 });
 
@@ -677,8 +755,9 @@ setSectionInteractive(
     chainHeader.input,
     getCurrentSkeletonPointCount() > 0
 );
+syncJointKInputEditability();
 
-const iconActionsRow = document.createElement('div');
+iconActionsRow = document.createElement('div');
 iconActionsRow.className = 'icon-actions-row frame-icon-actions-row';
 
 const videoIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5v2zM12 3l-5 5h3v6h4V8h3l-5-5z"/></svg>';
@@ -688,6 +767,14 @@ const pauseIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h5v1
 
 const uploadVideoIconButton = createIconButton(videoIcon, 'Upload Video', () => {
     window.videoControls?.openVideoPicker();
+});
+
+frameCopySkeletonButton = createIconButton(copyIcon, 'Copy Previous Skeleton', () => {
+    window.appActions?.copyPreviousFrameSkeleton?.();
+    updateFrameInput();
+    updateBuildControls();
+    updateEnergyAndLengthDisplay();
+    updateProgressiveVisibility();
 });
 
 const rulerButton = createIconButton(rulerIcon, 'Toggle Ruler', () => {
@@ -738,13 +825,13 @@ window.videoControls?.onPlaybackChange?.(() => {
 
 updatePlaybackButton();
 
-iconActionsRow.append(uploadVideoPrompt, rulerButton, playPauseButton);
+iconActionsRow.append(uploadVideoPrompt, frameCopySkeletonButton, rulerButton, playPauseButton);
 
 updateRulerButtonState();
 
 updateProgressiveVisibility();
 
-skeletonSection.append(skeletonHeader.header, skeletonDrawHint, addPointButton, skeletonPointCountRow);
+skeletonSection.append(skeletonHeader.header, skeletonDrawHint, addPointButton, skeletonAdvancedDetails);
 frameSection.append(frameHeader.header, iconActionsRow, frameControl);
 
 // Add controls to sidebar
