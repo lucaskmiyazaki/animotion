@@ -950,6 +950,23 @@ class Chain {
             });
 
             if (includeJoints) {
+                const cross = (a, b) => a.x * b.y - a.y * b.x;
+                const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+                const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y });
+                const mul = (v, s) => ({ x: v.x * s, y: v.y * s });
+                const lineSegmentIntersection = (linePoint, lineDir, segA, segB) => {
+                    const segDir = sub(segB, segA);
+                    const denom = cross(lineDir, segDir);
+                    if (Math.abs(denom) < 1e-8) return null;
+
+                    const w = sub(segA, linePoint);
+                    const t = cross(w, segDir) / denom;
+                    const u = cross(w, lineDir) / denom;
+                    if (u < -1e-8 || u > 1 + 1e-8) return null;
+
+                    return add(linePoint, mul(lineDir, t));
+                };
+
                 const worldJoints = getCompanionModelJoints(companionModel).map((joint) => {
                     const prevOwner = trapezoids[joint.prevLinkIndex];
                     const nextOwner = trapezoids[joint.nextLinkIndex];
