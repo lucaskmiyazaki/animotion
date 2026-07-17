@@ -99,6 +99,99 @@ class Canvas {
         point.y = newRect.top + (point.y - oldRect.top) * scaleY;
     }
 
+    findPointAt(points, x, y, hitRadius) {
+        if (!Array.isArray(points)) return null;
+
+        for (const point of points) {
+            const dx = x - point.x;
+            const dy = y - point.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist <= hitRadius) {
+                return point;
+            }
+        }
+        return null;
+    }
+
+    drawSkeletonOverlay(skeleton, options = {}) {
+        if (!skeleton) return;
+
+        const {
+            hoveredPoint = null,
+            selectedPoint = null,
+            pointRadius = 5,
+            hoverRadius = 9,
+            showBisector = false,
+            showPivot = false,
+            pivotRadius = 50
+        } = options;
+
+        this.ctx.strokeStyle = 'blue';
+        this.ctx.lineWidth = 2;
+
+        skeleton.lines.forEach((line) => {
+            this.ctx.beginPath();
+            this.ctx.moveTo(line.start.x, line.start.y);
+            this.ctx.lineTo(line.end.x, line.end.y);
+            this.ctx.stroke();
+        });
+
+        if (showBisector && typeof skeleton.drawBisector === 'function') {
+            skeleton.drawBisector(this.ctx, {
+                length: 50,
+                strokeStyle: 'rgba(0, 180, 0, 0.95)',
+                lineWidth: 3
+            });
+
+            if (showPivot && typeof skeleton.drawPivot === 'function') {
+                skeleton.drawPivot(this.ctx, pivotRadius, {
+                    pointRadius: 4,
+                    fillStyle: 'rgba(255, 120, 0, 0.9)'
+                });
+            }
+        }
+
+        skeleton.points.forEach((point, index) => {
+            const radius = point === hoveredPoint ? hoverRadius : pointRadius;
+
+            if (index === 0) {
+                this.ctx.beginPath();
+                this.ctx.strokeStyle = 'red';
+                this.ctx.lineWidth = 2;
+                this.ctx.arc(point.x, point.y, radius + 5, 0, Math.PI * 2);
+                this.ctx.stroke();
+            }
+
+            this.ctx.beginPath();
+            this.ctx.fillStyle = point === selectedPoint ? 'gold' : 'red';
+            this.ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            this.ctx.fill();
+            if (point === selectedPoint) {
+                this.ctx.strokeStyle = 'orange';
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+            }
+        });
+    }
+
+    drawRulerOverlay(ruler, displayedVideoRect, options = {}) {
+        if (!ruler) return;
+
+        const {
+            handleRadius = 10,
+            labelPaddingX = 8,
+            labelPaddingY = 5
+        } = options;
+
+        ruler.ensureInitialized(displayedVideoRect, handleRadius);
+        ruler.draw(this.ctx, {
+            handleRadius,
+            labelPaddingX,
+            labelPaddingY
+        });
+    }
+
     clearViewport() {
         this.ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
     }

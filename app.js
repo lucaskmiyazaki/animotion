@@ -1,6 +1,5 @@
 const canvasView = new Canvas('canvas');
 const canvas = canvasView.getElement();
-const ctx = canvasView.getContext();
 
 let lastDisplayedVideoRect = null;
 let observedBackgroundVideo = null;
@@ -179,16 +178,6 @@ function markCurrentFrameChainDirty() {
     emitChainStateChange();
 }
 
-function getLastFrameWithSkeleton() {
-    return skeletonSeries.getLastFrameWithPoints();
-}
-
-// Skeleton length at current frame: sum of all skeleton segment lengths.
-function calculateCurrentSkeletonLength() {
-    const skeleton = getCurrentSkeleton();
-    return skeleton ? skeleton.getLength() : 0;
-}
-
 function ensureCurrentSkeleton() {
     return skeletonSeries.ensureFrame(currentFrameIndex);
 }
@@ -200,22 +189,6 @@ function setCurrentFrame(frameIndex) {
 
     emitChainStateChange();
     redrawAll();
-}
-
-function getPointAt(x, y) {
-    const skeleton = getCurrentSkeleton();
-    if (!skeleton) return null;
-
-    for (const point of skeleton.points) {
-        const dx = x - point.x;
-        const dy = y - point.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist <= hitRadius) {
-            return point;
-        }
-    }
-    return null;
 }
 
 function moveTailWithConstraints(skeleton, point, mouseX, mouseY) {
@@ -302,9 +275,11 @@ canvas.addEventListener('click', (e) => {
         redrawAll();
     } else if (mode === 'edit' || mode === 'move') {
         if (hasDragged) return;
+        const skeleton = getCurrentSkeleton();
+        const points = skeleton?.points ?? [];
         const x = e.clientX;
         const y = e.clientY;
-        selectedPoint = getPointAt(x, y);
+        selectedPoint = canvasView.findPointAt(points, x, y, hitRadius);
         redrawAll();
     }
 });
@@ -325,8 +300,9 @@ canvas.addEventListener('mousedown', (e) => {
 
     const x = e.clientX;
     const y = e.clientY;
-
-    draggedPoint = getPointAt(x, y);
+    const skeleton = getCurrentSkeleton();
+    const points = skeleton?.points ?? [];
+    draggedPoint = canvasView.findPointAt(points, x, y, hitRadius);
     hasDragged = false;
 });
 
@@ -356,7 +332,8 @@ canvas.addEventListener('mousemove', (e) => {
         return;
     }
 
-    hoveredPoint = getPointAt(mouseX, mouseY);
+    const points = getCurrentSkeleton()?.points ?? [];
+    hoveredPoint = canvasView.findPointAt(points, mouseX, mouseY, hitRadius);
 
     if (mode === 'edit' && draggedPoint) {
         hasDragged = true;
@@ -389,78 +366,29 @@ canvas.addEventListener('mouseleave', () => {
     redrawAll();
 });
 
-function drawSkeletonOverlay() {
-    if (!skeletonVisible) return;
+function redrawAll() {
+    canvasView.clearViewport();
 
-    const skeleton = getCurrentSkeleton();
-    if (!skeleton) return;
-
-    ctx.strokeStyle = 'blue';
-    ctx.lineWidth = 2;
-
-    skeleton.lines.forEach(line => {
-        ctx.beginPath();
-        ctx.moveTo(line.start.x, line.start.y);
-        ctx.lineTo(line.end.x, line.end.y);
-        ctx.stroke();
-    });
-
-    if (skeletonBisectorVisible && typeof skeleton.drawBisector === 'function') {
-        skeleton.drawBisector(ctx, {
-            length: 50,
-            strokeStyle: 'rgba(0, 180, 0, 0.95)',
-            lineWidth: 3
-        });
-
-        if (skeletonPivotVisible && typeof skeleton.drawPivot === 'function') {
-            skeleton.drawPivot(ctx, chainThickness, {
-                pointRadius: 4,
-                fillStyle: 'rgba(255, 120, 0, 0.9)'
+    if (skeletonVisible) {
+        const skeleton = getCurrentSkeleton();
+        if (skeleton) {
+            canvasView.drawSkeletonOverlay(skeleton, {
+                hoveredPoint,
+                selectedPoint,
+                pointRadius,
+                hoverRadius,
+                showBisector: skeletonBisectorVisible,
+                showPivot: skeletonPivotVisible,
+                pivotRadius: chainThickness
             });
         }
     }
 
-    skeleton.points.forEach((point, index) => {
-        const radius = point === hoveredPoint ? hoverRadius : pointRadius;
-
-        // Mark the first point with an outer red ring.
-        if (index === 0) {
-            ctx.beginPath();
-            ctx.strokeStyle = 'red';
-            ctx.lineWidth = 2;
-            ctx.arc(point.x, point.y, radius + 5, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-
-        ctx.beginPath();
-        if (point === selectedPoint) {
-            ctx.fillStyle = 'gold';
-        } else {
-            ctx.fillStyle = 'red';
-        }
-        ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-        ctx.fill();
-        if (point === selectedPoint) {
-            ctx.strokeStyle = 'orange';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-        }
-    });
-}
-
-function drawRulerOverlay() {
-    ruler.ensureInitialized(canvasView.getDisplayedVideoRect(), rulerHandleRadius);
-    ruler.draw(ctx, {
+    canvasView.drawRulerOverlay(ruler, canvasView.getDisplayedVideoRect(), {
         handleRadius: rulerHandleRadius,
         labelPaddingX: rulerLabelPaddingX,
         labelPaddingY: rulerLabelPaddingY
     });
-}
-
-function redrawAll() {
-    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-    drawSkeletonOverlay();
-    drawRulerOverlay();
 }
 
 function isSkeletonEditable() {
@@ -469,14 +397,6 @@ function isSkeletonEditable() {
 
 function playPreviewAnimation() {
     window.videoControls?.togglePlayback?.();
-}
-
-function getStoredFrameIndices() {
-    return skeletonSeries.getStoredFrameIndices([frameChains, frameChainBuilt]);
-}
-
-function removeLogicalFrameAt(frameIndex) {
-    skeletonSeries.removeFrameAndShift(frameIndex, [frameChains, frameChainBuilt]);
 }
 
 function deleteAllFramesWithoutPoints() {
@@ -570,7 +490,7 @@ function exposeStateForSerialization() {
         currentFrameIndex,
         mode,
         selectedPoint,
-        getCurrentSkeleton
+        getCurrentSkeleton: () => skeletonSeries.getFrame(currentFrameIndex)
     };
 }
 
@@ -624,7 +544,7 @@ function deleteCurrentFrame() {
     if (!(window.videoControls?.getFramesVisible?.() ?? true)) return;
     const deletedFrameIndex = currentFrameIndex;
 
-    removeLogicalFrameAt(deletedFrameIndex);
+    skeletonSeries.removeFrameAndShift(deletedFrameIndex, [frameChains, frameChainBuilt]);
     emitChainStateChange();
 
     window.videoControls?.removeFrameIndices?.([deletedFrameIndex]);
@@ -707,7 +627,7 @@ window.appActions = {
             redrawAll();
         }
     },
-    getLastSkeletonFrameIndex: () => getLastFrameWithSkeleton(),
+    getLastSkeletonFrameIndex: () => skeletonSeries.getLastFrameWithPoints(),
     setSkeletonVisible: (visible) => {
         skeletonVisible = Boolean(visible);
         emitChainStateChange();
@@ -766,9 +686,12 @@ window.appActions = {
         redrawAll();
     },
     getRulerScaleMmPerPixel: () => ruler.getScaleMmPerPixel(),
-    getCurrentSkeletonPointCount: () => getCurrentSkeleton()?.points?.length ?? 0,
+    getCurrentSkeletonPointCount: () => skeletonSeries.getFrame(currentFrameIndex)?.points?.length ?? 0,
     resampleCurrentSkeleton: (pointCount) => resampleCurrentSkeleton(pointCount),
-    calculateCurrentSkeletonLength: () => calculateCurrentSkeletonLength()
+    calculateCurrentSkeletonLength: () => {
+        const skeleton = skeletonSeries.getFrame(currentFrameIndex);
+        return skeleton ? skeleton.getLength() : 0;
+    }
 };
 
 // Listen for video frame changes and sync canvas state
