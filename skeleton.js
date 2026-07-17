@@ -193,6 +193,102 @@ class Skeleton {
         this.points.forEach(point => point.updateAngle());
     }
 
+    getLength() {
+        if (!Array.isArray(this.lines) || this.lines.length === 0) {
+            return 0;
+        }
+
+        let total = 0;
+        this.lines.forEach((line) => {
+            if (!line?.start || !line?.end) return;
+            total += Math.hypot(line.end.x - line.start.x, line.end.y - line.start.y);
+        });
+
+        return total;
+    }
+
+    clone() {
+        const newSkeleton = new Skeleton();
+        const pointMap = new Map();
+
+        this.points.forEach((oldPoint) => {
+            const newPoint = newSkeleton.addPoint(oldPoint.x, oldPoint.y);
+            pointMap.set(oldPoint, newPoint);
+        });
+
+        this.lines.forEach((oldLine) => {
+            const newStart = pointMap.get(oldLine.start);
+            const newEnd = pointMap.get(oldLine.end);
+            if (newStart && newEnd) {
+                newSkeleton.addLine(newStart, newEnd);
+            }
+        });
+
+        newSkeleton.updateAllGeometry();
+        return newSkeleton;
+    }
+
+    resample(targetPointCount) {
+        if (!Array.isArray(this.points) || this.points.length < 2) {
+            return null;
+        }
+
+        const requestedCount = Math.round(Number(targetPointCount));
+        if (!Number.isInteger(requestedCount) || requestedCount < 2) {
+            return null;
+        }
+
+        const sourcePoints = this.points;
+        const cumulative = [0];
+        let totalLength = 0;
+
+        for (let i = 1; i < sourcePoints.length; i++) {
+            const prev = sourcePoints[i - 1];
+            const curr = sourcePoints[i];
+            totalLength += Math.hypot(curr.x - prev.x, curr.y - prev.y);
+            cumulative.push(totalLength);
+        }
+
+        if (!Number.isFinite(totalLength) || totalLength <= 1e-8) {
+            return null;
+        }
+
+        const sampledPoints = [];
+        let segmentIndex = 1;
+
+        for (let i = 0; i < requestedCount; i++) {
+            const targetDistance = (totalLength * i) / (requestedCount - 1);
+
+            while (segmentIndex < cumulative.length - 1 && cumulative[segmentIndex] < targetDistance) {
+                segmentIndex += 1;
+            }
+
+            const startIdx = Math.max(segmentIndex - 1, 0);
+            const endIdx = Math.min(segmentIndex, sourcePoints.length - 1);
+            const startPoint = sourcePoints[startIdx];
+            const endPoint = sourcePoints[endIdx];
+            const segStartDistance = cumulative[startIdx];
+            const segEndDistance = cumulative[endIdx];
+            const segLength = Math.max(segEndDistance - segStartDistance, 1e-8);
+            const t = Math.max(0, Math.min(1, (targetDistance - segStartDistance) / segLength));
+
+            sampledPoints.push({
+                x: startPoint.x + (endPoint.x - startPoint.x) * t,
+                y: startPoint.y + (endPoint.y - startPoint.y) * t
+            });
+        }
+
+        const newSkeleton = new Skeleton();
+        sampledPoints.forEach((point) => {
+            newSkeleton.addPoint(point.x, point.y);
+        });
+        for (let i = 1; i < newSkeleton.points.length; i++) {
+            newSkeleton.addLine(newSkeleton.points[i - 1], newSkeleton.points[i]);
+        }
+        newSkeleton.updateAllGeometry();
+        return newSkeleton;
+    }
+
     drawBisector(ctx, options = {}) {
         if (!ctx || !Array.isArray(this.points) || this.points.length === 0) {
             return 0;
@@ -347,5 +443,154 @@ class SkeletonSeries {
             .map((k) => Number.parseInt(k, 10))
             .filter(Number.isInteger)
             .sort((a, b) => a - b);
+    }
+
+    getLastFrameWithPoints() {
+        const indices = this.getFrameIndices()
+            .filter((idx) => this.frames[idx]?.points?.length > 0)
+            .sort((a, b) => b - a);
+        return indices.length > 0 ? indices[0] : -1;
+    }
+
+    getStoredFrameIndices(extraStores = []) {
+        const allKeys = new Set(Object.keys(this.frames));
+        extraStores.forEach((store) => {
+            if (!store || typeof store !== 'object') return;
+            Object.keys(store).forEach((key) => allKeys.add(key));
+        });
+
+        return Array.from(allKeys)
+            .map((k) => Number.parseInt(k, 10))
+            .filter(Number.isInteger)
+            .sort((a, b) => b - a);
+    }
+
+    removeFrameAndShift(frameIndex, extraStores = []) {
+        const target = Number.parseInt(frameIndex, 10);
+        if (!Number.isInteger(target)) return;
+
+        const stores = [this.frames, ...extraStores.filter((s) => s && typeof s === 'object')];
+        const indices = this.getStoredFrameIndices(extraStores);
+        const hasOwn = (store, index) => Object.prototype.hasOwnProperty.call(store, index);
+
+        for (const index of indices) {
+            if (index < target) continue;
+
+            if (index === target) {
+                stores.forEach((store) => {
+                    delete store[index];
+                });
+                continue;
+            }
+
+            stores.forEach((store) => {
+                if (hasOwn(store, index)) {
+                    store[index - 1] = store[index];
+                } else {
+                    delete store[index - 1];
+                }
+                delete store[index];
+            });
+        }
+    }
+
+    compactToFramesWithPoints(currentFrameIndex, extraStores = [], maxFrameIndex = -1) {
+        const stores = extraStores.filter((s) => s && typeof s === 'object');
+        const currentMaxFrame = Math.max(
+            ...Object.keys(this.frames).map((k) => Number.parseInt(k, 10)),
+            ...stores.flatMap((store) => Object.keys(store).map((k) => Number.parseInt(k, 10))),
+            Number.isInteger(maxFrameIndex) ? maxFrameIndex : -1,
+            -1
+        );
+
+        if (currentMaxFrame < 0) {
+            return { currentFrameIndex: 0, removedFrameIndices: [] };
+        }
+
+        const framesWithPoints = [];
+        for (let i = 0; i <= currentMaxFrame; i++) {
+            const skeleton = this.frames[i];
+            if (skeleton && skeleton.points.length > 0) {
+                framesWithPoints.push(i);
+            }
+        }
+
+        if (framesWithPoints.length === 0) {
+            return { currentFrameIndex: 0, removedFrameIndices: [] };
+        }
+
+        const indexMap = {};
+        framesWithPoints.forEach((oldIdx, newIdx) => {
+            indexMap[oldIdx] = newIdx;
+        });
+
+        const remapStore = (store) => {
+            const nextStore = {};
+            Object.keys(store).forEach((oldIdx) => {
+                const newIdx = indexMap[oldIdx];
+                if (newIdx !== undefined) {
+                    nextStore[newIdx] = store[oldIdx];
+                }
+            });
+
+            for (let i = 0; i <= currentMaxFrame; i++) {
+                delete store[i];
+            }
+            Object.assign(store, nextStore);
+        };
+
+        remapStore(this.frames);
+        stores.forEach(remapStore);
+
+        const removedFrameIndices = [];
+        for (let i = 0; i <= currentMaxFrame; i++) {
+            if (!framesWithPoints.includes(i)) {
+                removedFrameIndices.push(i);
+            }
+        }
+
+        return {
+            currentFrameIndex: indexMap[currentFrameIndex] !== undefined ? indexMap[currentFrameIndex] : 0,
+            removedFrameIndices
+        };
+    }
+
+    deleteLeadingEmptyFrames(currentFrameIndex, extraStores = []) {
+        const current = Number.parseInt(currentFrameIndex, 10);
+        if (!Number.isInteger(current) || current <= 0) {
+            return { currentFrameIndex: Number.isInteger(current) ? current : 0, removedFrameIndices: [] };
+        }
+
+        for (let i = 0; i < current; i++) {
+            const skeleton = this.frames[i];
+            if (skeleton && skeleton.points.length > 0) {
+                return { currentFrameIndex: current, removedFrameIndices: [] };
+            }
+        }
+
+        const numToDelete = current;
+        const stores = [this.frames, ...extraStores.filter((s) => s && typeof s === 'object')];
+        const allIndices = this.getStoredFrameIndices(extraStores);
+
+        for (const idx of allIndices) {
+            if (idx >= numToDelete) {
+                const newIdx = idx - numToDelete;
+                stores.forEach((store) => {
+                    if (Object.prototype.hasOwnProperty.call(store, idx)) {
+                        store[newIdx] = store[idx];
+                        delete store[idx];
+                    }
+                });
+            } else {
+                stores.forEach((store) => {
+                    delete store[idx];
+                });
+            }
+        }
+
+        return {
+            currentFrameIndex: 0,
+            removedFrameIndices: Array.from({ length: numToDelete }, (_, i) => i)
+        };
     }
 }
