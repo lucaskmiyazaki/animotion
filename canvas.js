@@ -124,7 +124,10 @@ class Canvas {
             hoverRadius = 9,
             showBisector = false,
             showPivot = false,
-            pivotRadius = 50
+            showPivot1 = false,
+            showPivot2 = false,
+            pivotRadius = 50,
+            pivotDirectionByPoint = null
         } = options;
 
         this.ctx.strokeStyle = 'blue';
@@ -144,7 +147,16 @@ class Canvas {
                 lineWidth: 3
             });
 
-            if (showPivot && typeof skeleton.drawPivot === 'function') {
+            if ((showPivot1 || showPivot2) && typeof skeleton.drawPivotByDirection === 'function') {
+                skeleton.drawPivotByDirection(this.ctx, pivotRadius, {
+                    pointRadius: 4,
+                    fillStylePivot1: 'rgba(255, 120, 0, 0.9)',
+                    fillStylePivot2: 'rgba(255, 205, 110, 0.95)',
+                    showPivot1,
+                    showPivot2,
+                    directionByPoint: pivotDirectionByPoint || {}
+                });
+            } else if (showPivot && typeof skeleton.drawPivot === 'function') {
                 skeleton.drawPivot(this.ctx, pivotRadius, {
                     pointRadius: 4,
                     fillStyle: 'rgba(255, 120, 0, 0.9)'

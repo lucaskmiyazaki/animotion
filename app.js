@@ -27,7 +27,8 @@ let jointsEnabled = false;
 let companionEnabled = true;
 let skeletonVisible = true;
 let skeletonBisectorVisible = false;
-let skeletonPivotVisible = false;
+let skeletonPivot1Visible = false;
+let skeletonPivot2Visible = false;
 let chainVisible = true;
 let mechanismNeedsRegeneration = false;
 const jointKByIndex = {};
@@ -372,14 +373,17 @@ function redrawAll() {
     if (skeletonVisible) {
         const skeleton = getCurrentSkeleton();
         if (skeleton) {
+            const angleComparison = series.compareInitialToLastFrameAngles();
             canvasView.drawSkeletonOverlay(skeleton, {
                 hoveredPoint,
                 selectedPoint,
                 pointRadius,
                 hoverRadius,
                 showBisector: skeletonBisectorVisible,
-                showPivot: skeletonPivotVisible,
-                pivotRadius: chainThickness
+                showPivot1: skeletonPivot1Visible,
+                showPivot2: skeletonPivot2Visible,
+                pivotRadius: chainThickness,
+                pivotDirectionByPoint: angleComparison.pointDirections
             });
         }
     }
@@ -389,6 +393,29 @@ function redrawAll() {
         labelPaddingX: rulerLabelPaddingX,
         labelPaddingY: rulerLabelPaddingY
     });
+}
+
+function logPivotClosingDirections() {
+    const comparison = series.compareInitialToLastFrameAngles();
+    const rows = Object.entries(comparison.pointDirections || {}).map(([pointIndex, info]) => ({
+        pointIndex: Number.parseInt(pointIndex, 10),
+        closes: info?.closingDirection || 'none',
+        cwTrend: info?.clockwise?.trend || 'unknown',
+        cwDelta: Number.isFinite(info?.clockwise?.delta) ? Number(info.clockwise.delta.toFixed(4)) : null,
+        ccwTrend: info?.counterclockwise?.trend || 'unknown',
+        ccwDelta: Number.isFinite(info?.counterclockwise?.delta) ? Number(info.counterclockwise.delta.toFixed(4)) : null
+    }));
+
+    if (rows.length === 0) {
+        console.log('Pivot direction analysis: no comparable points between initial and last skeleton frame.');
+        return;
+    }
+
+    console.groupCollapsed(
+        `Pivot direction analysis (frames ${comparison.startFrameIndex} -> ${comparison.endFrameIndex})`
+    );
+    console.table(rows);
+    console.groupEnd();
 }
 
 function isSkeletonEditable() {
@@ -633,18 +660,32 @@ window.appActions = {
     setSkeletonBisectorVisible: (visible) => {
         skeletonBisectorVisible = Boolean(visible);
         if (!skeletonBisectorVisible) {
-            skeletonPivotVisible = false;
+            skeletonPivot1Visible = false;
+            skeletonPivot2Visible = false;
         }
         emitChainStateChange();
         redrawAll();
     },
     getSkeletonBisectorVisible: () => skeletonBisectorVisible,
-    setSkeletonPivotVisible: (visible) => {
-        skeletonPivotVisible = Boolean(visible) && skeletonBisectorVisible;
+    setSkeletonPivot1Visible: (visible) => {
+        skeletonPivot1Visible = Boolean(visible) && skeletonBisectorVisible;
+        if (skeletonPivot1Visible) {
+            logPivotClosingDirections();
+        }
         emitChainStateChange();
         redrawAll();
     },
-    getSkeletonPivotVisible: () => skeletonPivotVisible,
+    getSkeletonPivot1Visible: () => skeletonPivot1Visible,
+    setSkeletonPivot2Visible: (visible) => {
+        skeletonPivot2Visible = Boolean(visible) && skeletonBisectorVisible;
+        if (skeletonPivot2Visible) {
+            logPivotClosingDirections();
+        }
+        emitChainStateChange();
+        redrawAll();
+    },
+    getSkeletonPivot2Visible: () => skeletonPivot2Visible,
+    logPivotClosingDirections,
     setFramesVisible: (visible) => {
         window.videoControls?.setFramesVisible?.(Boolean(visible));
         emitChainStateChange();

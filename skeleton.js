@@ -193,6 +193,36 @@ class Skeleton {
         this.points.forEach(point => point.updateAngle());
     }
 
+    computeDirectedAnglesAtPoint(pointIndex) {
+        const index = Number.parseInt(pointIndex, 10);
+        if (!Number.isInteger(index) || index <= 0 || index >= this.points.length - 1) {
+            return null;
+        }
+
+        const current = this.points[index];
+        const prev = this.points[index - 1];
+        const next = this.points[index + 1];
+        if (!current || !prev || !next) {
+            return null;
+        }
+
+        const toPrev = { x: prev.x - current.x, y: prev.y - current.y };
+        const toNext = { x: next.x - current.x, y: next.y - current.y };
+        if (Math.hypot(toPrev.x, toPrev.y) < 1e-8 || Math.hypot(toNext.x, toNext.y) < 1e-8) {
+            return null;
+        }
+
+        const aPrev = Math.atan2(toPrev.y, toPrev.x);
+        const aNext = Math.atan2(toNext.y, toNext.x);
+        const ccw = ((aNext - aPrev) * (180 / Math.PI) % 360 + 360) % 360;
+        const cw = (360 - ccw) % 360;
+
+        return {
+            clockwise: cw,
+            counterclockwise: ccw
+        };
+    }
+
     getLength() {
         if (!Array.isArray(this.lines) || this.lines.length === 0) {
             return 0;
@@ -373,6 +403,101 @@ class Skeleton {
         }
 
         ctx.restore();
+        return drawnCount;
+    }
+
+    drawPivotByDirection(ctx, rotation_radius, options = {}) {
+        if (!ctx || !Array.isArray(this.points) || this.points.length < 3) {
+            return 0;
+        }
+
+        const radius = Number(rotation_radius);
+        if (!Number.isFinite(radius) || radius <= 0) {
+            return 0;
+        }
+
+        const pointRadius = Number.isFinite(options.pointRadius) ? options.pointRadius : 4;
+        const fillStylePivot1 = options.fillStylePivot1 || 'rgba(255, 120, 0, 0.9)';
+        const fillStylePivot2 = options.fillStylePivot2 || 'rgba(255, 205, 110, 0.95)';
+        const showPivot1 = Boolean(options.showPivot1);
+        const showPivot2 = Boolean(options.showPivot2);
+        const directionByPoint = options.directionByPoint || {};
+
+        const getDirectedAngleDeg = (fromVec, toVec, direction) => {
+            const aFrom = Math.atan2(fromVec.y, fromVec.x);
+            const aTo = Math.atan2(toVec.y, toVec.x);
+            const ccw = ((aTo - aFrom) * (180 / Math.PI) % 360 + 360) % 360;
+            if (direction === 'counterclockwise') return ccw;
+            if (direction === 'clockwise') return (360 - ccw) % 360;
+            return Number.POSITIVE_INFINITY;
+        };
+
+        const chooseClosingSide = (currentPoint, prevPoint, pivotCandidates, direction) => {
+            if (direction !== 'clockwise' && direction !== 'counterclockwise') {
+                return null;
+            }
+
+            const toPrev = {
+                x: prevPoint.x - currentPoint.x,
+                y: prevPoint.y - currentPoint.y
+            };
+
+            const toPositive = {
+                x: pivotCandidates.positive.x - currentPoint.x,
+                y: pivotCandidates.positive.y - currentPoint.y
+            };
+            const toNegative = {
+                x: pivotCandidates.negative.x - currentPoint.x,
+                y: pivotCandidates.negative.y - currentPoint.y
+            };
+
+            const positiveAngle = getDirectedAngleDeg(toPrev, toPositive, direction);
+            const negativeAngle = getDirectedAngleDeg(toPrev, toNegative, direction);
+            return positiveAngle <= negativeAngle ? 'positive' : 'negative';
+        };
+
+        const getOppositeSide = (side) => {
+            if (side === 'positive') return 'negative';
+            if (side === 'negative') return 'positive';
+            return null;
+        };
+
+        let drawnCount = 0;
+
+        for (let i = 1; i < this.points.length - 1; i++) {
+            const point = this.points[i];
+            const prev = this.points[i - 1];
+            const next = this.points[i + 1];
+            const pivot = point.findPivot(prev, next, radius);
+            if (!pivot) continue;
+
+            const analysis = directionByPoint[i];
+            const closingSide = chooseClosingSide(point, prev, pivot, analysis?.closingDirection);
+            const oppositeSide = getOppositeSide(closingSide);
+
+            if (showPivot1 && closingSide && pivot[closingSide]) {
+                const p = pivot[closingSide];
+                ctx.save();
+                ctx.fillStyle = fillStylePivot1;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, pointRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                drawnCount += 1;
+            }
+
+            if (showPivot2 && oppositeSide && pivot[oppositeSide]) {
+                const p = pivot[oppositeSide];
+                ctx.save();
+                ctx.fillStyle = fillStylePivot2;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, pointRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                drawnCount += 1;
+            }
+        }
+
         return drawnCount;
     }
 

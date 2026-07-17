@@ -75,6 +75,13 @@ class Series {
         Object.assign(store, nextStore);
     }
 
+    _classifyTrend(delta, epsilon = 1e-4) {
+        if (!Number.isFinite(delta)) return 'unchanged';
+        if (delta > epsilon) return 'increasing';
+        if (delta < -epsilon) return 'decreasing';
+        return 'unchanged';
+    }
+
     // ---------- Skeleton API ----------
 
     getFrame(frameIndex) {
@@ -402,6 +409,74 @@ class Series {
         return {
             startSourceFrame: frameIndexMap[0],
             endSourceFrame: frameIndexMap[frameIndexMap.length - 1]
+        };
+    }
+
+    compareInitialToLastFrameAngles(options = {}) {
+        const epsilon = Number.isFinite(options.epsilon) ? options.epsilon : 1e-4;
+        const indices = this.getFrameIndices().sort((a, b) => a - b);
+        if (indices.length < 2) {
+            return {
+                startFrameIndex: -1,
+                endFrameIndex: -1,
+                pointDirections: {}
+            };
+        }
+
+        const startFrameIndex = indices[0];
+        const endFrameIndex = indices[indices.length - 1];
+        const firstSkeleton = this.getFrame(startFrameIndex);
+        const lastSkeleton = this.getFrame(endFrameIndex);
+
+        if (!firstSkeleton || !lastSkeleton) {
+            return {
+                startFrameIndex,
+                endFrameIndex,
+                pointDirections: {}
+            };
+        }
+
+        const maxComparablePoints = Math.min(firstSkeleton.points.length, lastSkeleton.points.length);
+        const pointDirections = {};
+
+        for (let i = 1; i < maxComparablePoints - 1; i++) {
+            const firstAngles = firstSkeleton.computeDirectedAnglesAtPoint(i);
+            const lastAngles = lastSkeleton.computeDirectedAnglesAtPoint(i);
+            if (!firstAngles || !lastAngles) continue;
+
+            const clockwiseDelta = lastAngles.clockwise - firstAngles.clockwise;
+            const counterclockwiseDelta = lastAngles.counterclockwise - firstAngles.counterclockwise;
+            const clockwiseTrend = this._classifyTrend(clockwiseDelta, epsilon);
+            const counterclockwiseTrend = this._classifyTrend(counterclockwiseDelta, epsilon);
+
+            let closingDirection = null;
+            if (clockwiseTrend === 'decreasing') {
+                closingDirection = 'clockwise';
+            } else if (counterclockwiseTrend === 'decreasing') {
+                closingDirection = 'counterclockwise';
+            }
+
+            pointDirections[i] = {
+                clockwise: {
+                    initial: firstAngles.clockwise,
+                    last: lastAngles.clockwise,
+                    delta: clockwiseDelta,
+                    trend: clockwiseTrend
+                },
+                counterclockwise: {
+                    initial: firstAngles.counterclockwise,
+                    last: lastAngles.counterclockwise,
+                    delta: counterclockwiseDelta,
+                    trend: counterclockwiseTrend
+                },
+                closingDirection
+            };
+        }
+
+        return {
+            startFrameIndex,
+            endFrameIndex,
+            pointDirections
         };
     }
 }
