@@ -8,8 +8,9 @@ let observedBackgroundVideo = null;
 const frameChains = {};
 
 // one skeleton per frame
-const skeletonSeries = new SkeletonSeries();
-const frameSkeletons = skeletonSeries.frames;
+const series = window.appSeries || new Series();
+window.appSeries = series;
+const frameSkeletons = series.frames;
 const frameChainBuilt = {};
 const chainStateListeners = new Set();
 const modeChangeListeners = new Set();
@@ -161,7 +162,7 @@ const videoAttachTimer = setInterval(() => {
 handleViewportResize();
 
 function getCurrentSkeleton() {
-    return skeletonSeries.getFrame(currentFrameIndex);
+    return series.getFrame(currentFrameIndex);
 }
 
 function emitChainStateChange() {
@@ -179,11 +180,11 @@ function markCurrentFrameChainDirty() {
 }
 
 function ensureCurrentSkeleton() {
-    return skeletonSeries.ensureFrame(currentFrameIndex);
+    return series.ensureFrame(currentFrameIndex);
 }
 
 function setCurrentFrame(frameIndex) {
-    currentFrameIndex = frameIndex;
+    currentFrameIndex = series.clampFrameIndex(frameIndex);
     hoveredPoint = null;
     draggedPoint = null;
 
@@ -400,16 +401,15 @@ function playPreviewAnimation() {
 }
 
 function deleteAllFramesWithoutPoints() {
-    const result = skeletonSeries.compactToFramesWithPoints(
+    const result = series.compactToFramesWithPoints(
         currentFrameIndex,
         [frameChains, frameChainBuilt],
-        window.videoControls?.getMaxFrameIndex?.() ?? -1
+        series.getMaxFrameIndex()
     );
 
     currentFrameIndex = result.currentFrameIndex;
 
     emitChainStateChange();
-    window.videoControls?.removeFrameIndices?.(result.removedFrameIndices);
     window.videoControls?.showFrameIndex?.(currentFrameIndex);
 }
 
@@ -426,12 +426,11 @@ function deleteSelectedPoint() {
 }
 
 function deleteAllEmptyPreviousFrames() {
-    const result = skeletonSeries.deleteLeadingEmptyFrames(currentFrameIndex, [frameChains, frameChainBuilt]);
+    const result = series.deleteLeadingEmptyFrames(currentFrameIndex, [frameChains, frameChainBuilt]);
     if (result.removedFrameIndices.length === 0) return;
 
     currentFrameIndex = result.currentFrameIndex;
     emitChainStateChange();
-    window.videoControls?.removeFrameIndices?.(result.removedFrameIndices);
     window.videoControls?.showFrameIndex?.(currentFrameIndex);
 }
 
@@ -490,7 +489,7 @@ function exposeStateForSerialization() {
         currentFrameIndex,
         mode,
         selectedPoint,
-        getCurrentSkeleton: () => skeletonSeries.getFrame(currentFrameIndex)
+        getCurrentSkeleton: () => series.getFrame(currentFrameIndex)
     };
 }
 
@@ -544,10 +543,8 @@ function deleteCurrentFrame() {
     if (!(window.videoControls?.getFramesVisible?.() ?? true)) return;
     const deletedFrameIndex = currentFrameIndex;
 
-    skeletonSeries.removeFrameAndShift(deletedFrameIndex, [frameChains, frameChainBuilt]);
+    series.removeFrameAndShift(deletedFrameIndex, [frameChains, frameChainBuilt]);
     emitChainStateChange();
-
-    window.videoControls?.removeFrameIndices?.([deletedFrameIndex]);
 
     const newFrameIndex = deletedFrameIndex > 0 ? deletedFrameIndex - 1 : 0;
     window.videoControls?.showFrameIndex?.(newFrameIndex);
@@ -611,7 +608,7 @@ window.appActions = {
     // Project state management
     getProjectStateRefs: exposeStateForSerialization,
     setSkeletonForFrame: (frameIndex, skeleton) => {
-        skeletonSeries.setFrame(frameIndex, skeleton);
+        series.setFrame(frameIndex, skeleton);
         emitChainStateChange();
         // Also redraw immediately so restored skeletons show up
         if (currentFrameIndex === frameIndex) {
@@ -627,7 +624,7 @@ window.appActions = {
             redrawAll();
         }
     },
-    getLastSkeletonFrameIndex: () => skeletonSeries.getLastFrameWithPoints(),
+    getLastSkeletonFrameIndex: () => series.getLastFrameWithPoints(),
     setSkeletonVisible: (visible) => {
         skeletonVisible = Boolean(visible);
         emitChainStateChange();
@@ -686,10 +683,10 @@ window.appActions = {
         redrawAll();
     },
     getRulerScaleMmPerPixel: () => ruler.getScaleMmPerPixel(),
-    getCurrentSkeletonPointCount: () => skeletonSeries.getFrame(currentFrameIndex)?.points?.length ?? 0,
+    getCurrentSkeletonPointCount: () => series.getFrame(currentFrameIndex)?.points?.length ?? 0,
     resampleCurrentSkeleton: (pointCount) => resampleCurrentSkeleton(pointCount),
     calculateCurrentSkeletonLength: () => {
-        const skeleton = skeletonSeries.getFrame(currentFrameIndex);
+        const skeleton = series.getFrame(currentFrameIndex);
         return skeleton ? skeleton.getLength() : 0;
     }
 };

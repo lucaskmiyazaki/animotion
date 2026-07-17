@@ -12,6 +12,13 @@ class video {
         this.DEFAULT_FPS = 30;
         this.FRAME_STEP = 1 / this.DEFAULT_FPS;
         this.PLAYBACK_FPS = 10;
+        this.series = window.appSeries;
+
+        if (!this.series) {
+            console.error('Shared Series instance was not found.');
+            this.ready = false;
+            return;
+        }
 
         this.fileInput = document.createElement('input');
         this.fileInput.type = 'file';
@@ -48,8 +55,6 @@ class video {
         this.currentVideoURL = null;
         this.currentVideoFile = null;
         this.currentFrameIndex = 0;
-        this.maxFrameIndex = 0;
-        this.frameIndexMap = [];
         this.frameChangeListeners = new Set();
         this.playbackChangeListeners = new Set();
         this.playbackTimer = null;
@@ -68,7 +73,7 @@ class video {
 
     emitFrameChange() {
         this.frameChangeListeners.forEach((listener) => {
-            listener(this.currentFrameIndex, this.maxFrameIndex);
+            listener(this.currentFrameIndex, this.series.getMaxFrameIndex());
         });
     }
 
@@ -82,35 +87,6 @@ class video {
     syncCanvasFrame() {
         window.appActions?.setCurrentFrame?.(this.currentFrameIndex);
         this.emitFrameChange();
-    }
-
-    rebuildFrameIndexMap(frameIndicesToKeep) {
-        this.frameIndexMap = frameIndicesToKeep.slice();
-        this.maxFrameIndex = this.frameIndexMap.length > 0 ? this.frameIndexMap.length - 1 : 0;
-        this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
-    }
-
-    normalizeFrameIndexMap(rawMap) {
-        if (!Array.isArray(rawMap)) return [];
-
-        const normalized = [];
-        rawMap.forEach((value) => {
-            const frame = Number.parseInt(value, 10);
-            if (!Number.isInteger(frame) || frame < 0) return;
-            normalized.push(frame);
-        });
-
-        if (normalized.length <= 1) {
-            return normalized;
-        }
-
-        const isMonotonic = normalized.every((value, index) => index === 0 || value > normalized[index - 1]);
-        if (isMonotonic) {
-            return normalized;
-        }
-
-        const uniqueSorted = Array.from(new Set(normalized)).sort((a, b) => a - b);
-        return uniqueSorted;
     }
 
     openVideoPicker() {
@@ -151,9 +127,7 @@ class video {
                     try {
                         this.video.pause();
                         this.currentFrameIndex = 0;
-                        this.rebuildFrameIndexMap(
-                            Array.from({ length: this.getVideoMaxFrameIndex() + 1 }, (_, i) => i)
-                        );
+                        this.series.updateMaxFrameIndex(this.getVideoMaxFrameIndex());
                         this.video.currentTime = 0;
                         this.applyFrameVisuals();
                         this.syncCanvasFrame();
@@ -183,14 +157,10 @@ class video {
         return Math.floor(this.video.duration / this.FRAME_STEP);
     }
 
-    clampFrameIndex(frameIndex) {
-        return Math.min(Math.max(0, frameIndex), this.maxFrameIndex);
-    }
-
     applyFrameVisuals() {
         const hasVideo = Boolean(this.video.src);
-        const sourceFrameIndex = this.frameIndexMap[this.currentFrameIndex];
-        const isVideoFrame = hasVideo && sourceFrameIndex !== undefined;
+        const sourceFrameIndex = this.series.getSourceFrameIndex(this.currentFrameIndex);
+        const isVideoFrame = hasVideo && Number.isInteger(sourceFrameIndex);
 
         if (isVideoFrame) {
             this.video.style.visibility = this.framesVisible ? 'visible' : 'hidden';
@@ -205,7 +175,7 @@ class video {
     }
 
     showFrameIndex(frameIndex) {
-        this.currentFrameIndex = this.clampFrameIndex(frameIndex);
+        this.currentFrameIndex = this.series.clampFrameIndex(frameIndex);
         this.applyFrameVisuals();
         this.syncCanvasFrame();
     }
@@ -216,60 +186,27 @@ class video {
         this.video.pause();
         this.video.currentTime = this.clampTime(time);
         const sourceFrameIndex = Math.round(this.video.currentTime / this.FRAME_STEP);
-        const exactLogicalIndex = this.frameIndexMap.indexOf(sourceFrameIndex);
-
-        if (exactLogicalIndex !== -1) {
-            this.currentFrameIndex = exactLogicalIndex;
-        } else if (this.frameIndexMap.length > 0) {
-            let nearestIndex = 0;
-            let nearestDistance = Math.abs(this.frameIndexMap[0] - sourceFrameIndex);
-
-            for (let i = 1; i < this.frameIndexMap.length; i++) {
-                const distance = Math.abs(this.frameIndexMap[i] - sourceFrameIndex);
-                if (distance < nearestDistance) {
-                    nearestIndex = i;
-                    nearestDistance = distance;
-                }
-            }
-
-            this.currentFrameIndex = nearestIndex;
-        }
+        this.currentFrameIndex = this.series.findNearestLogicalFrameIndex(sourceFrameIndex);
 
         this.applyFrameVisuals();
         this.syncCanvasFrame();
     }
 
     removeFrameIndices(frameIndices) {
-        if (!frameIndices || frameIndices.length === 0) return;
-
-        const sortedIndices = Array.from(new Set(frameIndices))
-            .filter((index) => Number.isInteger(index) && index >= 0)
-            .sort((a, b) => b - a);
-
-        for (const index of sortedIndices) {
-            if (index < this.frameIndexMap.length) {
-                this.frameIndexMap.splice(index, 1);
-            }
-        }
-
-        this.maxFrameIndex = this.frameIndexMap.length > 0 ? this.frameIndexMap.length - 1 : 0;
-        this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
+        this.series.removeFrameIndices(frameIndices);
+        this.currentFrameIndex = this.series.clampFrameIndex(this.currentFrameIndex);
         this.applyFrameVisuals();
         this.emitFrameChange();
     }
 
     appendFrameSlot() {
-        const lastSourceFrameIndex = this.frameIndexMap.length > 0
-            ? this.frameIndexMap[this.frameIndexMap.length - 1]
-            : -1;
-
-        this.frameIndexMap.push(lastSourceFrameIndex + 1);
-        this.maxFrameIndex = this.frameIndexMap.length - 1;
+        this.series.appendFrameSlot();
         this.emitFrameChange();
     }
 
     nextFrame() {
-        if (this.currentFrameIndex >= this.maxFrameIndex) {
+        const maxFrameIndex = this.series.getMaxFrameIndex();
+        if (this.currentFrameIndex >= maxFrameIndex) {
             this.showFrameIndex(0);
         } else {
             this.showFrameIndex(this.currentFrameIndex + 1);
@@ -277,8 +214,9 @@ class video {
     }
 
     prevFrame() {
+        const maxFrameIndex = this.series.getMaxFrameIndex();
         if (this.currentFrameIndex <= 0) {
-            this.showFrameIndex(this.maxFrameIndex);
+            this.showFrameIndex(maxFrameIndex);
         } else {
             this.showFrameIndex(this.currentFrameIndex - 1);
         }
@@ -287,24 +225,26 @@ class video {
     playFrames() {
         if (this.playbackTimer !== null) return;
 
-        if (this.currentFrameIndex >= this.maxFrameIndex) {
+        const maxFrameIndex = this.series.getMaxFrameIndex();
+        if (this.currentFrameIndex >= maxFrameIndex) {
             this.playbackDirection = -1;
         } else if (this.currentFrameIndex <= 0) {
             this.playbackDirection = 1;
         }
 
         this.playbackTimer = setInterval(() => {
-            if (this.maxFrameIndex <= 0) {
+            const maxFrameIndex = this.series.getMaxFrameIndex();
+            if (maxFrameIndex <= 0) {
                 return;
             }
 
             let nextIndex = this.currentFrameIndex + this.playbackDirection;
-            if (nextIndex > this.maxFrameIndex) {
+            if (nextIndex > maxFrameIndex) {
                 this.playbackDirection = -1;
-                nextIndex = Math.max(this.maxFrameIndex - 1, 0);
+                nextIndex = Math.max(maxFrameIndex - 1, 0);
             } else if (nextIndex < 0) {
                 this.playbackDirection = 1;
-                nextIndex = Math.min(1, this.maxFrameIndex);
+                nextIndex = Math.min(1, maxFrameIndex);
             }
 
             this.showFrameIndex(nextIndex);
@@ -330,16 +270,12 @@ class video {
     }
 
     async getSerializableState() {
+        const frameIndexMap = this.series.getFrameIndexMap();
         return {
             currentFrameIndex: this.currentFrameIndex,
-            maxFrameIndex: this.maxFrameIndex,
-            frameIndexMap: this.frameIndexMap.slice(),
-            frameRange: this.frameIndexMap.length > 0
-                ? {
-                    startSourceFrame: this.frameIndexMap[0],
-                    endSourceFrame: this.frameIndexMap[this.frameIndexMap.length - 1]
-                }
-                : null,
+            maxFrameIndex: this.series.getMaxFrameIndex(),
+            frameIndexMap,
+            frameRange: this.series.getFrameRange(),
             video: this.currentVideoFile
                 ? {
                     name: this.currentVideoFile.name,
@@ -351,33 +287,21 @@ class video {
     }
 
     getFrameIndexMap() {
-        return this.frameIndexMap.slice();
+        return this.series.getFrameIndexMap();
     }
 
     setFrameIndexMap(newFrameIndexMap) {
-        const normalizedMap = this.normalizeFrameIndexMap(newFrameIndexMap);
-        if (normalizedMap.length > 0) {
-            this.frameIndexMap = normalizedMap;
-            this.maxFrameIndex = this.frameIndexMap.length - 1;
-            this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
-            this.applyFrameVisuals();
-            this.emitFrameChange();
-        }
+        this.series.setFrameIndexMap(newFrameIndexMap);
+        this.currentFrameIndex = this.series.clampFrameIndex(this.currentFrameIndex);
+        this.applyFrameVisuals();
+        this.emitFrameChange();
     }
 
     setFrameRange(range) {
-        if (range && range.startSourceFrame !== undefined && range.endSourceFrame !== undefined) {
-            const maxValidFrame = this.getVideoMaxFrameIndex();
-            const start = Math.max(0, range.startSourceFrame);
-            const end = Math.min(maxValidFrame, range.endSourceFrame);
-            if (start <= end) {
-                this.frameIndexMap = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-                this.maxFrameIndex = this.frameIndexMap.length - 1;
-                this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
-                this.applyFrameVisuals();
-                this.emitFrameChange();
-            }
-        }
+        this.series.setFrameRange(range, this.getVideoMaxFrameIndex());
+        this.currentFrameIndex = this.series.clampFrameIndex(this.currentFrameIndex);
+        this.applyFrameVisuals();
+        this.emitFrameChange();
     }
 
     getCurrentFrameIndex() {
@@ -385,13 +309,12 @@ class video {
     }
 
     getMaxFrameIndex() {
-        return this.maxFrameIndex;
+        return this.series.getMaxFrameIndex();
     }
 
     updateMaxFrameIndex(newMaxFrameIndex) {
-        this.frameIndexMap = Array.from({ length: newMaxFrameIndex + 1 }, (_, i) => i);
-        this.maxFrameIndex = newMaxFrameIndex;
-        this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
+        this.series.updateMaxFrameIndex(newMaxFrameIndex);
+        this.currentFrameIndex = this.series.clampFrameIndex(this.currentFrameIndex);
         this.applyFrameVisuals();
         this.emitFrameChange();
     }
