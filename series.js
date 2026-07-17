@@ -1,66 +1,105 @@
 class Series {
     constructor() {
-        // Unified per-frame store: each slot owns both skeleton and source frame.
-        this.series = [];
+        // Logical-frame timeline store.
+        // Each entry keeps both domains together:
+        // - skeleton: drawing data for this logical frame
+        // - sourceFrame: mapped source frame in the video
+        this.frameEntries = [];
     }
+
+    // ---------- Internal Helpers ----------
 
     _toIndex(frameIndex) {
-        const index = Number.parseInt(frameIndex, 10);
-        return Number.isInteger(index) && index >= 0 ? index : null;
+        const parsed = Number.parseInt(frameIndex, 10);
+        return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
     }
 
-    _ensureSlot(index) {
-        if (!this.series[index]) {
-            this.series[index] = {
-                skeleton: null,
-                sourceFrame: index
-            };
+    _makeEntry(defaultSourceFrame) {
+        return {
+            skeleton: null,
+            sourceFrame: defaultSourceFrame
+        };
+    }
+
+    _getEntry(index) {
+        return this.frameEntries[index] || null;
+    }
+
+    _ensureEntry(index) {
+        if (!this.frameEntries[index]) {
+            this.frameEntries[index] = this._makeEntry(index);
         }
-        return this.series[index];
+        return this.frameEntries[index];
     }
 
-    _shiftIndexedStoreLeft(store, startIndex) {
+    _validStores(extraStores = []) {
+        return extraStores.filter((store) => store && typeof store === 'object');
+    }
+
+    _clearStore(store) {
+        Object.keys(store).forEach((key) => delete store[key]);
+    }
+
+    _shiftStoreLeftFrom(store, deletedIndex) {
         if (!store || typeof store !== 'object') return;
 
         const keys = Object.keys(store)
             .map((k) => Number.parseInt(k, 10))
-            .filter((k) => Number.isInteger(k) && k >= startIndex)
+            .filter((k) => Number.isInteger(k) && k >= deletedIndex)
             .sort((a, b) => a - b);
 
         keys.forEach((key) => {
-            if (key === startIndex) {
+            if (key === deletedIndex) {
                 delete store[key];
                 return;
             }
-
             store[key - 1] = store[key];
             delete store[key];
         });
     }
 
+    _remapStore(store, indexMap) {
+        const nextStore = {};
+
+        Object.keys(store).forEach((oldKey) => {
+            const oldIndex = Number.parseInt(oldKey, 10);
+            if (!Number.isInteger(oldIndex)) return;
+
+            const newIndex = indexMap[oldIndex];
+            if (newIndex !== undefined) {
+                nextStore[newIndex] = store[oldIndex];
+            }
+        });
+
+        this._clearStore(store);
+        Object.assign(store, nextStore);
+    }
+
+    // ---------- Skeleton API ----------
+
     getFrame(frameIndex) {
         const index = this._toIndex(frameIndex);
         if (index === null) return null;
-        return this.series[index]?.skeleton || null;
+        return this._getEntry(index)?.skeleton || null;
     }
 
     ensureFrame(frameIndex) {
         const index = this._toIndex(frameIndex);
         if (index === null) return null;
 
-        const slot = this._ensureSlot(index);
-        if (!slot.skeleton) {
-            slot.skeleton = new Skeleton();
+        const entry = this._ensureEntry(index);
+        if (!entry.skeleton) {
+            entry.skeleton = new Skeleton();
         }
-        return slot.skeleton;
+        return entry.skeleton;
     }
 
     setFrame(frameIndex, skeleton) {
         const index = this._toIndex(frameIndex);
         if (index === null) return null;
 
-        const slot = this._ensureSlot(index);
-        slot.skeleton = skeleton;
+        const entry = this._ensureEntry(index);
+        entry.skeleton = skeleton;
         return skeleton;
     }
 
@@ -70,10 +109,8 @@ class Series {
 
     getFrameIndices() {
         const indices = [];
-        this.series.forEach((slot, index) => {
-            if (slot?.skeleton) {
-                indices.push(index);
-            }
+        this.frameEntries.forEach((entry, index) => {
+            if (entry?.skeleton) indices.push(index);
         });
         return indices;
     }
@@ -85,17 +122,30 @@ class Series {
         return indices.length > 0 ? indices[0] : -1;
     }
 
+    getSkeletonFrameStore() {
+        const store = {};
+        this.frameEntries.forEach((entry, index) => {
+            if (entry?.skeleton) {
+                store[index] = entry.skeleton;
+            }
+        });
+        return store;
+    }
+
+    getSkeletons() {
+        return this.frameEntries.map((entry) => entry?.skeleton).filter(Boolean);
+    }
+
+    // ---------- Timeline / Frame Deletion ----------
+
     getStoredFrameIndices(extraStores = []) {
         const allKeys = new Set();
 
-        this.series.forEach((slot, index) => {
-            if (slot) {
-                allKeys.add(String(index));
-            }
+        this.frameEntries.forEach((entry, index) => {
+            if (entry) allKeys.add(String(index));
         });
 
-        extraStores.forEach((store) => {
-            if (!store || typeof store !== 'object') return;
+        this._validStores(extraStores).forEach((store) => {
             Object.keys(store).forEach((key) => allKeys.add(key));
         });
 
@@ -106,33 +156,36 @@ class Series {
     }
 
     removeFrameAndShift(frameIndex, extraStores = []) {
-        const target = this._toIndex(frameIndex);
-        if (target === null) return;
+        const deletedIndex = this._toIndex(frameIndex);
+        if (deletedIndex === null) return;
 
-        if (target < this.series.length) {
-            this.series.splice(target, 1);
+        if (deletedIndex < this.frameEntries.length) {
+            this.frameEntries.splice(deletedIndex, 1);
         }
 
-        extraStores
-            .filter((s) => s && typeof s === 'object')
-            .forEach((store) => this._shiftIndexedStoreLeft(store, target));
+        this._validStores(extraStores).forEach((store) => {
+            this._shiftStoreLeftFrom(store, deletedIndex);
+        });
     }
 
     compactToFramesWithPoints(currentFrameIndex, extraStores = [], maxFrameIndex = -1) {
-        const stores = extraStores.filter((s) => s && typeof s === 'object');
-        const validCurrent = this.clampFrameIndex(currentFrameIndex);
-        const currentMaxFrame = Math.max(this.series.length - 1, Number.isInteger(maxFrameIndex) ? maxFrameIndex : -1);
+        const stores = this._validStores(extraStores);
+        const clampedCurrent = this.clampFrameIndex(currentFrameIndex);
+        const upperBound = Math.max(
+            this.frameEntries.length - 1,
+            Number.isInteger(maxFrameIndex) ? maxFrameIndex : -1
+        );
 
-        if (currentMaxFrame < 0 || this.series.length === 0) {
-            this.series = [];
+        if (upperBound < 0 || this.frameEntries.length === 0) {
+            this.frameEntries = [];
             return { currentFrameIndex: 0, removedFrameIndices: [] };
         }
 
         const keepIndices = [];
         const removedFrameIndices = [];
 
-        for (let i = 0; i <= currentMaxFrame; i++) {
-            const skeleton = this.series[i]?.skeleton;
+        for (let i = 0; i <= upperBound; i++) {
+            const skeleton = this._getEntry(i)?.skeleton;
             if (skeleton && skeleton.points.length > 0) {
                 keepIndices.push(i);
             } else {
@@ -141,44 +194,29 @@ class Series {
         }
 
         if (keepIndices.length === 0) {
-            this.series = [];
-            stores.forEach((store) => {
-                Object.keys(store).forEach((key) => delete store[key]);
-            });
+            this.frameEntries = [];
+            stores.forEach((store) => this._clearStore(store));
             return { currentFrameIndex: 0, removedFrameIndices: [] };
         }
 
         const indexMap = {};
-        keepIndices.forEach((oldIdx, newIdx) => {
-            indexMap[oldIdx] = newIdx;
+        keepIndices.forEach((oldIndex, newIndex) => {
+            indexMap[oldIndex] = newIndex;
         });
 
-        this.series = keepIndices.map((oldIdx, newIdx) => {
-            const slot = this.series[oldIdx] || {};
+        const previousEntries = this.frameEntries;
+        this.frameEntries = keepIndices.map((oldIndex) => {
+            const entry = previousEntries[oldIndex] || this._makeEntry(oldIndex);
             return {
-                skeleton: slot.skeleton || null,
-                sourceFrame: Number.isInteger(slot.sourceFrame) ? slot.sourceFrame : oldIdx,
-                logicalFrame: newIdx
+                skeleton: entry.skeleton || null,
+                sourceFrame: Number.isInteger(entry.sourceFrame) ? entry.sourceFrame : oldIndex
             };
         });
 
-        stores.forEach((store) => {
-            const nextStore = {};
-            Object.keys(store).forEach((oldKey) => {
-                const oldIdx = Number.parseInt(oldKey, 10);
-                if (!Number.isInteger(oldIdx)) return;
-                const newIdx = indexMap[oldIdx];
-                if (newIdx !== undefined) {
-                    nextStore[newIdx] = store[oldIdx];
-                }
-            });
-
-            Object.keys(store).forEach((key) => delete store[key]);
-            Object.assign(store, nextStore);
-        });
+        stores.forEach((store) => this._remapStore(store, indexMap));
 
         return {
-            currentFrameIndex: indexMap[validCurrent] !== undefined ? indexMap[validCurrent] : 0,
+            currentFrameIndex: indexMap[clampedCurrent] !== undefined ? indexMap[clampedCurrent] : 0,
             removedFrameIndices
         };
     }
@@ -186,43 +224,38 @@ class Series {
     deleteLeadingEmptyFrames(currentFrameIndex, extraStores = []) {
         const current = this._toIndex(currentFrameIndex);
         if (current === null || current <= 0) {
-            return { currentFrameIndex: Number.isInteger(current) ? current : 0, removedFrameIndices: [] };
+            return { currentFrameIndex: current ?? 0, removedFrameIndices: [] };
         }
 
         for (let i = 0; i < current; i++) {
-            const skeleton = this.series[i]?.skeleton;
+            const skeleton = this._getEntry(i)?.skeleton;
             if (skeleton && skeleton.points.length > 0) {
                 return { currentFrameIndex: current, removedFrameIndices: [] };
             }
         }
 
-        const numToDelete = current;
-        this.series.splice(0, numToDelete);
+        const removedCount = current;
+        this.frameEntries.splice(0, removedCount);
 
-        extraStores
-            .filter((s) => s && typeof s === 'object')
-            .forEach((store) => {
-                const keys = Object.keys(store)
-                    .map((k) => Number.parseInt(k, 10))
-                    .filter((k) => Number.isInteger(k))
-                    .sort((a, b) => a - b);
-
-                const nextStore = {};
-                keys.forEach((idx) => {
-                    if (idx >= numToDelete) {
-                        nextStore[idx - numToDelete] = store[idx];
-                    }
-                });
-
-                Object.keys(store).forEach((key) => delete store[key]);
-                Object.assign(store, nextStore);
+        this._validStores(extraStores).forEach((store) => {
+            const nextStore = {};
+            Object.keys(store).forEach((key) => {
+                const index = Number.parseInt(key, 10);
+                if (Number.isInteger(index) && index >= removedCount) {
+                    nextStore[index - removedCount] = store[index];
+                }
             });
+            this._clearStore(store);
+            Object.assign(store, nextStore);
+        });
 
         return {
             currentFrameIndex: 0,
-            removedFrameIndices: Array.from({ length: numToDelete }, (_, i) => i)
+            removedFrameIndices: Array.from({ length: removedCount }, (_, i) => i)
         };
     }
+
+    // ---------- Video Frame-Map API ----------
 
     normalizeFrameIndexMap(rawMap) {
         if (!Array.isArray(rawMap)) return [];
@@ -230,46 +263,42 @@ class Series {
         const normalized = [];
         rawMap.forEach((value) => {
             const frame = Number.parseInt(value, 10);
-            if (!Number.isInteger(frame) || frame < 0) return;
-            normalized.push(frame);
+            if (Number.isInteger(frame) && frame >= 0) {
+                normalized.push(frame);
+            }
         });
 
-        if (normalized.length <= 1) {
-            return normalized;
-        }
+        if (normalized.length <= 1) return normalized;
 
-        const isMonotonic = normalized.every((value, index) => index === 0 || value > normalized[index - 1]);
-        if (isMonotonic) {
-            return normalized;
-        }
+        const strictlyIncreasing = normalized.every(
+            (value, index) => index === 0 || value > normalized[index - 1]
+        );
+        if (strictlyIncreasing) return normalized;
 
         return Array.from(new Set(normalized)).sort((a, b) => a - b);
     }
 
     rebuildFrameIndexMap(frameIndicesToKeep) {
         const nextMap = Array.isArray(frameIndicesToKeep) ? frameIndicesToKeep.slice() : [];
-        this.series = nextMap.map((sourceFrame, index) => {
-            const previous = this.series[index];
-            return {
-                skeleton: previous?.skeleton || null,
-                sourceFrame: Number.isInteger(sourceFrame) ? sourceFrame : index,
-                logicalFrame: index
-            };
-        });
+        const previousEntries = this.frameEntries;
+
+        this.frameEntries = nextMap.map((sourceFrame, index) => ({
+            skeleton: previousEntries[index]?.skeleton || null,
+            sourceFrame: Number.isInteger(sourceFrame) ? sourceFrame : index
+        }));
     }
 
     getFrameIndexMap() {
-        return this.series.map((slot, index) => {
-            if (!slot) return index;
-            return Number.isInteger(slot.sourceFrame) ? slot.sourceFrame : index;
+        return this.frameEntries.map((entry, index) => {
+            if (!entry) return index;
+            return Number.isInteger(entry.sourceFrame) ? entry.sourceFrame : index;
         });
     }
 
     setFrameIndexMap(newFrameIndexMap) {
-        const normalizedMap = this.normalizeFrameIndexMap(newFrameIndexMap);
-        if (normalizedMap.length > 0) {
-            this.rebuildFrameIndexMap(normalizedMap);
-        }
+        const normalized = this.normalizeFrameIndexMap(newFrameIndexMap);
+        if (normalized.length === 0) return;
+        this.rebuildFrameIndexMap(normalized);
     }
 
     setFrameRange(range, maxValidFrame = -1) {
@@ -284,66 +313,62 @@ class Series {
         const start = Math.max(0, Number.parseInt(range.startSourceFrame, 10));
         const end = Math.min(effectiveMax, Number.parseInt(range.endSourceFrame, 10));
 
-        if (start <= end && Number.isFinite(start) && Number.isFinite(end)) {
+        if (Number.isFinite(start) && Number.isFinite(end) && start <= end) {
             this.rebuildFrameIndexMap(Array.from({ length: end - start + 1 }, (_, i) => start + i));
         }
     }
 
     getMaxFrameIndex() {
-        return this.series.length > 0 ? this.series.length - 1 : 0;
+        return this.frameEntries.length > 0 ? this.frameEntries.length - 1 : 0;
     }
 
     clampFrameIndex(frameIndex) {
         const index = this._toIndex(frameIndex);
-        const safeIndex = Number.isInteger(index) ? index : 0;
-        return Math.min(Math.max(0, safeIndex), this.getMaxFrameIndex());
+        const safe = Number.isInteger(index) ? index : 0;
+        return Math.min(Math.max(0, safe), this.getMaxFrameIndex());
     }
 
     updateMaxFrameIndex(newMaxFrameIndex) {
         const max = Number.parseInt(newMaxFrameIndex, 10);
         if (!Number.isInteger(max) || max < 0) {
-            this.series = [];
+            this.frameEntries = [];
             return;
         }
 
         for (let i = 0; i <= max; i++) {
-            const slot = this._ensureSlot(i);
-            slot.sourceFrame = i;
+            const entry = this._ensureEntry(i);
+            entry.sourceFrame = i;
         }
-
-        this.series.length = max + 1;
+        this.frameEntries.length = max + 1;
     }
 
     appendFrameSlot() {
         const frameIndexMap = this.getFrameIndexMap();
-        const lastSourceFrameIndex = frameIndexMap.length > 0
-            ? frameIndexMap[frameIndexMap.length - 1]
-            : -1;
+        const lastSourceFrame = frameIndexMap.length > 0 ? frameIndexMap[frameIndexMap.length - 1] : -1;
 
-        this.series.push({
+        this.frameEntries.push({
             skeleton: null,
-            sourceFrame: lastSourceFrameIndex + 1,
-            logicalFrame: this.series.length
+            sourceFrame: lastSourceFrame + 1
         });
     }
 
     removeFrameIndices(frameIndices) {
-        if (!frameIndices || frameIndices.length === 0) return;
+        if (!Array.isArray(frameIndices) || frameIndices.length === 0) return;
 
-        const sortedIndices = Array.from(new Set(frameIndices))
+        const sorted = Array.from(new Set(frameIndices))
             .filter((index) => Number.isInteger(index) && index >= 0)
             .sort((a, b) => b - a);
 
-        for (const index of sortedIndices) {
-            if (index < this.series.length) {
-                this.series.splice(index, 1);
+        sorted.forEach((index) => {
+            if (index < this.frameEntries.length) {
+                this.frameEntries.splice(index, 1);
             }
-        }
+        });
     }
 
     getSourceFrameIndex(logicalFrameIndex) {
-        const idx = this.clampFrameIndex(logicalFrameIndex);
-        return this.series[idx]?.sourceFrame;
+        const clamped = this.clampFrameIndex(logicalFrameIndex);
+        return this._getEntry(clamped)?.sourceFrame;
     }
 
     findNearestLogicalFrameIndex(sourceFrameIndex) {
@@ -354,12 +379,11 @@ class Series {
         }
 
         const exact = frameIndexMap.indexOf(source);
-        if (exact !== -1) {
-            return exact;
-        }
+        if (exact !== -1) return exact;
 
         let nearestIndex = 0;
         let nearestDistance = Math.abs(frameIndexMap[0] - source);
+
         for (let i = 1; i < frameIndexMap.length; i++) {
             const distance = Math.abs(frameIndexMap[i] - source);
             if (distance < nearestDistance) {
@@ -373,30 +397,12 @@ class Series {
 
     getFrameRange() {
         const frameIndexMap = this.getFrameIndexMap();
-        if (frameIndexMap.length === 0) {
-            return null;
-        }
+        if (frameIndexMap.length === 0) return null;
 
         return {
             startSourceFrame: frameIndexMap[0],
             endSourceFrame: frameIndexMap[frameIndexMap.length - 1]
         };
-    }
-
-    getSkeletonFrameStore() {
-        const store = {};
-        this.series.forEach((slot, index) => {
-            if (slot?.skeleton) {
-                store[index] = slot.skeleton;
-            }
-        });
-        return store;
-    }
-
-    getSkeletons() {
-        return this.series
-            .map((slot) => slot?.skeleton)
-            .filter(Boolean);
     }
 }
 

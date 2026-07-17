@@ -132,6 +132,11 @@ canvas.create-mode {
     padding: 10px;
 }
 
+.frame-section {
+    display: grid;
+    gap: 8px;
+}
+
 .section-header {
     display: flex;
     align-items: center;
@@ -431,6 +436,8 @@ canvas.create-mode {
 
 .frame-icon-actions-row {
     grid-template-columns: minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 8px;
 }
 
 .frame-icon-actions-row.no-video {
@@ -440,7 +447,7 @@ canvas.create-mode {
 .upload-video-prompt {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 8px;
     min-width: 0;
 }
@@ -461,6 +468,7 @@ canvas.create-mode {
     display: flex;
     align-items: center;
     justify-content: center;
+    min-height: 36px;
 }
 
 #sidebar .icon-button svg {
@@ -477,8 +485,9 @@ canvas.create-mode {
 
 .frame-control {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
-    gap: 7px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
 }
 
 .joint-k-value-input.manual-disabled {
@@ -491,12 +500,15 @@ canvas.create-mode {
 
 .frame-control button {
     padding: 8px;
+    min-height: 36px;
 }
 
 .frame-input {
     width: 100%;
     box-sizing: border-box;
-    padding: 8px;
+    min-width: 0;
+    min-height: 36px;
+    padding: 8px 10px;
     font-size: 13px;
     font-weight: 700;
     text-align: center;
@@ -510,6 +522,18 @@ canvas.create-mode {
 .frame-input:focus {
     border-color: rgba(121, 167, 255, 0.9);
     box-shadow: 0 0 0 2px rgba(121, 167, 255, 0.22);
+}
+
+/* Hide native number spinners so frame digits remain fully visible. */
+.frame-input[type='number']::-webkit-outer-spin-button,
+.frame-input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.frame-input[type='number'] {
+    appearance: textfield;
+    -moz-appearance: textfield;
 }
 
 .sidebar-spacer {
