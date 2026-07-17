@@ -1,88 +1,96 @@
 // videoControls.js
 
-(function () {
-    const canvas = document.getElementById('canvas');
-    if (!canvas) {
-        console.error('Canvas with id="canvas" not found.');
-        return;
+class video {
+    constructor(canvasId = 'canvas') {
+        this.canvas = document.getElementById(canvasId);
+        if (!this.canvas) {
+            console.error(`Canvas with id="${canvasId}" not found.`);
+            this.ready = false;
+            return;
+        }
+
+        this.DEFAULT_FPS = 30;
+        this.FRAME_STEP = 1 / this.DEFAULT_FPS;
+        this.PLAYBACK_FPS = 10;
+
+        this.fileInput = document.createElement('input');
+        this.fileInput.type = 'file';
+        this.fileInput.accept = 'video/*';
+        this.fileInput.style.display = 'none';
+        document.body.appendChild(this.fileInput);
+
+        this.video = document.createElement('video');
+        this.video.id = 'backgroundVideo';
+        this.video.playsInline = true;
+        this.video.muted = true;
+        this.video.preload = 'auto';
+
+        Object.assign(this.video.style, {
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            width: '100vw',
+            height: '100vh',
+            objectFit: 'contain',
+            zIndex: '0',
+            background: 'black',
+            pointerEvents: 'none'
+        });
+
+        Object.assign(this.canvas.style, {
+            position: 'relative',
+            zIndex: '1',
+            background: 'transparent'
+        });
+
+        document.body.prepend(this.video);
+
+        this.currentVideoURL = null;
+        this.currentVideoFile = null;
+        this.currentFrameIndex = 0;
+        this.maxFrameIndex = 0;
+        this.frameIndexMap = [];
+        this.frameChangeListeners = new Set();
+        this.playbackChangeListeners = new Set();
+        this.playbackTimer = null;
+        this.playbackDirection = 1;
+        this.framesVisible = true;
+
+        this.fileInput.addEventListener('change', (e) => {
+            const file = e.target.files?.[0];
+            this.loadVideoFile(file)?.catch((err) => {
+                console.error('Failed to load video file:', err);
+            });
+        });
+
+        this.ready = true;
     }
 
-    // ----- settings -----
-    const DEFAULT_FPS = 30;
-    const FRAME_STEP = 1 / DEFAULT_FPS;
-
-    // ----- hidden file input -----
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = 'video/*';
-    fileInput.style.display = 'none';
-    document.body.appendChild(fileInput);
-
-    // ----- video behind canvas -----
-    const video = document.createElement('video');
-    video.id = 'backgroundVideo';
-    video.playsInline = true;
-    video.muted = true;
-    video.preload = 'auto';
-
-    Object.assign(video.style, {
-        position: 'fixed',
-        top: '0',
-        left: '0',
-        width: '100vw',
-        height: '100vh',
-        objectFit: 'contain',
-        zIndex: '0',
-        background: 'black',
-        pointerEvents: 'none'
-    });
-
-    // make sure canvas stays above video
-    Object.assign(canvas.style, {
-        position: 'relative',
-        zIndex: '1',
-        background: 'transparent'
-    });
-
-    document.body.prepend(video);
-
-    let currentVideoURL = null;
-    let currentVideoFile = null;
-    let currentFrameIndex = 0;
-    let maxFrameIndex = 0;
-    let frameIndexMap = [];
-    const frameChangeListeners = new Set();
-    const playbackChangeListeners = new Set();
-    const PLAYBACK_FPS = 10;
-    let playbackTimer = null;
-    let playbackDirection = 1;
-    let framesVisible = true;
-
-    function emitFrameChange() {
-        frameChangeListeners.forEach(listener => {
-            listener(currentFrameIndex, maxFrameIndex);
+    emitFrameChange() {
+        this.frameChangeListeners.forEach((listener) => {
+            listener(this.currentFrameIndex, this.maxFrameIndex);
         });
     }
 
-    function emitPlaybackChange() {
-        const playing = playbackTimer !== null;
-        playbackChangeListeners.forEach(listener => {
+    emitPlaybackChange() {
+        const playing = this.playbackTimer !== null;
+        this.playbackChangeListeners.forEach((listener) => {
             listener(playing);
         });
     }
 
-    function syncCanvasFrame() {
-        window.appActions?.setCurrentFrame?.(currentFrameIndex);
-        emitFrameChange();
+    syncCanvasFrame() {
+        window.appActions?.setCurrentFrame?.(this.currentFrameIndex);
+        this.emitFrameChange();
     }
 
-    function rebuildFrameIndexMap(frameIndicesToKeep) {
-        frameIndexMap = frameIndicesToKeep.slice();
-        maxFrameIndex = frameIndexMap.length > 0 ? frameIndexMap.length - 1 : 0;
-        currentFrameIndex = clampFrameIndex(currentFrameIndex);
+    rebuildFrameIndexMap(frameIndicesToKeep) {
+        this.frameIndexMap = frameIndicesToKeep.slice();
+        this.maxFrameIndex = this.frameIndexMap.length > 0 ? this.frameIndexMap.length - 1 : 0;
+        this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
     }
 
-    function normalizeFrameIndexMap(rawMap) {
+    normalizeFrameIndexMap(rawMap) {
         if (!Array.isArray(rawMap)) return [];
 
         const normalized = [];
@@ -105,12 +113,12 @@
         return uniqueSorted;
     }
 
-    function openVideoPicker() {
-        fileInput.value = '';
-        fileInput.click();
+    openVideoPicker() {
+        this.fileInput.value = '';
+        this.fileInput.click();
     }
 
-    function blobToDataURL(blob) {
+    blobToDataURL(blob) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result);
@@ -119,37 +127,37 @@
         });
     }
 
-    function loadVideoFile(file) {
+    loadVideoFile(file) {
         return new Promise((resolve, reject) => {
             if (!file) {
                 reject(new Error('No file provided'));
                 return;
             }
 
-            pausePlayback();
+            this.pausePlayback();
 
-            if (currentVideoURL) {
-                URL.revokeObjectURL(currentVideoURL);
+            if (this.currentVideoURL) {
+                URL.revokeObjectURL(this.currentVideoURL);
             }
 
-            currentVideoFile = file;
-            currentVideoURL = URL.createObjectURL(file);
-            video.src = currentVideoURL;
-            video.load();
+            this.currentVideoFile = file;
+            this.currentVideoURL = URL.createObjectURL(file);
+            this.video.src = this.currentVideoURL;
+            this.video.load();
 
-            video.addEventListener(
+            this.video.addEventListener(
                 'loadeddata',
-                async () => {
+                () => {
                     try {
-                        video.pause();
-                        currentFrameIndex = 0;
-                        rebuildFrameIndexMap(
-                            Array.from({ length: getVideoMaxFrameIndex() + 1 }, (_, i) => i)
+                        this.video.pause();
+                        this.currentFrameIndex = 0;
+                        this.rebuildFrameIndexMap(
+                            Array.from({ length: this.getVideoMaxFrameIndex() + 1 }, (_, i) => i)
                         );
-                        video.currentTime = 0;
-                        applyFrameVisuals();
-                        syncCanvasFrame();
-                        resolve(); // Resolve when video is ready
+                        this.video.currentTime = 0;
+                        this.applyFrameVisuals();
+                        this.syncCanvasFrame();
+                        resolve();
                     } catch (err) {
                         console.error('Could not initialize video:', err);
                         reject(err);
@@ -160,256 +168,282 @@
         });
     }
 
-    function clampTime(t) {
-        if (!isFinite(video.duration) || isNaN(video.duration)) {
+    clampTime(t) {
+        if (!isFinite(this.video.duration) || isNaN(this.video.duration)) {
             return Math.max(0, t);
         }
-        return Math.min(Math.max(0, t), video.duration);
+        return Math.min(Math.max(0, t), this.video.duration);
     }
 
-    function getVideoMaxFrameIndex() {
-        if (!isFinite(video.duration) || isNaN(video.duration)) {
+    getVideoMaxFrameIndex() {
+        if (!isFinite(this.video.duration) || isNaN(this.video.duration)) {
             return 0;
         }
 
-        return Math.floor(video.duration / FRAME_STEP);
+        return Math.floor(this.video.duration / this.FRAME_STEP);
     }
 
-    function clampFrameIndex(frameIndex) {
-        return Math.min(Math.max(0, frameIndex), maxFrameIndex);
+    clampFrameIndex(frameIndex) {
+        return Math.min(Math.max(0, frameIndex), this.maxFrameIndex);
     }
 
-    function applyFrameVisuals() {
-        const hasVideo = Boolean(video.src);
-        const sourceFrameIndex = frameIndexMap[currentFrameIndex];
+    applyFrameVisuals() {
+        const hasVideo = Boolean(this.video.src);
+        const sourceFrameIndex = this.frameIndexMap[this.currentFrameIndex];
         const isVideoFrame = hasVideo && sourceFrameIndex !== undefined;
 
         if (isVideoFrame) {
-            video.style.visibility = framesVisible ? 'visible' : 'hidden';
-            video.pause();
-            video.currentTime = clampTime(sourceFrameIndex * FRAME_STEP);
+            this.video.style.visibility = this.framesVisible ? 'visible' : 'hidden';
+            this.video.pause();
+            this.video.currentTime = this.clampTime(sourceFrameIndex * this.FRAME_STEP);
             document.body.style.background = '';
         } else {
-            video.pause();
-            video.style.visibility = 'hidden';
+            this.video.pause();
+            this.video.style.visibility = 'hidden';
             document.body.style.background = 'black';
         }
     }
 
-    function showFrameIndex(frameIndex) {
-        currentFrameIndex = clampFrameIndex(frameIndex);
-        applyFrameVisuals();
-        syncCanvasFrame();
+    showFrameIndex(frameIndex) {
+        this.currentFrameIndex = this.clampFrameIndex(frameIndex);
+        this.applyFrameVisuals();
+        this.syncCanvasFrame();
     }
 
-    function showFrameAt(time) {
-        if (!video.src) return;
+    showFrameAt(time) {
+        if (!this.video.src) return;
 
-        video.pause();
-        video.currentTime = clampTime(time);
-        const sourceFrameIndex = Math.round(video.currentTime / FRAME_STEP);
-        const exactLogicalIndex = frameIndexMap.indexOf(sourceFrameIndex);
+        this.video.pause();
+        this.video.currentTime = this.clampTime(time);
+        const sourceFrameIndex = Math.round(this.video.currentTime / this.FRAME_STEP);
+        const exactLogicalIndex = this.frameIndexMap.indexOf(sourceFrameIndex);
 
         if (exactLogicalIndex !== -1) {
-            currentFrameIndex = exactLogicalIndex;
-        } else if (frameIndexMap.length > 0) {
+            this.currentFrameIndex = exactLogicalIndex;
+        } else if (this.frameIndexMap.length > 0) {
             let nearestIndex = 0;
-            let nearestDistance = Math.abs(frameIndexMap[0] - sourceFrameIndex);
+            let nearestDistance = Math.abs(this.frameIndexMap[0] - sourceFrameIndex);
 
-            for (let i = 1; i < frameIndexMap.length; i++) {
-                const distance = Math.abs(frameIndexMap[i] - sourceFrameIndex);
+            for (let i = 1; i < this.frameIndexMap.length; i++) {
+                const distance = Math.abs(this.frameIndexMap[i] - sourceFrameIndex);
                 if (distance < nearestDistance) {
                     nearestIndex = i;
                     nearestDistance = distance;
                 }
             }
 
-            currentFrameIndex = nearestIndex;
+            this.currentFrameIndex = nearestIndex;
         }
 
-        applyFrameVisuals();
-        syncCanvasFrame();
+        this.applyFrameVisuals();
+        this.syncCanvasFrame();
     }
 
-    function removeFrameIndices(frameIndices) {
+    removeFrameIndices(frameIndices) {
         if (!frameIndices || frameIndices.length === 0) return;
 
         const sortedIndices = Array.from(new Set(frameIndices))
-            .filter(index => Number.isInteger(index) && index >= 0)
+            .filter((index) => Number.isInteger(index) && index >= 0)
             .sort((a, b) => b - a);
 
         for (const index of sortedIndices) {
-            if (index < frameIndexMap.length) {
-                frameIndexMap.splice(index, 1);
+            if (index < this.frameIndexMap.length) {
+                this.frameIndexMap.splice(index, 1);
             }
         }
 
-        maxFrameIndex = frameIndexMap.length > 0 ? frameIndexMap.length - 1 : 0;
-        currentFrameIndex = clampFrameIndex(currentFrameIndex);
-        applyFrameVisuals();
-        emitFrameChange();
+        this.maxFrameIndex = this.frameIndexMap.length > 0 ? this.frameIndexMap.length - 1 : 0;
+        this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
+        this.applyFrameVisuals();
+        this.emitFrameChange();
     }
 
-    function appendFrameSlot() {
-        const lastSourceFrameIndex = frameIndexMap.length > 0
-            ? frameIndexMap[frameIndexMap.length - 1]
+    appendFrameSlot() {
+        const lastSourceFrameIndex = this.frameIndexMap.length > 0
+            ? this.frameIndexMap[this.frameIndexMap.length - 1]
             : -1;
 
-        frameIndexMap.push(lastSourceFrameIndex + 1);
-        maxFrameIndex = frameIndexMap.length - 1;
-        emitFrameChange();
+        this.frameIndexMap.push(lastSourceFrameIndex + 1);
+        this.maxFrameIndex = this.frameIndexMap.length - 1;
+        this.emitFrameChange();
     }
 
-    function nextFrame() {
-        if (currentFrameIndex >= maxFrameIndex) {
-            showFrameIndex(0);
+    nextFrame() {
+        if (this.currentFrameIndex >= this.maxFrameIndex) {
+            this.showFrameIndex(0);
         } else {
-            showFrameIndex(currentFrameIndex + 1);
+            this.showFrameIndex(this.currentFrameIndex + 1);
         }
     }
 
-    function prevFrame() {
-        if (currentFrameIndex <= 0) {
-            showFrameIndex(maxFrameIndex);
+    prevFrame() {
+        if (this.currentFrameIndex <= 0) {
+            this.showFrameIndex(this.maxFrameIndex);
         } else {
-            showFrameIndex(currentFrameIndex - 1);
+            this.showFrameIndex(this.currentFrameIndex - 1);
         }
     }
 
-    function playFrames() {
-        if (playbackTimer !== null) return;
+    playFrames() {
+        if (this.playbackTimer !== null) return;
 
-        if (currentFrameIndex >= maxFrameIndex) {
-            playbackDirection = -1;
-        } else if (currentFrameIndex <= 0) {
-            playbackDirection = 1;
+        if (this.currentFrameIndex >= this.maxFrameIndex) {
+            this.playbackDirection = -1;
+        } else if (this.currentFrameIndex <= 0) {
+            this.playbackDirection = 1;
         }
 
-        playbackTimer = setInterval(() => {
-            if (maxFrameIndex <= 0) {
+        this.playbackTimer = setInterval(() => {
+            if (this.maxFrameIndex <= 0) {
                 return;
             }
 
-            let nextIndex = currentFrameIndex + playbackDirection;
-            if (nextIndex > maxFrameIndex) {
-                playbackDirection = -1;
-                nextIndex = Math.max(maxFrameIndex - 1, 0);
+            let nextIndex = this.currentFrameIndex + this.playbackDirection;
+            if (nextIndex > this.maxFrameIndex) {
+                this.playbackDirection = -1;
+                nextIndex = Math.max(this.maxFrameIndex - 1, 0);
             } else if (nextIndex < 0) {
-                playbackDirection = 1;
-                nextIndex = Math.min(1, maxFrameIndex);
+                this.playbackDirection = 1;
+                nextIndex = Math.min(1, this.maxFrameIndex);
             }
 
-            showFrameIndex(nextIndex);
-        }, 1000 / PLAYBACK_FPS);
+            this.showFrameIndex(nextIndex);
+        }, 1000 / this.PLAYBACK_FPS);
 
-        emitPlaybackChange();
+        this.emitPlaybackChange();
     }
 
-    function pausePlayback() {
-        if (playbackTimer === null) return;
+    pausePlayback() {
+        if (this.playbackTimer === null) return;
 
-        clearInterval(playbackTimer);
-        playbackTimer = null;
-        emitPlaybackChange();
+        clearInterval(this.playbackTimer);
+        this.playbackTimer = null;
+        this.emitPlaybackChange();
     }
 
-    function togglePlayback() {
-        if (playbackTimer === null) {
-            playFrames();
+    togglePlayback() {
+        if (this.playbackTimer === null) {
+            this.playFrames();
         } else {
-            pausePlayback();
+            this.pausePlayback();
         }
     }
 
-    fileInput.addEventListener('change', (e) => {
-        const file = e.target.files?.[0];
-        loadVideoFile(file)?.catch(err => {
-            console.error('Failed to load video file:', err);
-        });
-    });
-
-    async function getSerializableState() {
+    async getSerializableState() {
         return {
-            currentFrameIndex,
-            maxFrameIndex,
-            frameIndexMap: frameIndexMap.slice(),
-            frameRange: frameIndexMap.length > 0
+            currentFrameIndex: this.currentFrameIndex,
+            maxFrameIndex: this.maxFrameIndex,
+            frameIndexMap: this.frameIndexMap.slice(),
+            frameRange: this.frameIndexMap.length > 0
                 ? {
-                    startSourceFrame: frameIndexMap[0],
-                    endSourceFrame: frameIndexMap[frameIndexMap.length - 1]
+                    startSourceFrame: this.frameIndexMap[0],
+                    endSourceFrame: this.frameIndexMap[this.frameIndexMap.length - 1]
                 }
                 : null,
-            video: currentVideoFile
+            video: this.currentVideoFile
                 ? {
-                    name: currentVideoFile.name,
-                    type: currentVideoFile.type,
-                    dataURL: await blobToDataURL(currentVideoFile)
+                    name: this.currentVideoFile.name,
+                    type: this.currentVideoFile.type,
+                    dataURL: await this.blobToDataURL(this.currentVideoFile)
                 }
                 : null
         };
     }
 
+    getFrameIndexMap() {
+        return this.frameIndexMap.slice();
+    }
+
+    setFrameIndexMap(newFrameIndexMap) {
+        const normalizedMap = this.normalizeFrameIndexMap(newFrameIndexMap);
+        if (normalizedMap.length > 0) {
+            this.frameIndexMap = normalizedMap;
+            this.maxFrameIndex = this.frameIndexMap.length - 1;
+            this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
+            this.applyFrameVisuals();
+            this.emitFrameChange();
+        }
+    }
+
+    setFrameRange(range) {
+        if (range && range.startSourceFrame !== undefined && range.endSourceFrame !== undefined) {
+            const maxValidFrame = this.getVideoMaxFrameIndex();
+            const start = Math.max(0, range.startSourceFrame);
+            const end = Math.min(maxValidFrame, range.endSourceFrame);
+            if (start <= end) {
+                this.frameIndexMap = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+                this.maxFrameIndex = this.frameIndexMap.length - 1;
+                this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
+                this.applyFrameVisuals();
+                this.emitFrameChange();
+            }
+        }
+    }
+
+    getCurrentFrameIndex() {
+        return this.currentFrameIndex;
+    }
+
+    getMaxFrameIndex() {
+        return this.maxFrameIndex;
+    }
+
+    updateMaxFrameIndex(newMaxFrameIndex) {
+        this.frameIndexMap = Array.from({ length: newMaxFrameIndex + 1 }, (_, i) => i);
+        this.maxFrameIndex = newMaxFrameIndex;
+        this.currentFrameIndex = this.clampFrameIndex(this.currentFrameIndex);
+        this.applyFrameVisuals();
+        this.emitFrameChange();
+    }
+
+    onFrameChange(listener) {
+        this.frameChangeListeners.add(listener);
+        return () => this.frameChangeListeners.delete(listener);
+    }
+
+    onPlaybackChange(listener) {
+        this.playbackChangeListeners.add(listener);
+        return () => this.playbackChangeListeners.delete(listener);
+    }
+
+    setFramesVisible(visible) {
+        this.framesVisible = Boolean(visible);
+        this.applyFrameVisuals();
+    }
+
+    getFramesVisible() {
+        return this.framesVisible;
+    }
+}
+
+(function () {
+    const controller = new video('canvas');
+    if (!controller.ready) return;
+
     window.videoControls = {
-        openVideoPicker,
-        loadVideoFile,
-        getSerializableState,
-        getFrameIndexMap: () => frameIndexMap.slice(),
-        setFrameIndexMap: (newFrameIndexMap) => {
-            const normalizedMap = normalizeFrameIndexMap(newFrameIndexMap);
-            if (normalizedMap.length > 0) {
-                frameIndexMap = normalizedMap;
-                maxFrameIndex = frameIndexMap.length - 1;
-                currentFrameIndex = clampFrameIndex(currentFrameIndex);
-                applyFrameVisuals();
-                emitFrameChange();
-            }
-        },
-        setFrameRange: (range) => {
-            if (range && range.startSourceFrame !== undefined && range.endSourceFrame !== undefined) {
-                const maxValidFrame = getVideoMaxFrameIndex();
-                const start = Math.max(0, range.startSourceFrame);
-                const end = Math.min(maxValidFrame, range.endSourceFrame);
-                if (start <= end) {
-                    frameIndexMap = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-                    maxFrameIndex = frameIndexMap.length - 1;
-                    currentFrameIndex = clampFrameIndex(currentFrameIndex);
-                    applyFrameVisuals();
-                    emitFrameChange();
-                }
-            }
-        },
-        nextFrame,
-        prevFrame,
-        playFrames,
-        pausePlayback,
-        togglePlayback,
-        isPlaying: () => playbackTimer !== null,
-        showFrameAt,
-        showFrameIndex,
-        getCurrentFrameIndex: () => currentFrameIndex,
-        getMaxFrameIndex: () => maxFrameIndex,
-        appendFrameSlot,
-        removeFrameIndices,
-        updateMaxFrameIndex: (newMaxFrameIndex) => {
-            frameIndexMap = Array.from({ length: newMaxFrameIndex + 1 }, (_, i) => i);
-            maxFrameIndex = newMaxFrameIndex;
-            currentFrameIndex = clampFrameIndex(currentFrameIndex);
-            applyFrameVisuals();
-            emitFrameChange();
-        },
-        onFrameChange: (listener) => {
-            frameChangeListeners.add(listener);
-            return () => frameChangeListeners.delete(listener);
-        },
-        onPlaybackChange: (listener) => {
-            playbackChangeListeners.add(listener);
-            return () => playbackChangeListeners.delete(listener);
-        },
-        setFramesVisible: (visible) => {
-            framesVisible = Boolean(visible);
-            applyFrameVisuals();
-        },
-        getFramesVisible: () => framesVisible,
-        video
+        openVideoPicker: () => controller.openVideoPicker(),
+        loadVideoFile: (file) => controller.loadVideoFile(file),
+        getSerializableState: () => controller.getSerializableState(),
+        getFrameIndexMap: () => controller.getFrameIndexMap(),
+        setFrameIndexMap: (newFrameIndexMap) => controller.setFrameIndexMap(newFrameIndexMap),
+        setFrameRange: (range) => controller.setFrameRange(range),
+        nextFrame: () => controller.nextFrame(),
+        prevFrame: () => controller.prevFrame(),
+        playFrames: () => controller.playFrames(),
+        pausePlayback: () => controller.pausePlayback(),
+        togglePlayback: () => controller.togglePlayback(),
+        isPlaying: () => controller.playbackTimer !== null,
+        showFrameAt: (time) => controller.showFrameAt(time),
+        showFrameIndex: (frameIndex) => controller.showFrameIndex(frameIndex),
+        getCurrentFrameIndex: () => controller.getCurrentFrameIndex(),
+        getMaxFrameIndex: () => controller.getMaxFrameIndex(),
+        appendFrameSlot: () => controller.appendFrameSlot(),
+        removeFrameIndices: (frameIndices) => controller.removeFrameIndices(frameIndices),
+        updateMaxFrameIndex: (newMaxFrameIndex) => controller.updateMaxFrameIndex(newMaxFrameIndex),
+        onFrameChange: (listener) => controller.onFrameChange(listener),
+        onPlaybackChange: (listener) => controller.onPlaybackChange(listener),
+        setFramesVisible: (visible) => controller.setFramesVisible(visible),
+        getFramesVisible: () => controller.getFramesVisible(),
+        video: controller.video
     };
 })();
