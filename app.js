@@ -10,7 +10,6 @@ const frameChains = {};
 // one skeleton per frame
 const series = window.appSeries || new Series();
 window.appSeries = series;
-const frameSkeletons = series.frames;
 const frameChainBuilt = {};
 const chainStateListeners = new Set();
 const modeChangeListeners = new Set();
@@ -72,7 +71,7 @@ function transformAllGeometryToNewVideoRect(oldRect, newRect) {
         return;
     }
 
-    Object.values(frameSkeletons).forEach((skeleton) => {
+    series.getSkeletons().forEach((skeleton) => {
         if (!skeleton || !Array.isArray(skeleton.points)) return;
         skeleton.points.forEach((point) => {
             canvasView.transformPointToNewVideoRect(point, oldRect, newRect, scaleX, scaleY);
@@ -475,7 +474,7 @@ function getMode() {
 // Expose state references for serialization
 function exposeStateForSerialization() {
     return {
-        frameSkeletons,
+        frameSkeletons: series.getSkeletonFrameStore(),
         frameChains,
         frameChainBuilt,
         companionRigidModel,
@@ -500,7 +499,7 @@ function resampleCurrentSkeleton(targetPointCount) {
     const newSkeleton = skeleton?.resample?.(targetPointCount);
     if (!newSkeleton) return false;
 
-    frameSkeletons[currentFrameIndex] = newSkeleton;
+    series.setFrame(currentFrameIndex, newSkeleton);
     hoveredPoint = null;
     draggedPoint = null;
     selectedPoint = null;
@@ -513,10 +512,10 @@ function copyPreviousFrameSkeleton() {
     if (!isSkeletonEditable()) return;
     if (currentFrameIndex <= 0) return;
 
-    const previousSkeleton = frameSkeletons[currentFrameIndex - 1];
+    const previousSkeleton = series.getFrame(currentFrameIndex - 1);
     if (!previousSkeleton) return;
 
-    frameSkeletons[currentFrameIndex] = previousSkeleton.clone();
+    series.setFrame(currentFrameIndex, previousSkeleton.clone());
     markCurrentFrameChainDirty();
 
     hoveredPoint = null;
@@ -528,13 +527,13 @@ function autoCopyPreviousSkeletonIfEmpty() {
     if (!isSkeletonEditable()) return;
     if (currentFrameIndex <= 0) return;
     
-    const currentSkeleton = frameSkeletons[currentFrameIndex];
+    const currentSkeleton = series.getFrame(currentFrameIndex);
     if (currentSkeleton) return; // Don't overwrite existing skeleton
     
-    const previousSkeleton = frameSkeletons[currentFrameIndex - 1];
+    const previousSkeleton = series.getFrame(currentFrameIndex - 1);
     if (!previousSkeleton) return;
     
-    frameSkeletons[currentFrameIndex] = previousSkeleton.clone();
+    series.setFrame(currentFrameIndex, previousSkeleton.clone());
     markCurrentFrameChainDirty();
     redrawAll();
 }
@@ -596,7 +595,7 @@ window.appActions = {
     },
     importSkeleton: () => {
         SkeletonIO.importSkeleton((newSkeleton) => {
-            frameSkeletons[currentFrameIndex] = newSkeleton;
+            series.setFrame(currentFrameIndex, newSkeleton);
             markCurrentFrameChainDirty();
             hoveredPoint = null;
             draggedPoint = null;
