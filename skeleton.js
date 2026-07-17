@@ -61,6 +61,56 @@ class Point {
 
         return normalize(sum);
     }
+
+    findPivot(prevPoint, nextPoint, rotation_radius) {
+        const normalize = (v) => {
+            const mag = Math.hypot(v.x, v.y);
+            if (mag < 1e-8) return null;
+            return { x: v.x / mag, y: v.y / mag };
+        };
+
+        const cross = (a, b) => a.x * b.y - a.y * b.x;
+        const radius = Number(rotation_radius);
+
+        if (!prevPoint || !nextPoint || !Number.isFinite(radius) || radius <= 0) {
+            return null;
+        }
+
+        const toPrev = normalize({
+            x: prevPoint.x - this.x,
+            y: prevPoint.y - this.y
+        });
+        const toNext = normalize({
+            x: nextPoint.x - this.x,
+            y: nextPoint.y - this.y
+        });
+        const bisector = this.findBisector(prevPoint, nextPoint);
+
+        if (!toPrev || !toNext || !bisector) {
+            return null;
+        }
+
+        // For a point at distance d along the bisector, perpendicular distance to
+        // each neighbor vector line is d * sin(theta/2). Solve for d = r / sin(theta/2).
+        const sinHalfAngle = Math.abs(cross(bisector, toPrev));
+        if (sinHalfAngle < 1e-8) {
+            return null;
+        }
+
+        const offset = radius / sinHalfAngle;
+        return {
+            positive: {
+                x: this.x + bisector.x * offset,
+                y: this.y + bisector.y * offset
+            },
+            negative: {
+                x: this.x - bisector.x * offset,
+                y: this.y - bisector.y * offset
+            },
+            bisector,
+            offset
+        };
+    }
 }
 
 class Line {
@@ -186,6 +236,44 @@ class Skeleton {
             ctx.lineTo(end.x, end.y);
             ctx.stroke();
             drawnCount += 1;
+        }
+
+        ctx.restore();
+        return drawnCount;
+    }
+
+    drawPivot(ctx, rotation_radius, options = {}) {
+        if (!ctx || !Array.isArray(this.points) || this.points.length < 3) {
+            return 0;
+        }
+
+        const radius = Number(rotation_radius);
+        if (!Number.isFinite(radius) || radius <= 0) {
+            return 0;
+        }
+
+        const pointRadius = Number.isFinite(options.pointRadius) ? options.pointRadius : 4;
+        const fillStyle = options.fillStyle || 'rgba(255, 120, 0, 0.9)';
+
+        let drawnCount = 0;
+        ctx.save();
+        ctx.fillStyle = fillStyle;
+
+        for (let i = 1; i < this.points.length - 1; i++) {
+            const point = this.points[i];
+            const prev = this.points[i - 1];
+            const next = this.points[i + 1];
+            const pivot = point.findPivot(prev, next, radius);
+            if (!pivot) {
+                continue;
+            }
+
+            [pivot.positive, pivot.negative].forEach((p) => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, pointRadius, 0, Math.PI * 2);
+                ctx.fill();
+                drawnCount += 1;
+            });
         }
 
         ctx.restore();

@@ -2329,6 +2329,13 @@ function drawSkeletonOverlay() {
             strokeStyle: 'rgba(0, 180, 0, 0.95)',
             lineWidth: 3
         });
+
+        if (typeof skeleton.drawPivot === 'function') {
+            skeleton.drawPivot(ctx, chainThickness, {
+                pointRadius: 4,
+                fillStyle: 'rgba(255, 120, 0, 0.9)'
+            });
+        }
     }
 
     skeleton.points.forEach((point, index) => {
