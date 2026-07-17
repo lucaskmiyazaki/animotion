@@ -302,3 +302,50 @@ class Skeleton {
         this.updateAllGeometry();
     }
 }
+
+class SkeletonSeries {
+    constructor() {
+        // Frame-indexed skeleton store: { [frameIndex]: Skeleton }
+        this.frames = {};
+    }
+
+    getFrame(frameIndex) {
+        // Read skeleton for a frame; returns null when absent/invalid index.
+        const index = Number.parseInt(frameIndex, 10);
+        if (!Number.isInteger(index)) return null;
+        return this.frames[index] || null;
+    }
+
+    ensureFrame(frameIndex) {
+        // Get existing frame skeleton or lazily create an empty Skeleton.
+        const index = Number.parseInt(frameIndex, 10);
+        if (!Number.isInteger(index)) return null;
+        if (!this.frames[index]) {
+            this.frames[index] = new Skeleton();
+        }
+        return this.frames[index];
+    }
+
+    setFrame(frameIndex, skeleton) {
+        // Explicitly assign/replace a frame skeleton.
+        const index = Number.parseInt(frameIndex, 10);
+        if (!Number.isInteger(index)) return null;
+        this.frames[index] = skeleton;
+        return skeleton;
+    }
+
+    deleteFrame(frameIndex) {
+        // Remove one frame entry from the series.
+        const index = Number.parseInt(frameIndex, 10);
+        if (!Number.isInteger(index)) return;
+        delete this.frames[index];
+    }
+
+    getFrameIndices() {
+        // Return normalized frame keys in ascending time order.
+        return Object.keys(this.frames)
+            .map((k) => Number.parseInt(k, 10))
+            .filter(Number.isInteger)
+            .sort((a, b) => a - b);
+    }
+}
