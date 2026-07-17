@@ -29,6 +29,38 @@ class Point {
             this.angle = deg;
         }
     }
+
+    findBisector(prevPoint, nextPoint) {
+        const normalize = (v) => {
+            const mag = Math.hypot(v.x, v.y);
+            if (mag < 1e-8) return null;
+            return { x: v.x / mag, y: v.y / mag };
+        };
+
+        if (!prevPoint || !nextPoint) {
+            return null;
+        }
+
+        const toPrev = normalize({
+            x: prevPoint.x - this.x,
+            y: prevPoint.y - this.y
+        });
+        const toNext = normalize({
+            x: nextPoint.x - this.x,
+            y: nextPoint.y - this.y
+        });
+
+        if (!toPrev || !toNext) {
+            return null;
+        }
+
+        const sum = {
+            x: toPrev.x + toNext.x,
+            y: toPrev.y + toNext.y
+        };
+
+        return normalize(sum);
+    }
 }
 
 class Line {
@@ -109,6 +141,55 @@ class Skeleton {
     updateAllGeometry() {
         this.lines.forEach(line => line.updateAngle());
         this.points.forEach(point => point.updateAngle());
+    }
+
+    drawBisector(ctx, options = {}) {
+        if (!ctx || !Array.isArray(this.points) || this.points.length === 0) {
+            return 0;
+        }
+
+        const length = Number.isFinite(options.length) ? options.length : 50;
+        const strokeStyle = options.strokeStyle || 'rgba(0, 180, 0, 0.95)';
+        const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 3;
+
+        const normalize = (v) => {
+            const mag = Math.hypot(v.x, v.y);
+            if (mag < 1e-8) return null;
+            return { x: v.x / mag, y: v.y / mag };
+        };
+
+        let drawnCount = 0;
+        ctx.save();
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth;
+
+        for (let i = 1; i < this.points.length - 1; i++) {
+            const point = this.points[i];
+            const prev = this.points[i - 1];
+            const next = this.points[i + 1];
+            const bisector = point.findBisector(prev, next);
+            if (!bisector) {
+                continue;
+            }
+
+            const start = {
+                x: point.x - bisector.x * length,
+                y: point.y - bisector.y * length
+            };
+            const end = {
+                x: point.x + bisector.x * length,
+                y: point.y + bisector.y * length
+            };
+
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+            drawnCount += 1;
+        }
+
+        ctx.restore();
+        return drawnCount;
     }
 
     deletePoint(point) {

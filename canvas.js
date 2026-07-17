@@ -25,6 +25,7 @@ let holeEnabled = false;
 let jointsEnabled = false;
 let companionEnabled = true;
 let skeletonVisible = true;
+let skeletonBisectorVisible = false;
 let chainVisible = true;
 let mechanismNeedsRegeneration = false;
 const jointKByIndex = {};
@@ -2322,6 +2323,14 @@ function drawSkeletonOverlay() {
         ctx.stroke();
     });
 
+    if (skeletonBisectorVisible && typeof skeleton.drawBisector === 'function') {
+        skeleton.drawBisector(ctx, {
+            length: 50,
+            strokeStyle: 'rgba(0, 180, 0, 0.95)',
+            lineWidth: 3
+        });
+    }
+
     skeleton.points.forEach((point, index) => {
         const radius = point === hoveredPoint ? hoverRadius : pointRadius;
 
@@ -3469,6 +3478,12 @@ window.appActions = {
         redrawAll();
     },
     getSkeletonVisible: () => skeletonVisible,
+    setSkeletonBisectorVisible: (visible) => {
+        skeletonBisectorVisible = Boolean(visible);
+        emitChainStateChange();
+        redrawAll();
+    },
+    getSkeletonBisectorVisible: () => skeletonBisectorVisible,
     setChainVisible: (visible) => {
         chainVisible = Boolean(visible);
         emitChainStateChange();

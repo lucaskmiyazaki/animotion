@@ -624,7 +624,23 @@ skeletonAdvancedSummary.textContent = 'Advanced';
 
 const skeletonAdvancedContent = document.createElement('div');
 skeletonAdvancedContent.className = 'advanced-content';
-skeletonAdvancedContent.append(skeletonPointCountRow);
+
+const skeletonBisectorOptionLabel = document.createElement('label');
+skeletonBisectorOptionLabel.className = 'checkbox-option';
+
+const skeletonBisectorCheckbox = document.createElement('input');
+skeletonBisectorCheckbox.type = 'checkbox';
+skeletonBisectorCheckbox.checked = window.appActions?.getSkeletonBisectorVisible?.() ?? false;
+skeletonBisectorCheckbox.addEventListener('change', () => {
+    window.appActions?.setSkeletonBisectorVisible?.(skeletonBisectorCheckbox.checked);
+});
+
+const skeletonBisectorOptionText = document.createElement('span');
+skeletonBisectorOptionText.textContent = 'Bisector';
+
+skeletonBisectorOptionLabel.append(skeletonBisectorCheckbox, skeletonBisectorOptionText);
+
+skeletonAdvancedContent.append(skeletonPointCountRow, skeletonBisectorOptionLabel);
 
 skeletonAdvancedDetails.append(skeletonAdvancedSummary, skeletonAdvancedContent);
 
@@ -753,11 +769,13 @@ window.appActions?.onChainStateChange?.(() => {
     updateRulerButtonState();
     skeletonPointCountInput.value = String(Math.max(2, window.appActions?.getCurrentSkeletonPointCount?.() ?? 2));
     const skeletonVisible = window.appActions?.getSkeletonVisible?.() ?? true;
+    const skeletonBisectorVisible = window.appActions?.getSkeletonBisectorVisible?.() ?? false;
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
     const companionVisible = window.appActions?.getCompanionEnabled?.() ?? true;
 
     skeletonHeader.sync(skeletonVisible);
+    skeletonBisectorCheckbox.checked = skeletonBisectorVisible;
     frameHeader.sync(framesVisible);
     chainHeader.sync(chainVisible);
     companionCheckbox.checked = companionVisible;
