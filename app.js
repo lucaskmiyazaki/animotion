@@ -83,7 +83,7 @@ function transformAllGeometryToNewVideoRect(oldRect, newRect) {
 
     const uniformScale = (scaleX + scaleY) / 2;
     const scaleMechanism = (mechanism) => {
-        if (!(mechanism instanceof Mechanism) || !Array.isArray(mechanism.links)) return;
+        if (!(mechanism instanceof Chain) || !Array.isArray(mechanism.links)) return;
         mechanism.links.forEach((link) => {
             link.position.x *= scaleX;
             link.position.y *= scaleY;
@@ -176,8 +176,8 @@ function markCurrentFrameChainDirty() {
 
 function makeMechanismFrameBundle(mechanism1 = null, mechanism2 = null) {
     return {
-        mechanism1: mechanism1 instanceof Mechanism ? mechanism1 : null,
-        mechanism2: mechanism2 instanceof Mechanism ? mechanism2 : null
+        mechanism1: mechanism1 instanceof Chain ? mechanism1 : null,
+        mechanism2: mechanism2 instanceof Chain ? mechanism2 : null
     };
 }
 
@@ -186,7 +186,7 @@ function normalizeMechanismFrameBundle(value) {
         return makeMechanismFrameBundle(null, null);
     }
 
-    if (value instanceof Mechanism) {
+    if (value instanceof Chain) {
         return makeMechanismFrameBundle(value, null);
     }
 
@@ -209,7 +209,7 @@ function hasRenderableChain() {
 function buildChain() {
     const frameIndices = series.getFrameIndices().sort((a, b) => a - b);
     if (frameIndices.length === 0) {
-        return new Mechanism();
+        return new Chain();
     }
 
     series.clearAllMechanisms();
@@ -221,14 +221,14 @@ function buildChain() {
     const startSkeleton = series.getFrame(startFrameIndex);
     const endSkeleton = series.getFrame(endFrameIndex);
 
-    const mechanism1Initial = new Mechanism();
+    const mechanism1Initial = new Chain();
     mechanism1Initial.generateFromSeries(series, {
         frameIndex: startFrameIndex,
         pivotKind: 'ref1',
         pivotRadius: chainThickness
     });
 
-    const mechanism2LastFrame = new Mechanism();
+    const mechanism2LastFrame = new Chain();
     mechanism2LastFrame.generateFromSeries(series, {
         frameIndex: endFrameIndex,
         pivotKind: 'ref2',
@@ -241,7 +241,7 @@ function buildChain() {
         mechanism2Initial = mechanism2Initial.rebaseToCurrentPose();
     }
 
-    Mechanism.pairTwinLinks(mechanism1Initial, mechanism2Initial);
+    Chain.pairTwinLinks(mechanism1Initial, mechanism2Initial);
 
     const startBundle = makeMechanismFrameBundle(mechanism1Initial, mechanism2Initial);
     series.setMechanism(startFrameIndex, startBundle);
@@ -266,7 +266,7 @@ function buildChain() {
 
         const mechanism2Last = mechanism2LastFrame.clone();
 
-        Mechanism.pairTwinLinks(mechanism1Last, mechanism2Last);
+        Chain.pairTwinLinks(mechanism1Last, mechanism2Last);
         const endBundle = makeMechanismFrameBundle(mechanism1Last, mechanism2Last);
         series.setMechanism(endFrameIndex, endBundle);
         frameChains[endFrameIndex] = endBundle;

@@ -81,7 +81,7 @@ class Link {
     }
 }
 
-class Mechanism {
+class Chain {
     constructor() {
         this.links = [];
     }
@@ -101,7 +101,7 @@ class Mechanism {
     }
 
     clone() {
-        const clone = new Mechanism();
+        const clone = new Chain();
         clone.links = this.links.map((link) => link.clone());
         return clone;
     }
@@ -109,7 +109,7 @@ class Mechanism {
     // Rebuild links from their current world pose so local geometry matches
     // the current frame and theta can be reset to zero.
     rebaseToCurrentPose() {
-        const rebased = new Mechanism();
+        const rebased = new Chain();
         rebased.links = this.links.map((link) => {
             const worldPoints = link.getWorldPoints();
             return new Link(worldPoints, {
@@ -152,13 +152,13 @@ class Mechanism {
     }
 
     static _orderQuadWithoutIntersection(points, startPoint = null) {
-        const center = Mechanism._centroid(points);
+        const center = Chain._centroid(points);
         const sorted = points.slice().sort((a, b) => {
             const aa = Math.atan2(a.y - center.y, a.x - center.x);
             const ab = Math.atan2(b.y - center.y, b.x - center.x);
             return aa - ab;
         });
-        return Mechanism._rotateStart(sorted, startPoint);
+        return Chain._rotateStart(sorted, startPoint);
     }
 
     static _directedAngleDeg(from, to, direction) {
@@ -171,7 +171,7 @@ class Mechanism {
     }
 
     static _computeTerminalFourthPoint(anchorPoint, skeletonPoint, pivotPoint) {
-        const axis = Mechanism._normalize({
+        const axis = Chain._normalize({
             x: skeletonPoint.x - anchorPoint.x,
             y: skeletonPoint.y - anchorPoint.y
         });
@@ -210,8 +210,8 @@ class Mechanism {
             y: pivotCandidates.negative.y - point.y
         };
 
-        const anglePositive = Mechanism._directedAngleDeg(toPrev, toPositive, closingDirection);
-        const angleNegative = Mechanism._directedAngleDeg(toPrev, toNegative, closingDirection);
+        const anglePositive = Chain._directedAngleDeg(toPrev, toPositive, closingDirection);
+        const angleNegative = Chain._directedAngleDeg(toPrev, toNegative, closingDirection);
 
         // Historical pivot mapping:
         // - pivot1: smaller directed angle on closing direction
@@ -276,9 +276,9 @@ class Mechanism {
             const anchor = points[0];
             const second = points[1];
             const pivotPoint = pivotByIndex[1];
-            const fourth = Mechanism._computeTerminalFourthPoint(anchor, second, pivotPoint);
+            const fourth = Chain._computeTerminalFourthPoint(anchor, second, pivotPoint);
             if (fourth) {
-                const ordered = Mechanism._orderQuadWithoutIntersection([anchor, second, pivotPoint, fourth], anchor);
+                const ordered = Chain._orderQuadWithoutIntersection([anchor, second, pivotPoint, fourth], anchor);
                 this.addLinkFromWorldPoints(ordered, {
                     role: 'initial',
                     anchorPointIndex: 0,
@@ -296,7 +296,7 @@ class Mechanism {
             const pivotB = pivotByIndex[i + 1];
             if (!pivotA || !pivotB) continue;
 
-            const ordered = Mechanism._orderQuadWithoutIntersection([pA, pivotA, pB, pivotB], pA);
+            const ordered = Chain._orderQuadWithoutIntersection([pA, pivotA, pB, pivotB], pA);
             this.addLinkFromWorldPoints(ordered, {
                 role: 'middle',
                 anchorPointIndex: i,
@@ -310,9 +310,9 @@ class Mechanism {
             const anchor = points[lastIndex];
             const second = points[lastIndex - 1];
             const pivotPoint = pivotByIndex[lastIndex - 1];
-            const fourth = Mechanism._computeTerminalFourthPoint(anchor, second, pivotPoint);
+            const fourth = Chain._computeTerminalFourthPoint(anchor, second, pivotPoint);
             if (fourth) {
-                const ordered = Mechanism._orderQuadWithoutIntersection([anchor, second, pivotPoint, fourth], anchor);
+                const ordered = Chain._orderQuadWithoutIntersection([anchor, second, pivotPoint, fourth], anchor);
                 this.addLinkFromWorldPoints(ordered, {
                     role: 'final',
                     anchorPointIndex: lastIndex,
@@ -356,7 +356,7 @@ class Mechanism {
     }
 
     static pairTwinLinks(mechanismA, mechanismB) {
-        if (!(mechanismA instanceof Mechanism) || !(mechanismB instanceof Mechanism)) {
+        if (!(mechanismA instanceof Chain) || !(mechanismB instanceof Chain)) {
             return;
         }
 
@@ -475,7 +475,7 @@ class Mechanism {
         let total = centerLines.reduce((acc, line) => acc + segmentLength(line), 0);
 
         for (let i = 0; i < centerLines.length - 1; i++) {
-            const pair = Mechanism._nearestEndpointsBetweenLines(centerLines[i], centerLines[i + 1]);
+            const pair = Chain._nearestEndpointsBetweenLines(centerLines[i], centerLines[i + 1]);
             total += Math.hypot(pair.b.x - pair.a.x, pair.b.y - pair.a.y);
         }
 
@@ -506,7 +506,7 @@ class Mechanism {
 
         // Draw lines connecting consecutive center lines.
         for (let i = 0; i < centerLines.length - 1; i++) {
-            const pair = Mechanism._nearestEndpointsBetweenLines(centerLines[i], centerLines[i + 1]);
+            const pair = Chain._nearestEndpointsBetweenLines(centerLines[i], centerLines[i + 1]);
             ctx.beginPath();
             ctx.moveTo(pair.a.x, pair.a.y);
             ctx.lineTo(pair.b.x, pair.b.y);
@@ -538,4 +538,5 @@ class Mechanism {
 }
 
 window.Link = Link;
-window.Mechanism = Mechanism;
+window.Chain = Chain;
+window.Mechanism = Chain;
