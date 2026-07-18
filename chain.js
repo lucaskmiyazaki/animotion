@@ -379,6 +379,127 @@ class Mechanism {
         });
     }
 
+    _computeCenterLineForLink(link) {
+        if (!(link instanceof Link)) return null;
+
+        const points = link.getWorldPoints();
+        if (!Array.isArray(points) || points.length < 4) {
+            return null;
+        }
+
+        const p0 = points[0];
+        const p1 = points[1];
+        const p2 = points[2];
+        const p3 = points[3];
+
+        const v01 = { x: p1.x - p0.x, y: p1.y - p0.y };
+        const v12 = { x: p2.x - p1.x, y: p2.y - p1.y };
+        const v23 = { x: p3.x - p2.x, y: p3.y - p2.y };
+        const v30 = { x: p0.x - p3.x, y: p0.y - p3.y };
+
+        const normalize = (v) => {
+            const mag = Math.hypot(v.x, v.y);
+            if (mag < 1e-8) return null;
+            return { x: v.x / mag, y: v.y / mag };
+        };
+        const crossAbs = (a, b) => {
+            const na = normalize(a);
+            const nb = normalize(b);
+            if (!na || !nb) return Number.POSITIVE_INFINITY;
+            return Math.abs(na.x * nb.y - na.y * nb.x);
+        };
+        const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+        const scorePair01_23 = crossAbs(v01, v23);
+        const scorePair12_30 = crossAbs(v12, v30);
+
+        // Choose the opposite-edge pair that is most parallel,
+        // then draw the center line midway between them.
+        if (scorePair01_23 <= scorePair12_30) {
+            return {
+                start: midpoint(p0, p3),
+                end: midpoint(p1, p2)
+            };
+        }
+
+        return {
+            start: midpoint(p0, p1),
+            end: midpoint(p2, p3)
+        };
+    }
+
+    drawHoles(ctx, options = {}) {
+        if (!ctx || !Array.isArray(this.links) || this.links.length === 0) return;
+
+        const strokeStyle = options.holeStrokeStyle || 'rgba(255, 80, 170, 0.95)';
+        const lineWidth = Number.isFinite(options.holeLineWidth) ? options.holeLineWidth : 2;
+
+        const centerLines = this.links
+            .map((link) => this._computeCenterLineForLink(link))
+            .filter(Boolean);
+
+        if (centerLines.length === 0) return;
+
+        const distSq = (a, b) => {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            return dx * dx + dy * dy;
+        };
+
+        const nearestEndpoints = (lineA, lineB) => {
+            const candidates = [
+                { a: lineA.start, b: lineB.start },
+                { a: lineA.start, b: lineB.end },
+                { a: lineA.end, b: lineB.start },
+                { a: lineA.end, b: lineB.end }
+            ];
+
+            let best = candidates[0];
+            let bestScore = distSq(best.a, best.b);
+
+            for (let i = 1; i < candidates.length; i++) {
+                const score = distSq(candidates[i].a, candidates[i].b);
+                if (score < bestScore) {
+                    best = candidates[i];
+                    bestScore = score;
+                }
+            }
+
+            return best;
+        };
+
+        ctx.save();
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth;
+
+        // Draw one center line per link.
+        centerLines.forEach((line) => {
+            ctx.beginPath();
+            ctx.moveTo(line.start.x, line.start.y);
+            ctx.lineTo(line.end.x, line.end.y);
+            ctx.stroke();
+        });
+
+        // Draw lines connecting consecutive center lines.
+        for (let i = 0; i < centerLines.length - 1; i++) {
+            const pair = nearestEndpoints(centerLines[i], centerLines[i + 1]);
+            ctx.beginPath();
+            ctx.moveTo(pair.a.x, pair.a.y);
+            ctx.lineTo(pair.b.x, pair.b.y);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    drawWhole(ctx, options = {}) {
+        if (!ctx) return;
+        this.draw(ctx, options);
+        if (options.showHoles) {
+            this.drawHoles(ctx, options);
+        }
+    }
+
     draw(ctx, options = {}) {
         if (!ctx) return;
 

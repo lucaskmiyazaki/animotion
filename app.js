@@ -477,17 +477,23 @@ function redrawAll() {
     if (chainVisible && hasRenderableChain()) {
         const bundle = getCurrentMechanismBundle();
         if (mechanism1Visible) {
-            bundle.mechanism1?.draw?.(canvasView.getContext(), {
+            bundle.mechanism1?.drawWhole?.(canvasView.getContext(), {
                 strokeStyle: 'rgba(57, 166, 255, 0.95)',
                 fillStyle: 'rgba(57, 166, 255, 0.14)',
-                lineWidth: 2
+                lineWidth: 2,
+                showHoles: holeEnabled,
+                holeStrokeStyle: 'rgba(255, 80, 170, 0.95)',
+                holeLineWidth: 2
             });
         }
         if (mechanism2Visible) {
-            bundle.mechanism2?.draw?.(canvasView.getContext(), {
+            bundle.mechanism2?.drawWhole?.(canvasView.getContext(), {
                 strokeStyle: 'rgba(255, 145, 72, 0.95)',
                 fillStyle: 'rgba(255, 145, 72, 0.16)',
-                lineWidth: 2
+                lineWidth: 2,
+                showHoles: holeEnabled,
+                holeStrokeStyle: 'rgba(255, 80, 170, 0.95)',
+                holeLineWidth: 2
             });
         }
     }
