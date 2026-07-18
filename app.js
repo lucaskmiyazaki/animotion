@@ -224,14 +224,14 @@ function buildChain() {
     const mechanism1Initial = new Mechanism();
     mechanism1Initial.generateFromSeries(series, {
         frameIndex: startFrameIndex,
-        pivotKind: 'pivot2',
+        pivotKind: 'ref1',
         pivotRadius: chainThickness
     });
 
     const mechanism2LastFrame = new Mechanism();
     mechanism2LastFrame.generateFromSeries(series, {
         frameIndex: endFrameIndex,
-        pivotKind: 'pivot1',
+        pivotKind: 'ref2',
         pivotRadius: chainThickness
     });
 
@@ -808,6 +808,16 @@ window.appActions = {
         redrawAll();
     },
     getSkeletonPivot1Visible: () => skeletonPivot1Visible,
+    setSkeletonRef1Visible: (visible) => {
+        // Swapped naming: ref1 maps to previous pivot2 behavior.
+        skeletonPivot2Visible = Boolean(visible) && skeletonBisectorVisible;
+        if (skeletonPivot2Visible) {
+            logPivotClosingDirections();
+        }
+        emitChainStateChange();
+        redrawAll();
+    },
+    getSkeletonRef1Visible: () => skeletonPivot2Visible,
     setSkeletonPivot2Visible: (visible) => {
         skeletonPivot2Visible = Boolean(visible) && skeletonBisectorVisible;
         if (skeletonPivot2Visible) {
@@ -817,6 +827,16 @@ window.appActions = {
         redrawAll();
     },
     getSkeletonPivot2Visible: () => skeletonPivot2Visible,
+    setSkeletonRef2Visible: (visible) => {
+        // Swapped naming: ref2 maps to previous pivot1 behavior.
+        skeletonPivot1Visible = Boolean(visible) && skeletonBisectorVisible;
+        if (skeletonPivot1Visible) {
+            logPivotClosingDirections();
+        }
+        emitChainStateChange();
+        redrawAll();
+    },
+    getSkeletonRef2Visible: () => skeletonPivot1Visible,
     logPivotClosingDirections,
     setChainVisible: (visible) => {
         chainVisible = Boolean(visible);

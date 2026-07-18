@@ -190,7 +190,7 @@ class Mechanism {
         };
     }
 
-    _selectPivotCandidate(point, prevPoint, pivotCandidates, closingDirection, pivotKind = 'pivot2') {
+    _selectPivotCandidate(point, prevPoint, pivotCandidates, closingDirection, refKind = 'ref1') {
         if (!pivotCandidates || (closingDirection !== 'clockwise' && closingDirection !== 'counterclockwise')) {
             return null;
         }
@@ -213,14 +213,19 @@ class Mechanism {
         const anglePositive = Mechanism._directedAngleDeg(toPrev, toPositive, closingDirection);
         const angleNegative = Mechanism._directedAngleDeg(toPrev, toNegative, closingDirection);
 
-        // Pivot 1 is the smaller directed angle on closing direction.
-        // Pivot 2 is the opposite candidate.
+        // Historical pivot mapping:
+        // - pivot1: smaller directed angle on closing direction
+        // - pivot2: opposite candidate
+        // Swapped naming requested:
+        // - ref1 maps to pivot2
+        // - ref2 maps to pivot1
         const pivot1 = anglePositive <= angleNegative ? pivotCandidates.positive : pivotCandidates.negative;
         const pivot2 = anglePositive <= angleNegative ? pivotCandidates.negative : pivotCandidates.positive;
-        return pivotKind === 'pivot1' ? pivot1 : pivot2;
+        if (refKind === 'ref2' || refKind === 'pivot1') return pivot1;
+        return pivot2;
     }
 
-    _collectPivotByPointIndex(skeleton, directionByPoint, pivotRadius, pivotKind = 'pivot2') {
+    _collectPivotByPointIndex(skeleton, directionByPoint, pivotRadius, refKind = 'ref1') {
         const map = {};
 
         for (let i = 1; i < skeleton.points.length - 1; i++) {
@@ -231,7 +236,7 @@ class Mechanism {
             if (!pivot) continue;
 
             const closingDirection = directionByPoint?.[i]?.closingDirection;
-            const chosenPivot = this._selectPivotCandidate(point, prev, pivot, closingDirection, pivotKind);
+            const chosenPivot = this._selectPivotCandidate(point, prev, pivot, closingDirection, refKind);
             if (!chosenPivot) continue;
 
             map[i] = { x: chosenPivot.x, y: chosenPivot.y };
@@ -244,7 +249,7 @@ class Mechanism {
         this.clear();
 
         const pivotRadius = Number.isFinite(options.pivotRadius) ? options.pivotRadius : 50;
-        const pivotKind = options.pivotKind === 'pivot1' ? 'pivot1' : 'pivot2';
+        const refKind = options.pivotKind === 'ref2' || options.pivotKind === 'pivot1' ? 'ref2' : 'ref1';
         const initialFrameIndex = Number.isInteger(options.frameIndex)
             ? options.frameIndex
             : 0;
@@ -261,7 +266,7 @@ class Mechanism {
 
         const comparison = series?.compareInitialToLastFrameAngles?.() || { pointDirections: {} };
         const directionByPoint = comparison.pointDirections || {};
-        const pivotByIndex = this._collectPivotByPointIndex(skeleton, directionByPoint, pivotRadius, pivotKind);
+        const pivotByIndex = this._collectPivotByPointIndex(skeleton, directionByPoint, pivotRadius, refKind);
 
         const points = skeleton.points;
         const lastIndex = points.length - 1;
@@ -278,7 +283,7 @@ class Mechanism {
                     role: 'initial',
                     anchorPointIndex: 0,
                     segmentIndex: 0,
-                    pivotKind
+                    refKind
                 });
             }
         }
@@ -296,7 +301,7 @@ class Mechanism {
                 role: 'middle',
                 anchorPointIndex: i,
                 segmentIndex: i,
-                pivotKind
+                refKind
             });
         }
 
@@ -312,7 +317,7 @@ class Mechanism {
                     role: 'final',
                     anchorPointIndex: lastIndex,
                     segmentIndex: lastIndex - 1,
-                    pivotKind
+                    refKind
                 });
             }
         }

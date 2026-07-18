@@ -661,14 +661,14 @@ skeletonPivot1OptionLabel.className = 'checkbox-option';
 
 const skeletonPivot1Checkbox = document.createElement('input');
 skeletonPivot1Checkbox.type = 'checkbox';
-skeletonPivot1Checkbox.checked = window.appActions?.getSkeletonPivot1Visible?.() ?? false;
+skeletonPivot1Checkbox.checked = window.appActions?.getSkeletonRef1Visible?.() ?? false;
 skeletonPivot1Checkbox.disabled = !skeletonBisectorCheckbox.checked;
 skeletonPivot1Checkbox.addEventListener('change', () => {
-    window.appActions?.setSkeletonPivot1Visible?.(skeletonPivot1Checkbox.checked);
+    window.appActions?.setSkeletonRef1Visible?.(skeletonPivot1Checkbox.checked);
 });
 
 const skeletonPivot1OptionText = document.createElement('span');
-skeletonPivot1OptionText.textContent = 'Pivot 1';
+skeletonPivot1OptionText.textContent = 'Ref 1';
 
 skeletonPivot1OptionLabel.append(skeletonPivot1Checkbox, skeletonPivot1OptionText);
 
@@ -677,14 +677,14 @@ skeletonPivot2OptionLabel.className = 'checkbox-option';
 
 const skeletonPivot2Checkbox = document.createElement('input');
 skeletonPivot2Checkbox.type = 'checkbox';
-skeletonPivot2Checkbox.checked = window.appActions?.getSkeletonPivot2Visible?.() ?? false;
+skeletonPivot2Checkbox.checked = window.appActions?.getSkeletonRef2Visible?.() ?? false;
 skeletonPivot2Checkbox.disabled = !skeletonBisectorCheckbox.checked;
 skeletonPivot2Checkbox.addEventListener('change', () => {
-    window.appActions?.setSkeletonPivot2Visible?.(skeletonPivot2Checkbox.checked);
+    window.appActions?.setSkeletonRef2Visible?.(skeletonPivot2Checkbox.checked);
 });
 
 const skeletonPivot2OptionText = document.createElement('span');
-skeletonPivot2OptionText.textContent = 'Pivot 2';
+skeletonPivot2OptionText.textContent = 'Ref 2';
 
 skeletonPivot2OptionLabel.append(skeletonPivot2Checkbox, skeletonPivot2OptionText);
 
@@ -695,8 +695,8 @@ skeletonBisectorCheckbox.addEventListener('change', () => {
     if (!enabled) {
         skeletonPivot1Checkbox.checked = false;
         skeletonPivot2Checkbox.checked = false;
-        window.appActions?.setSkeletonPivot1Visible?.(false);
-        window.appActions?.setSkeletonPivot2Visible?.(false);
+        window.appActions?.setSkeletonRef1Visible?.(false);
+        window.appActions?.setSkeletonRef2Visible?.(false);
     }
 });
 
@@ -836,8 +836,8 @@ window.appActions?.onChainStateChange?.(() => {
     skeletonPointCountInput.value = String(Math.max(2, window.appActions?.getCurrentSkeletonPointCount?.() ?? 2));
     const skeletonVisible = window.appActions?.getSkeletonVisible?.() ?? true;
     const skeletonBisectorVisible = window.appActions?.getSkeletonBisectorVisible?.() ?? false;
-    const skeletonPivot1Visible = window.appActions?.getSkeletonPivot1Visible?.() ?? false;
-    const skeletonPivot2Visible = window.appActions?.getSkeletonPivot2Visible?.() ?? false;
+    const skeletonPivot1Visible = window.appActions?.getSkeletonRef1Visible?.() ?? false;
+    const skeletonPivot2Visible = window.appActions?.getSkeletonRef2Visible?.() ?? false;
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
     const mechanism1Visible = window.appActions?.getMechanism1Visible?.() ?? true;
