@@ -223,6 +223,56 @@ class Skeleton {
         };
     }
 
+    getRelativeJointRotations(otherSkeleton) {
+        if (!otherSkeleton || !Array.isArray(otherSkeleton.points)) {
+            return null;
+        }
+
+        const count = Math.min(this.points.length, otherSkeleton.points.length);
+        if (count < 2) {
+            return null;
+        }
+
+        const normalizeSigned = (angleRad) => {
+            let value = angleRad;
+            while (value > Math.PI) value -= Math.PI * 2;
+            while (value < -Math.PI) value += Math.PI * 2;
+            return value;
+        };
+
+        const baseSegmentAngles = [];
+        const targetSegmentAngles = [];
+        const segmentRotationByIndex = {};
+
+        for (let i = 0; i < count - 1; i++) {
+            const b0 = this.points[i];
+            const b1 = this.points[i + 1];
+            const t0 = otherSkeleton.points[i];
+            const t1 = otherSkeleton.points[i + 1];
+
+            const baseAngle = Math.atan2(b1.y - b0.y, b1.x - b0.x);
+            const targetAngle = Math.atan2(t1.y - t0.y, t1.x - t0.x);
+
+            baseSegmentAngles.push(baseAngle);
+            targetSegmentAngles.push(targetAngle);
+            segmentRotationByIndex[i] = normalizeSigned(targetAngle - baseAngle);
+        }
+
+        const jointRotationByIndex = {};
+        for (let i = 1; i < count - 1; i++) {
+            const baseRelative = normalizeSigned(baseSegmentAngles[i] - baseSegmentAngles[i - 1]);
+            const targetRelative = normalizeSigned(targetSegmentAngles[i] - targetSegmentAngles[i - 1]);
+            jointRotationByIndex[i] = normalizeSigned(targetRelative - baseRelative);
+        }
+
+        return {
+            pointCountCompared: count,
+            rootRotation: segmentRotationByIndex[0] || 0,
+            segmentRotationByIndex,
+            jointRotationByIndex
+        };
+    }
+
     getLength() {
         if (!Array.isArray(this.lines) || this.lines.length === 0) {
             return 0;

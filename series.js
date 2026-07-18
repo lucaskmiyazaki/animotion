@@ -17,6 +17,7 @@ class Series {
     _makeEntry(defaultSourceFrame) {
         return {
             skeleton: null,
+            mechanism: null,
             sourceFrame: defaultSourceFrame
         };
     }
@@ -108,6 +109,43 @@ class Series {
         const entry = this._ensureEntry(index);
         entry.skeleton = skeleton;
         return skeleton;
+    }
+
+    getMechanism(frameIndex) {
+        const index = this._toIndex(frameIndex);
+        if (index === null) return null;
+        return this._getEntry(index)?.mechanism || null;
+    }
+
+    setMechanism(frameIndex, mechanism) {
+        const index = this._toIndex(frameIndex);
+        if (index === null) return null;
+
+        const entry = this._ensureEntry(index);
+        entry.mechanism = mechanism;
+        return mechanism;
+    }
+
+    clearMechanism(frameIndex) {
+        return this.setMechanism(frameIndex, null);
+    }
+
+    clearAllMechanisms() {
+        this.frameEntries.forEach((entry) => {
+            if (entry) {
+                entry.mechanism = null;
+            }
+        });
+    }
+
+    getMechanismFrameStore() {
+        const store = {};
+        this.frameEntries.forEach((entry, index) => {
+            if (entry?.mechanism) {
+                store[index] = entry.mechanism;
+            }
+        });
+        return store;
     }
 
     deleteFrame(frameIndex) {
@@ -216,6 +254,7 @@ class Series {
             const entry = previousEntries[oldIndex] || this._makeEntry(oldIndex);
             return {
                 skeleton: entry.skeleton || null,
+                mechanism: entry.mechanism || null,
                 sourceFrame: Number.isInteger(entry.sourceFrame) ? entry.sourceFrame : oldIndex
             };
         });
@@ -291,6 +330,7 @@ class Series {
 
         this.frameEntries = nextMap.map((sourceFrame, index) => ({
             skeleton: previousEntries[index]?.skeleton || null,
+            mechanism: previousEntries[index]?.mechanism || null,
             sourceFrame: Number.isInteger(sourceFrame) ? sourceFrame : index
         }));
     }

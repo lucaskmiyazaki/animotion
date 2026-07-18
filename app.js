@@ -24,7 +24,8 @@ let hasDragged = false;
 let mode = 'move'; // 'create', 'edit', or 'move'
 let holeEnabled = false;
 let jointsEnabled = false;
-let companionEnabled = true;
+let mechanism1Visible = true;
+let mechanism2Visible = true;
 let skeletonVisible = true;
 let skeletonBisectorVisible = false;
 let skeletonPivot1Visible = false;
@@ -81,30 +82,22 @@ function transformAllGeometryToNewVideoRect(oldRect, newRect) {
     });
 
     const uniformScale = (scaleX + scaleY) / 2;
-    Object.values(frameChains).forEach((chain) => {
-        if (!chain || typeof chain.getTrapezoids !== 'function') return;
-
-        chain.getTrapezoids().forEach((item) => {
-            [item.flatPosition, item.finalPosition, item.position, item.pivotPoint].forEach((point) => {
-                if (!point) return;
-                canvasView.transformPointToNewVideoRect(point, oldRect, newRect, scaleX, scaleY);
+    const scaleMechanism = (mechanism) => {
+        if (!(mechanism instanceof Mechanism) || !Array.isArray(mechanism.links)) return;
+        mechanism.links.forEach((link) => {
+            link.position.x *= scaleX;
+            link.position.y *= scaleY;
+            link.localPoints.forEach((localPoint) => {
+                localPoint.x *= uniformScale;
+                localPoint.y *= uniformScale;
             });
-
-            const trapezoid = item.trapezoid;
-            if (!trapezoid) return;
-            if (Number.isFinite(trapezoid.meanLineLength)) {
-                trapezoid.meanLineLength *= uniformScale;
-            }
-            if (Number.isFinite(trapezoid.thickness)) {
-                trapezoid.thickness *= uniformScale;
-            }
-            if (Array.isArray(trapezoid.localPoints)) {
-                trapezoid.localPoints.forEach((localPoint) => {
-                    localPoint.x *= uniformScale;
-                    localPoint.y *= uniformScale;
-                });
-            }
         });
+    };
+
+    Object.values(frameChains).forEach((entry) => {
+        const bundle = normalizeMechanismFrameBundle(entry);
+        scaleMechanism(bundle.mechanism1);
+        scaleMechanism(bundle.mechanism2);
     });
 
     chainThickness *= uniformScale;
@@ -174,35 +167,120 @@ function emitModeChange() {
 }
 
 function markCurrentFrameChainDirty() {
-    delete frameChains[currentFrameIndex];
-    delete frameChainBuilt[currentFrameIndex];
+    series.clearAllMechanisms();
+    Object.keys(frameChains).forEach((key) => delete frameChains[key]);
+    Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
     mechanismNeedsRegeneration = true;
     emitChainStateChange();
 }
 
-function getCurrentMechanism() {
-    return frameChains[currentFrameIndex] || null;
+function makeMechanismFrameBundle(mechanism1 = null, mechanism2 = null) {
+    return {
+        mechanism1: mechanism1 instanceof Mechanism ? mechanism1 : null,
+        mechanism2: mechanism2 instanceof Mechanism ? mechanism2 : null
+    };
+}
+
+function normalizeMechanismFrameBundle(value) {
+    if (!value) {
+        return makeMechanismFrameBundle(null, null);
+    }
+
+    if (value instanceof Mechanism) {
+        return makeMechanismFrameBundle(value, null);
+    }
+
+    return makeMechanismFrameBundle(value.mechanism1, value.mechanism2);
+}
+
+function getCurrentMechanismBundle() {
+    return normalizeMechanismFrameBundle(series.getMechanism(currentFrameIndex) || frameChains[currentFrameIndex] || null);
 }
 
 function hasRenderableChain() {
-    const mechanism = getCurrentMechanism();
-    return Boolean(mechanism && Array.isArray(mechanism.links) && mechanism.links.length > 0);
+    const bundle = getCurrentMechanismBundle();
+    const m1 = bundle.mechanism1;
+    const m2 = bundle.mechanism2;
+    const hasM1 = Boolean(m1 && Array.isArray(m1.links) && m1.links.length > 0);
+    const hasM2 = Boolean(m2 && Array.isArray(m2.links) && m2.links.length > 0);
+    return hasM1 || hasM2;
 }
 
 function buildChain() {
-    const mechanism = new Mechanism();
-    mechanism.generateFromSeries(series, {
-        frameIndex: 0,
+    const frameIndices = series.getFrameIndices().sort((a, b) => a - b);
+    if (frameIndices.length === 0) {
+        return new Mechanism();
+    }
+
+    series.clearAllMechanisms();
+    Object.keys(frameChains).forEach((key) => delete frameChains[key]);
+    Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
+
+    const startFrameIndex = frameIndices[0];
+    const endFrameIndex = frameIndices[frameIndices.length - 1];
+    const startSkeleton = series.getFrame(startFrameIndex);
+    const endSkeleton = series.getFrame(endFrameIndex);
+
+    const mechanism1Initial = new Mechanism();
+    mechanism1Initial.generateFromSeries(series, {
+        frameIndex: startFrameIndex,
+        pivotKind: 'pivot2',
         pivotRadius: chainThickness
     });
 
-    frameChains[currentFrameIndex] = mechanism;
-    frameChainBuilt[currentFrameIndex] = mechanism.links.length > 0;
-    mechanismNeedsRegeneration = false;
+    const mechanism2LastFrame = new Mechanism();
+    mechanism2LastFrame.generateFromSeries(series, {
+        frameIndex: endFrameIndex,
+        pivotKind: 'pivot1',
+        pivotRadius: chainThickness
+    });
 
+    let mechanism2Initial = mechanism2LastFrame.clone();
+    if (startSkeleton && endSkeleton && mechanism2Initial.links.length > 0) {
+        mechanism2Initial.poseToSkeleton(endSkeleton, startSkeleton);
+        mechanism2Initial = mechanism2Initial.rebaseToCurrentPose();
+    }
+
+    Mechanism.pairTwinLinks(mechanism1Initial, mechanism2Initial);
+
+    const startBundle = makeMechanismFrameBundle(mechanism1Initial, mechanism2Initial);
+    series.setMechanism(startFrameIndex, startBundle);
+    frameChains[startFrameIndex] = startBundle;
+    frameChainBuilt[startFrameIndex] = Boolean(
+        (startBundle.mechanism1?.links?.length || 0) > 0
+        || (startBundle.mechanism2?.links?.length || 0) > 0
+    );
+
+    let displayedFrameIndex = startFrameIndex;
+    let displayedBundle = startBundle;
+
+    if (
+        endFrameIndex !== startFrameIndex
+        && startSkeleton
+        && endSkeleton
+    ) {
+        const mechanism1Last = mechanism1Initial.clone();
+        if (mechanism1Last.links.length > 0) {
+            mechanism1Last.poseToSkeleton(startSkeleton, endSkeleton);
+        }
+
+        const mechanism2Last = mechanism2LastFrame.clone();
+
+        Mechanism.pairTwinLinks(mechanism1Last, mechanism2Last);
+        const endBundle = makeMechanismFrameBundle(mechanism1Last, mechanism2Last);
+        series.setMechanism(endFrameIndex, endBundle);
+        frameChains[endFrameIndex] = endBundle;
+        frameChainBuilt[endFrameIndex] = true;
+        displayedFrameIndex = endFrameIndex;
+        displayedBundle = endBundle;
+    }
+
+    mechanismNeedsRegeneration = false;
+    setCurrentFrame(displayedFrameIndex);
     emitChainStateChange();
+    window.videoControls?.showFrameIndex?.(displayedFrameIndex);
     redrawAll();
-    return mechanism;
+    return displayedBundle;
 }
 
 function ensureCurrentSkeleton() {
@@ -397,12 +475,21 @@ function redrawAll() {
     canvasView.clearViewport();
 
     if (chainVisible && hasRenderableChain()) {
-        const mechanism = getCurrentMechanism();
-        mechanism?.draw?.(canvasView.getContext(), {
-            strokeStyle: 'rgba(57, 166, 255, 0.95)',
-            fillStyle: 'rgba(57, 166, 255, 0.14)',
-            lineWidth: 2
-        });
+        const bundle = getCurrentMechanismBundle();
+        if (mechanism1Visible) {
+            bundle.mechanism1?.draw?.(canvasView.getContext(), {
+                strokeStyle: 'rgba(57, 166, 255, 0.95)',
+                fillStyle: 'rgba(57, 166, 255, 0.14)',
+                lineWidth: 2
+            });
+        }
+        if (mechanism2Visible) {
+            bundle.mechanism2?.draw?.(canvasView.getContext(), {
+                strokeStyle: 'rgba(255, 145, 72, 0.95)',
+                fillStyle: 'rgba(255, 145, 72, 0.16)',
+                lineWidth: 2
+            });
+        }
     }
 
     if (skeletonVisible) {
@@ -537,10 +624,10 @@ function getMode() {
 function exposeStateForSerialization() {
     return {
         frameSkeletons: series.getSkeletonFrameStore(),
-        frameChains,
+        frameChains: series.getMechanismFrameStore(),
         frameChainBuilt,
         companionRigidModel,
-        companionEnabled,
+        companionEnabled: mechanism2Visible,
         mechanismNeedsRegeneration,
         chainThickness,
         jointMinimumThickness,
@@ -685,7 +772,9 @@ window.appActions = {
         }
     },
     setChainForFrame: (frameIndex, chain, isBuilt) => {
-        frameChains[frameIndex] = chain;
+        const bundle = normalizeMechanismFrameBundle(chain);
+        series.setMechanism(frameIndex, bundle);
+        frameChains[frameIndex] = bundle;
         if (isBuilt !== undefined) frameChainBuilt[frameIndex] = isBuilt;
         emitChainStateChange();
         // Also redraw immediately so restored chains show up
@@ -750,12 +839,23 @@ window.appActions = {
     },
     getJointsEnabled: () => jointsEnabled,
     setCompanionEnabled: (enabled) => {
-        companionEnabled = Boolean(enabled);
-        mechanismNeedsRegeneration = true;
+        mechanism2Visible = Boolean(enabled);
         emitChainStateChange();
         redrawAll();
     },
-    getCompanionEnabled: () => companionEnabled,
+    getCompanionEnabled: () => mechanism2Visible,
+    setMechanism1Visible: (enabled) => {
+        mechanism1Visible = Boolean(enabled);
+        emitChainStateChange();
+        redrawAll();
+    },
+    getMechanism1Visible: () => mechanism1Visible,
+    setMechanism2Visible: (enabled) => {
+        mechanism2Visible = Boolean(enabled);
+        emitChainStateChange();
+        redrawAll();
+    },
+    getMechanism2Visible: () => mechanism2Visible,
     setFramesVisible: (visible) => {
         window.videoControls?.setFramesVisible?.(Boolean(visible));
         emitChainStateChange();

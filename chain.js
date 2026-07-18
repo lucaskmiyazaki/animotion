@@ -11,6 +11,10 @@ class Link {
         };
         this.theta = Number(options.theta) || 0;
         this.kind = worldPoints.length === 3 ? 'triangle' : 'trapezoid';
+        this.metadata = options.metadata && typeof options.metadata === 'object'
+            ? { ...options.metadata }
+            : {};
+        this.twin = null;
 
         // Store shape in local coordinates with p0 fixed at origin.
         this.localPoints = worldPoints.map((point, index) => {
@@ -22,6 +26,21 @@ class Link {
                 y: (Number(point.y) || 0) - this.position.y
             };
         });
+    }
+
+    clone() {
+        const clone = Object.create(Link.prototype);
+        clone.position = { x: this.position.x, y: this.position.y };
+        clone.theta = this.theta;
+        clone.kind = this.kind;
+        clone.localPoints = this.localPoints.map((p) => ({ x: p.x, y: p.y }));
+        clone.metadata = { ...(this.metadata || {}) };
+        clone.twin = null;
+        return clone;
+    }
+
+    setTwin(link) {
+        this.twin = link instanceof Link ? link : null;
     }
 
     getWorldPoints() {
@@ -77,8 +96,28 @@ class Mechanism {
         }
     }
 
-    addLinkFromWorldPoints(worldPoints) {
-        this.addLink(new Link(worldPoints));
+    addLinkFromWorldPoints(worldPoints, metadata = {}) {
+        this.addLink(new Link(worldPoints, { metadata }));
+    }
+
+    clone() {
+        const clone = new Mechanism();
+        clone.links = this.links.map((link) => link.clone());
+        return clone;
+    }
+
+    // Rebuild links from their current world pose so local geometry matches
+    // the current frame and theta can be reset to zero.
+    rebaseToCurrentPose() {
+        const rebased = new Mechanism();
+        rebased.links = this.links.map((link) => {
+            const worldPoints = link.getWorldPoints();
+            return new Link(worldPoints, {
+                metadata: { ...(link.metadata || {}) },
+                theta: 0
+            });
+        });
+        return rebased;
     }
 
     static _normalize(vector) {
@@ -151,7 +190,7 @@ class Mechanism {
         };
     }
 
-    _selectPivot2Candidate(point, prevPoint, pivotCandidates, closingDirection) {
+    _selectPivotCandidate(point, prevPoint, pivotCandidates, closingDirection, pivotKind = 'pivot2') {
         if (!pivotCandidates || (closingDirection !== 'clockwise' && closingDirection !== 'counterclockwise')) {
             return null;
         }
@@ -176,10 +215,12 @@ class Mechanism {
 
         // Pivot 1 is the smaller directed angle on closing direction.
         // Pivot 2 is the opposite candidate.
-        return anglePositive <= angleNegative ? pivotCandidates.negative : pivotCandidates.positive;
+        const pivot1 = anglePositive <= angleNegative ? pivotCandidates.positive : pivotCandidates.negative;
+        const pivot2 = anglePositive <= angleNegative ? pivotCandidates.negative : pivotCandidates.positive;
+        return pivotKind === 'pivot1' ? pivot1 : pivot2;
     }
 
-    _collectPivot2ByPointIndex(skeleton, directionByPoint, pivotRadius) {
+    _collectPivotByPointIndex(skeleton, directionByPoint, pivotRadius, pivotKind = 'pivot2') {
         const map = {};
 
         for (let i = 1; i < skeleton.points.length - 1; i++) {
@@ -190,10 +231,10 @@ class Mechanism {
             if (!pivot) continue;
 
             const closingDirection = directionByPoint?.[i]?.closingDirection;
-            const pivot2 = this._selectPivot2Candidate(point, prev, pivot, closingDirection);
-            if (!pivot2) continue;
+            const chosenPivot = this._selectPivotCandidate(point, prev, pivot, closingDirection, pivotKind);
+            if (!chosenPivot) continue;
 
-            map[i] = { x: pivot2.x, y: pivot2.y };
+            map[i] = { x: chosenPivot.x, y: chosenPivot.y };
         }
 
         return map;
@@ -203,6 +244,7 @@ class Mechanism {
         this.clear();
 
         const pivotRadius = Number.isFinite(options.pivotRadius) ? options.pivotRadius : 50;
+        const pivotKind = options.pivotKind === 'pivot1' ? 'pivot1' : 'pivot2';
         const initialFrameIndex = Number.isInteger(options.frameIndex)
             ? options.frameIndex
             : 0;
@@ -219,48 +261,117 @@ class Mechanism {
 
         const comparison = series?.compareInitialToLastFrameAngles?.() || { pointDirections: {} };
         const directionByPoint = comparison.pointDirections || {};
-        const pivot2ByIndex = this._collectPivot2ByPointIndex(skeleton, directionByPoint, pivotRadius);
+        const pivotByIndex = this._collectPivotByPointIndex(skeleton, directionByPoint, pivotRadius, pivotKind);
 
         const points = skeleton.points;
         const lastIndex = points.length - 1;
 
-        // Initial link: sk[0], sk[1], pivot2[1], derived 4th point.
-        if (points.length >= 3 && pivot2ByIndex[1]) {
+        // Initial link: sk[0], sk[1], pivot[1], derived 4th point.
+        if (points.length >= 3 && pivotByIndex[1]) {
             const anchor = points[0];
             const second = points[1];
-            const pivot2 = pivot2ByIndex[1];
-            const fourth = Mechanism._computeTerminalFourthPoint(anchor, second, pivot2);
+            const pivotPoint = pivotByIndex[1];
+            const fourth = Mechanism._computeTerminalFourthPoint(anchor, second, pivotPoint);
             if (fourth) {
-                const ordered = Mechanism._orderQuadWithoutIntersection([anchor, second, pivot2, fourth], anchor);
-                this.addLinkFromWorldPoints(ordered);
+                const ordered = Mechanism._orderQuadWithoutIntersection([anchor, second, pivotPoint, fourth], anchor);
+                this.addLinkFromWorldPoints(ordered, {
+                    role: 'initial',
+                    anchorPointIndex: 0,
+                    segmentIndex: 0,
+                    pivotKind
+                });
             }
         }
 
-        // Middle links: sk[i], pivot2[i], sk[i+1], pivot2[i+1], ordered to avoid intersections.
+        // Middle links: sk[i], pivot[i], sk[i+1], pivot[i+1], ordered to avoid intersections.
         for (let i = 1; i <= lastIndex - 2; i++) {
             const pA = points[i];
             const pB = points[i + 1];
-            const pivotA = pivot2ByIndex[i];
-            const pivotB = pivot2ByIndex[i + 1];
+            const pivotA = pivotByIndex[i];
+            const pivotB = pivotByIndex[i + 1];
             if (!pivotA || !pivotB) continue;
 
             const ordered = Mechanism._orderQuadWithoutIntersection([pA, pivotA, pB, pivotB], pA);
-            this.addLinkFromWorldPoints(ordered);
+            this.addLinkFromWorldPoints(ordered, {
+                role: 'middle',
+                anchorPointIndex: i,
+                segmentIndex: i,
+                pivotKind
+            });
         }
 
         // Final link mirrors initial pattern at tail.
-        if (points.length >= 3 && pivot2ByIndex[lastIndex - 1]) {
+        if (points.length >= 3 && pivotByIndex[lastIndex - 1]) {
             const anchor = points[lastIndex];
             const second = points[lastIndex - 1];
-            const pivot2 = pivot2ByIndex[lastIndex - 1];
-            const fourth = Mechanism._computeTerminalFourthPoint(anchor, second, pivot2);
+            const pivotPoint = pivotByIndex[lastIndex - 1];
+            const fourth = Mechanism._computeTerminalFourthPoint(anchor, second, pivotPoint);
             if (fourth) {
-                const ordered = Mechanism._orderQuadWithoutIntersection([anchor, second, pivot2, fourth], anchor);
-                this.addLinkFromWorldPoints(ordered);
+                const ordered = Mechanism._orderQuadWithoutIntersection([anchor, second, pivotPoint, fourth], anchor);
+                this.addLinkFromWorldPoints(ordered, {
+                    role: 'final',
+                    anchorPointIndex: lastIndex,
+                    segmentIndex: lastIndex - 1,
+                    pivotKind
+                });
             }
         }
 
         return this;
+    }
+
+    poseToSkeleton(referenceSkeleton, targetSkeleton) {
+        if (!referenceSkeleton || !targetSkeleton) {
+            return false;
+        }
+
+        const relative = referenceSkeleton.getRelativeJointRotations(targetSkeleton);
+        if (!relative || !relative.segmentRotationByIndex) {
+            return false;
+        }
+
+        this.links.forEach((link) => {
+            const anchorPointIndex = link.metadata?.anchorPointIndex;
+            const segmentIndex = link.metadata?.segmentIndex;
+            if (!Number.isInteger(anchorPointIndex) || !Number.isInteger(segmentIndex)) {
+                return;
+            }
+
+            const anchor = targetSkeleton.points[anchorPointIndex];
+            if (!anchor) {
+                return;
+            }
+
+            link.position.x = anchor.x;
+            link.position.y = anchor.y;
+            link.theta = relative.segmentRotationByIndex[segmentIndex] || 0;
+        });
+
+        return true;
+    }
+
+    static pairTwinLinks(mechanismA, mechanismB) {
+        if (!(mechanismA instanceof Mechanism) || !(mechanismB instanceof Mechanism)) {
+            return;
+        }
+
+        const bySegment = new Map();
+        mechanismB.links.forEach((link) => {
+            const segmentIndex = link.metadata?.segmentIndex;
+            if (Number.isInteger(segmentIndex)) {
+                bySegment.set(segmentIndex, link);
+            }
+        });
+
+        mechanismA.links.forEach((linkA) => {
+            const segmentIndex = linkA.metadata?.segmentIndex;
+            if (!Number.isInteger(segmentIndex)) return;
+            const twin = bySegment.get(segmentIndex) || null;
+            linkA.setTwin(twin);
+            if (twin) {
+                twin.setTwin(linkA);
+            }
+        });
     }
 
     draw(ctx, options = {}) {

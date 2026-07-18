@@ -249,20 +249,35 @@ jointsOptionText.textContent = 'Joints';
 
 jointsOptionLabel.append(jointsCheckbox, jointsOptionText);
 
-const companionOptionLabel = document.createElement('label');
-companionOptionLabel.className = 'checkbox-option';
+const mechanism1OptionLabel = document.createElement('label');
+mechanism1OptionLabel.className = 'checkbox-option';
 
-const companionCheckbox = document.createElement('input');
-companionCheckbox.type = 'checkbox';
-companionCheckbox.checked = window.appActions?.getCompanionEnabled?.() ?? true;
-companionCheckbox.addEventListener('change', () => {
-    window.appActions?.setCompanionEnabled?.(companionCheckbox.checked);
+const mechanism1Checkbox = document.createElement('input');
+mechanism1Checkbox.type = 'checkbox';
+mechanism1Checkbox.checked = window.appActions?.getMechanism1Visible?.() ?? true;
+mechanism1Checkbox.addEventListener('change', () => {
+    window.appActions?.setMechanism1Visible?.(mechanism1Checkbox.checked);
 });
 
-const companionOptionText = document.createElement('span');
-companionOptionText.textContent = 'Companion';
+const mechanism1OptionText = document.createElement('span');
+mechanism1OptionText.textContent = 'Mechanism 1';
 
-companionOptionLabel.append(companionCheckbox, companionOptionText);
+mechanism1OptionLabel.append(mechanism1Checkbox, mechanism1OptionText);
+
+const mechanism2OptionLabel = document.createElement('label');
+mechanism2OptionLabel.className = 'checkbox-option';
+
+const mechanism2Checkbox = document.createElement('input');
+mechanism2Checkbox.type = 'checkbox';
+mechanism2Checkbox.checked = window.appActions?.getMechanism2Visible?.() ?? true;
+mechanism2Checkbox.addEventListener('change', () => {
+    window.appActions?.setMechanism2Visible?.(mechanism2Checkbox.checked);
+});
+
+const mechanism2OptionText = document.createElement('span');
+mechanism2OptionText.textContent = 'Mechanism 2';
+
+mechanism2OptionLabel.append(mechanism2Checkbox, mechanism2OptionText);
 
 const chainThicknessRow = document.createElement('div');
 chainThicknessRow.className = 'joint-k-row';
@@ -505,7 +520,8 @@ chainOptionsSection.append(
     chainHeader.header,
     holeOptionLabel,
     jointsOptionLabel,
-    companionOptionLabel,
+    mechanism1OptionLabel,
+    mechanism2OptionLabel,
     chainThicknessRow,
     jointMinThicknessRow,
     slackRow,
@@ -781,7 +797,8 @@ function updateProgressiveVisibility() {
     chainHeader.header.style.display = hasMechanism ? '' : 'none';
     holeOptionLabel.style.display = hasMechanism ? '' : 'none';
     jointsOptionLabel.style.display = hasMechanism ? '' : 'none';
-    companionOptionLabel.style.display = hasMechanism ? '' : 'none';
+    mechanism1OptionLabel.style.display = hasMechanism ? '' : 'none';
+    mechanism2OptionLabel.style.display = hasMechanism ? '' : 'none';
 
     skeletonDrawHint.style.display = (hasVideo && !hasSkeleton) ? '' : 'none';
     addPointButton.style.display = hasSkeleton ? '' : 'none';
@@ -823,7 +840,8 @@ window.appActions?.onChainStateChange?.(() => {
     const skeletonPivot2Visible = window.appActions?.getSkeletonPivot2Visible?.() ?? false;
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
-    const companionVisible = window.appActions?.getCompanionEnabled?.() ?? true;
+    const mechanism1Visible = window.appActions?.getMechanism1Visible?.() ?? true;
+    const mechanism2Visible = window.appActions?.getMechanism2Visible?.() ?? true;
 
     skeletonHeader.sync(skeletonVisible);
     skeletonBisectorCheckbox.checked = skeletonBisectorVisible;
@@ -833,7 +851,8 @@ window.appActions?.onChainStateChange?.(() => {
     skeletonPivot2Checkbox.disabled = !skeletonBisectorVisible;
     frameHeader.sync(framesVisible);
     chainHeader.sync(chainVisible);
-    companionCheckbox.checked = companionVisible;
+    mechanism1Checkbox.checked = mechanism1Visible;
+    mechanism2Checkbox.checked = mechanism2Visible;
 
     setSectionInteractive(skeletonSection, skeletonHeader.input, skeletonVisible);
     setSectionInteractive(frameSection, frameHeader.input, framesVisible);
