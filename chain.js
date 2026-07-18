@@ -537,6 +537,215 @@ class Chain {
     }
 }
 
+class Joint {
+    constructor(options = {}) {
+        this.k = Number.isFinite(options.k) ? Math.max(0, options.k) : 1;
+
+        // Joint theta domain (driver variable).
+        this.initialTheta = Number.isFinite(options.initialTheta) ? options.initialTheta : 0;
+        this.finalTheta = Number.isFinite(options.finalTheta) ? options.finalTheta : 1;
+        this.theta = Number.isFinite(options.theta) ? options.theta : 0;
+
+        // Connected links (previous and following links for both mechanisms).
+        this.prevLinkA = options.prevLinkA instanceof Link ? options.prevLinkA : null;
+        this.nextLinkA = options.nextLinkA instanceof Link ? options.nextLinkA : null;
+        this.prevLinkB = options.prevLinkB instanceof Link ? options.prevLinkB : null;
+        this.nextLinkB = options.nextLinkB instanceof Link ? options.nextLinkB : null;
+
+        // Per-mechanism theta references used to convert joint theta
+        // into each mechanism's local relative theta.
+        const currentRelA = this._readRelativeTheta(this.prevLinkA, this.nextLinkA);
+        const currentRelB = this._readRelativeTheta(this.prevLinkB, this.nextLinkB);
+        this.initialMechanismThetaA = Number.isFinite(options.initialMechanismThetaA)
+            ? options.initialMechanismThetaA
+            : currentRelA;
+        this.finalMechanismThetaA = Number.isFinite(options.finalMechanismThetaA)
+            ? options.finalMechanismThetaA
+            : this.initialMechanismThetaA;
+        this.initialMechanismThetaB = Number.isFinite(options.initialMechanismThetaB)
+            ? options.initialMechanismThetaB
+            : currentRelB;
+        this.finalMechanismThetaB = Number.isFinite(options.finalMechanismThetaB)
+            ? options.finalMechanismThetaB
+            : this.initialMechanismThetaB;
+
+        this.theta = this._clampTheta(this.theta);
+    }
+
+    _readRelativeTheta(prevLink, nextLink) {
+        if (!(prevLink instanceof Link) || !(nextLink instanceof Link)) return 0;
+        return nextLink.theta - prevLink.theta;
+    }
+
+    _clampTheta(value) {
+        if (!Number.isFinite(value)) return this.initialTheta;
+        const minTheta = Math.min(this.initialTheta, this.finalTheta);
+        const maxTheta = Math.max(this.initialTheta, this.finalTheta);
+        if (value < minTheta) return minTheta;
+        if (value > maxTheta) return maxTheta;
+        return value;
+    }
+
+    _jointProgress() {
+        const denom = this.finalTheta - this.initialTheta;
+        if (!Number.isFinite(denom) || Math.abs(denom) < 1e-10) return 0;
+        const t = (this.theta - this.initialTheta) / denom;
+        return Math.min(1, Math.max(0, t));
+    }
+
+    _convertToMechanismTheta(initialValue, finalValue) {
+        const t = this._jointProgress();
+        return initialValue + (finalValue - initialValue) * t;
+    }
+
+    _applyToFollowingLinks() {
+        const relA = this._convertToMechanismTheta(this.initialMechanismThetaA, this.finalMechanismThetaA);
+        const relB = this._convertToMechanismTheta(this.initialMechanismThetaB, this.finalMechanismThetaB);
+
+        if (this.prevLinkA instanceof Link && this.nextLinkA instanceof Link) {
+            this.nextLinkA.theta = this.prevLinkA.theta + relA;
+        }
+        if (this.prevLinkB instanceof Link && this.nextLinkB instanceof Link) {
+            this.nextLinkB.theta = this.prevLinkB.theta + relB;
+        }
+    }
+
+    // Updates only the two following links (never previous links).
+    setTheta(nextTheta) {
+        this.theta = this._clampTheta(nextTheta);
+        this._applyToFollowingLinks();
+        return this.theta;
+    }
+
+    setK(nextK) {
+        if (!Number.isFinite(nextK)) return this.k;
+        this.k = Math.max(0, nextK);
+        return this.k;
+    }
+
+    getElasticEnergy() {
+        const delta = this.theta - this.initialTheta;
+        return 0.5 * this.k * delta * delta;
+    }
+}
+
+class Mechanism {
+    constructor(options = {}) {
+        this.chains = Array.isArray(options.chains)
+            ? options.chains.filter((chain) => chain instanceof Chain)
+            : [];
+        this.joints = Array.isArray(options.joints)
+            ? options.joints.filter((joint) => joint instanceof Joint)
+            : [];
+    }
+
+    addChain(chain) {
+        if (chain instanceof Chain) this.chains.push(chain);
+    }
+
+    addJoint(joint) {
+        if (joint instanceof Joint) this.joints.push(joint);
+    }
+
+    setJointThetaByIndex(index, theta) {
+        if (!Number.isInteger(index) || index < 0 || index >= this.joints.length) return null;
+        return this.joints[index].setTheta(theta);
+    }
+
+    calculateTotalElasticEnergy() {
+        return this.joints.reduce((sum, joint) => sum + joint.getElasticEnergy(), 0);
+    }
+
+    static buildRelativeThetaMap(chain) {
+        const result = {};
+        if (!(chain instanceof Chain) || !Array.isArray(chain.links)) return result;
+
+        const bySegment = new Map();
+        chain.links.forEach((link) => {
+            const segmentIndex = link.metadata?.segmentIndex;
+            if (Number.isInteger(segmentIndex)) {
+                bySegment.set(segmentIndex, link);
+            }
+        });
+
+        const sorted = Array.from(bySegment.keys()).sort((a, b) => a - b);
+        for (let i = 1; i < sorted.length; i++) {
+            const prevLink = bySegment.get(sorted[i - 1]);
+            const nextLink = bySegment.get(sorted[i]);
+            if (!(prevLink instanceof Link) || !(nextLink instanceof Link)) continue;
+            result[sorted[i]] = nextLink.theta - prevLink.theta;
+        }
+
+        return result;
+    }
+
+    static fromTwinChains(options = {}) {
+        const chainA = options.chainA instanceof Chain ? options.chainA : null;
+        const chainB = options.chainB instanceof Chain ? options.chainB : null;
+        const jointTheta = Number.isFinite(options.jointTheta) ? options.jointTheta : 0;
+
+        const initialMapA = options.initialThetaBySegmentA || Mechanism.buildRelativeThetaMap(chainA);
+        const finalMapA = options.finalThetaBySegmentA || initialMapA;
+        const initialMapB = options.initialThetaBySegmentB || Mechanism.buildRelativeThetaMap(chainB);
+        const finalMapB = options.finalThetaBySegmentB || initialMapB;
+        const kByJointIndex = options.kByJointIndex || {};
+
+        const bySegmentA = new Map();
+        const bySegmentB = new Map();
+        if (chainA instanceof Chain) {
+            chainA.links.forEach((link) => {
+                const idx = link.metadata?.segmentIndex;
+                if (Number.isInteger(idx)) bySegmentA.set(idx, link);
+            });
+        }
+        if (chainB instanceof Chain) {
+            chainB.links.forEach((link) => {
+                const idx = link.metadata?.segmentIndex;
+                if (Number.isInteger(idx)) bySegmentB.set(idx, link);
+            });
+        }
+
+        const allSegments = Array.from(new Set([...bySegmentA.keys(), ...bySegmentB.keys()])).sort((a, b) => a - b);
+        const joints = [];
+
+        for (let i = 1; i < allSegments.length; i++) {
+            const prevSeg = allSegments[i - 1];
+            const nextSeg = allSegments[i];
+
+            const prevLinkA = bySegmentA.get(prevSeg) || null;
+            const nextLinkA = bySegmentA.get(nextSeg) || null;
+            const prevLinkB = bySegmentB.get(prevSeg) || null;
+            const nextLinkB = bySegmentB.get(nextSeg) || null;
+
+            if (!nextLinkA && !nextLinkB) continue;
+
+            const jointIndex = joints.length;
+            const k = Number.isFinite(kByJointIndex[jointIndex]) ? kByJointIndex[jointIndex] : 1;
+
+            joints.push(new Joint({
+                k,
+                initialTheta: 0,
+                finalTheta: 1,
+                theta: jointTheta,
+                prevLinkA,
+                nextLinkA,
+                prevLinkB,
+                nextLinkB,
+                initialMechanismThetaA: Number.isFinite(initialMapA[nextSeg]) ? initialMapA[nextSeg] : 0,
+                finalMechanismThetaA: Number.isFinite(finalMapA[nextSeg]) ? finalMapA[nextSeg] : (Number.isFinite(initialMapA[nextSeg]) ? initialMapA[nextSeg] : 0),
+                initialMechanismThetaB: Number.isFinite(initialMapB[nextSeg]) ? initialMapB[nextSeg] : 0,
+                finalMechanismThetaB: Number.isFinite(finalMapB[nextSeg]) ? finalMapB[nextSeg] : (Number.isFinite(initialMapB[nextSeg]) ? initialMapB[nextSeg] : 0)
+            }));
+        }
+
+        return new Mechanism({
+            chains: [chainA, chainB].filter(Boolean),
+            joints
+        });
+    }
+}
+
 window.Link = Link;
 window.Chain = Chain;
-window.Mechanism = Chain;
+window.Joint = Joint;
+window.Mechanism = Mechanism;

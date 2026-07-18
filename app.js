@@ -177,7 +177,8 @@ function markCurrentFrameChainDirty() {
 function makeMechanismFrameBundle(mechanism1 = null, mechanism2 = null) {
     return {
         mechanism1: mechanism1 instanceof Chain ? mechanism1 : null,
-        mechanism2: mechanism2 instanceof Chain ? mechanism2 : null
+        mechanism2: mechanism2 instanceof Chain ? mechanism2 : null,
+        mechanism: null
     };
 }
 
@@ -190,11 +191,52 @@ function normalizeMechanismFrameBundle(value) {
         return makeMechanismFrameBundle(value, null);
     }
 
-    return makeMechanismFrameBundle(value.mechanism1, value.mechanism2);
+    const bundle = makeMechanismFrameBundle(value.mechanism1, value.mechanism2);
+    if (value.mechanism instanceof Mechanism) {
+        bundle.mechanism = value.mechanism;
+    }
+    return bundle;
+}
+
+function buildJointMechanismForBundle(bundle, frameIndex = currentFrameIndex) {
+    if (!bundle || (!(bundle.mechanism1 instanceof Chain) && !(bundle.mechanism2 instanceof Chain))) {
+        return new Mechanism({ chains: [], joints: [] });
+    }
+
+    const frameIndices = series.getFrameIndices().sort((a, b) => a - b);
+    const firstFrameIndex = frameIndices[0];
+    const lastFrameIndex = frameIndices[frameIndices.length - 1];
+    let jointTheta = 0;
+    if (Number.isFinite(firstFrameIndex) && Number.isFinite(lastFrameIndex) && lastFrameIndex > firstFrameIndex) {
+        const t = (frameIndex - firstFrameIndex) / (lastFrameIndex - firstFrameIndex);
+        jointTheta = Math.min(1, Math.max(0, t));
+    }
+
+    const firstBundle = normalizeMechanismFrameBundle(
+        series.getMechanism(firstFrameIndex) || frameChains[firstFrameIndex] || null
+    );
+    const lastBundle = normalizeMechanismFrameBundle(
+        series.getMechanism(lastFrameIndex) || frameChains[lastFrameIndex] || null
+    );
+
+    return Mechanism.fromTwinChains({
+        chainA: bundle.mechanism1,
+        chainB: bundle.mechanism2,
+        initialThetaBySegmentA: Mechanism.buildRelativeThetaMap(firstBundle.mechanism1 || bundle.mechanism1),
+        finalThetaBySegmentA: Mechanism.buildRelativeThetaMap(lastBundle.mechanism1 || firstBundle.mechanism1 || bundle.mechanism1),
+        initialThetaBySegmentB: Mechanism.buildRelativeThetaMap(firstBundle.mechanism2 || bundle.mechanism2),
+        finalThetaBySegmentB: Mechanism.buildRelativeThetaMap(lastBundle.mechanism2 || firstBundle.mechanism2 || bundle.mechanism2),
+        jointTheta,
+        kByJointIndex: jointKByIndex
+    });
 }
 
 function getCurrentMechanismBundle() {
-    return normalizeMechanismFrameBundle(series.getMechanism(currentFrameIndex) || frameChains[currentFrameIndex] || null);
+    const bundle = normalizeMechanismFrameBundle(series.getMechanism(currentFrameIndex) || frameChains[currentFrameIndex] || null);
+    if (!(bundle.mechanism instanceof Mechanism)) {
+        bundle.mechanism = buildJointMechanismForBundle(bundle, currentFrameIndex);
+    }
+    return bundle;
 }
 
 function hasRenderableChain() {
@@ -779,6 +821,7 @@ window.appActions = {
     },
     setChainForFrame: (frameIndex, chain, isBuilt) => {
         const bundle = normalizeMechanismFrameBundle(chain);
+        bundle.mechanism = buildJointMechanismForBundle(bundle, frameIndex);
         series.setMechanism(frameIndex, bundle);
         frameChains[frameIndex] = bundle;
         if (isBuilt !== undefined) frameChainBuilt[frameIndex] = isBuilt;
@@ -891,6 +934,68 @@ window.appActions = {
         redrawAll();
     },
     getCompanionSlack: () => companionSlack,
+    getJointCount: () => {
+        const bundle = getCurrentMechanismBundle();
+        return bundle.mechanism instanceof Mechanism ? bundle.mechanism.joints.length : 0;
+    },
+    getJointK: (index) => {
+        const i = Number.parseInt(index, 10);
+        if (!Number.isInteger(i) || i < 0) return 1;
+        const stored = Number(jointKByIndex[i]);
+        if (Number.isFinite(stored) && stored > 0) return stored;
+
+        const bundle = getCurrentMechanismBundle();
+        const joint = bundle.mechanism?.joints?.[i];
+        return Number.isFinite(joint?.k) ? joint.k : 1;
+    },
+    setJointK: (index, value) => {
+        const i = Number.parseInt(index, 10);
+        const k = Number.parseFloat(value);
+        if (!Number.isInteger(i) || i < 0 || !Number.isFinite(k) || k <= 0) return;
+        jointKByIndex[i] = k;
+
+        Object.entries(frameChains).forEach(([key, entry]) => {
+            const frameIndex = Number.parseInt(key, 10);
+            const bundle = normalizeMechanismFrameBundle(entry);
+            if (!(bundle.mechanism instanceof Mechanism)) {
+                bundle.mechanism = buildJointMechanismForBundle(bundle, frameIndex);
+            }
+            const joint = bundle.mechanism.joints[i];
+            if (joint instanceof Joint) {
+                joint.setK(k);
+            }
+        });
+
+        emitChainStateChange();
+        redrawAll();
+    },
+    setJointKValues: (values) => {
+        Object.keys(jointKByIndex).forEach((key) => delete jointKByIndex[key]);
+        if (values && typeof values === 'object') {
+            Object.entries(values).forEach(([key, raw]) => {
+                const i = Number.parseInt(key, 10);
+                const k = Number(raw);
+                if (Number.isInteger(i) && i >= 0 && Number.isFinite(k) && k > 0) {
+                    jointKByIndex[i] = k;
+                }
+            });
+        }
+
+        Object.entries(frameChains).forEach(([key, entry]) => {
+            const frameIndex = Number.parseInt(key, 10);
+            const bundle = normalizeMechanismFrameBundle(entry);
+            bundle.mechanism = buildJointMechanismForBundle(bundle, frameIndex);
+        });
+
+        emitChainStateChange();
+        redrawAll();
+    },
+    calculateTotalElasticEnergy: () => {
+        const bundle = getCurrentMechanismBundle();
+        return bundle.mechanism instanceof Mechanism
+            ? bundle.mechanism.calculateTotalElasticEnergy()
+            : 0;
+    },
     markMechanismNeedsRegeneration: () => {
         mechanismNeedsRegeneration = true;
         emitChainStateChange();

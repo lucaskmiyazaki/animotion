@@ -528,6 +528,19 @@ chainOptionsSection.append(
     advancedChainDetails
 );
 
+// Cleanup for older UI state: remove any legacy energy row that was rendered
+// outside the Advanced details block.
+function removeLegacyMechanismEnergyField() {
+    chainOptionsSection.querySelectorAll('.energy-display').forEach((node) => {
+        const text = (node.textContent || '').trim();
+        if (text.startsWith('Total Elastic Energy:')) {
+            node.remove();
+        }
+    });
+}
+
+removeLegacyMechanismEnergyField();
+
 
 
 const frameControl = document.createElement('div');
