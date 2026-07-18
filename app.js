@@ -858,6 +858,43 @@ window.appActions = {
         redrawAll();
     },
     getJointsEnabled: () => jointsEnabled,
+    setChainThickness: (value) => {
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed) || parsed <= 0) return;
+        chainThickness = parsed;
+        mechanismNeedsRegeneration = true;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getChainThickness: () => chainThickness,
+    setJointMinimumThickness: (value) => {
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed) || parsed <= 0) return;
+        jointMinimumThickness = parsed;
+        mechanismNeedsRegeneration = true;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getJointMinimumThickness: () => jointMinimumThickness,
+    setCompanionSlack: (value) => {
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return;
+        companionSlack = parsed;
+        mechanismNeedsRegeneration = true;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getCompanionSlack: () => companionSlack,
+    markMechanismNeedsRegeneration: () => {
+        mechanismNeedsRegeneration = true;
+        emitChainStateChange();
+        redrawAll();
+    },
+    clearMechanismNeedsRegeneration: () => {
+        mechanismNeedsRegeneration = false;
+        emitChainStateChange();
+        redrawAll();
+    },
     setCompanionEnabled: (enabled) => {
         mechanism2Visible = Boolean(enabled);
         emitChainStateChange();
