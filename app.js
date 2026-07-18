@@ -478,8 +478,8 @@ function redrawAll() {
         const bundle = getCurrentMechanismBundle();
         if (mechanism1Visible) {
             bundle.mechanism1?.drawWhole?.(canvasView.getContext(), {
-                strokeStyle: 'rgba(57, 166, 255, 0.95)',
-                fillStyle: 'rgba(57, 166, 255, 0.14)',
+                strokeStyle: 'rgba(34, 197, 94, 0.95)',
+                fillStyle: 'rgba(34, 197, 94, 0.14)',
                 lineWidth: 2,
                 showHoles: holeEnabled,
                 holeStrokeStyle: 'rgba(255, 80, 170, 0.95)',
@@ -488,11 +488,11 @@ function redrawAll() {
         }
         if (mechanism2Visible) {
             bundle.mechanism2?.drawWhole?.(canvasView.getContext(), {
-                strokeStyle: 'rgba(255, 145, 72, 0.95)',
-                fillStyle: 'rgba(255, 145, 72, 0.16)',
+                strokeStyle: 'rgba(34, 197, 94, 0.95)',
+                fillStyle: 'rgba(34, 197, 94, 0.14)',
                 lineWidth: 2,
                 showHoles: holeEnabled,
-                holeStrokeStyle: 'rgba(255, 80, 170, 0.95)',
+                holeStrokeStyle: 'rgba(245, 130, 32, 0.95)',
                 holeLineWidth: 2
             });
         }
@@ -961,6 +961,16 @@ window.appActions = {
     calculateCurrentSkeletonLength: () => {
         const skeleton = series.getFrame(currentFrameIndex);
         return skeleton ? skeleton.getLength() : 0;
+    },
+    calculateHoleLineLengths: () => {
+        const bundle = getCurrentMechanismBundle();
+        const orangeLength = Number.isFinite(bundle.mechanism2?.getHoleLineLength?.())
+            ? bundle.mechanism2.getHoleLineLength()
+            : 0;
+        const pinkLength = Number.isFinite(bundle.mechanism1?.getHoleLineLength?.())
+            ? bundle.mechanism1.getHoleLineLength()
+            : 0;
+        return { orangeLength, pinkLength };
     }
 };
 

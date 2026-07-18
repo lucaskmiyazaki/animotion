@@ -452,12 +452,12 @@ energyDisplay.textContent = 'Elastic Energy: 0';
 
 const lineLengthDisplay = document.createElement('div');
 lineLengthDisplay.className = 'energy-display';
-lineLengthDisplay.textContent = 'Orange dL: 0';
+lineLengthDisplay.textContent = 'Orange L: 0';
 lineLengthDisplay.style.color = '#f58220';
 
 const companionLineLengthDisplay = document.createElement('div');
 companionLineLengthDisplay.className = 'energy-display';
-companionLineLengthDisplay.textContent = 'Pink dL: 0';
+companionLineLengthDisplay.textContent = 'Pink L: 0';
 companionLineLengthDisplay.style.color = '#f550aa';
 
 const skeletonLengthDisplay = document.createElement('div');
@@ -485,15 +485,15 @@ advancedChainContent.className = 'advanced-content';
 
 function updateEnergyAndLengthDisplay() {
     const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
-    const lineDeltas = window.appActions?.calculateLineLengthDeltas?.() ?? { orangeDelta: 0, pinkDelta: 0 };
-    const orangeDelta = Number.isFinite(lineDeltas.orangeDelta) ? lineDeltas.orangeDelta : 0;
-    const pinkDelta = Number.isFinite(lineDeltas.pinkDelta) ? lineDeltas.pinkDelta : 0;
+    const holeLengths = window.appActions?.calculateHoleLineLengths?.() ?? { orangeLength: 0, pinkLength: 0 };
+    const orangeLength = Number.isFinite(holeLengths.orangeLength) ? holeLengths.orangeLength : 0;
+    const pinkLength = Number.isFinite(holeLengths.pinkLength) ? holeLengths.pinkLength : 0;
     const skeletonLength = window.appActions?.calculateCurrentSkeletonLength?.() ?? 0;
     const jointThicknesses = window.appActions?.getJointThicknesses?.() ?? [];
     const companionJointWarning = window.appActions?.getCompanionJointWarning?.() ?? '';
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
-    lineLengthDisplay.textContent = `Orange dL (max - current): ${orangeDelta.toFixed(2)}`;
-    companionLineLengthDisplay.textContent = `Pink dL (max - current): ${pinkDelta.toFixed(2)}`;
+    lineLengthDisplay.textContent = `Orange L: ${orangeLength.toFixed(2)}`;
+    companionLineLengthDisplay.textContent = `Pink L: ${pinkLength.toFixed(2)}`;
     skeletonLengthDisplay.textContent = `Skeleton Length: ${skeletonLength.toFixed(2)}`;
     jointThicknessDisplay.textContent = jointThicknesses.length > 0
         ? `Joint Thicknesses: ${jointThicknesses.map(v => v.toFixed(2)).join(', ')}`

@@ -428,45 +428,69 @@ class Mechanism {
         };
     }
 
-    drawHoles(ctx, options = {}) {
-        if (!ctx || !Array.isArray(this.links) || this.links.length === 0) return;
+    _getHoleCenterLines() {
+        if (!Array.isArray(this.links) || this.links.length === 0) {
+            return [];
+        }
 
-        const strokeStyle = options.holeStrokeStyle || 'rgba(255, 80, 170, 0.95)';
-        const lineWidth = Number.isFinite(options.holeLineWidth) ? options.holeLineWidth : 2;
-
-        const centerLines = this.links
+        return this.links
             .map((link) => this._computeCenterLineForLink(link))
             .filter(Boolean);
+    }
 
-        if (centerLines.length === 0) return;
-
+    static _nearestEndpointsBetweenLines(lineA, lineB) {
         const distSq = (a, b) => {
             const dx = a.x - b.x;
             const dy = a.y - b.y;
             return dx * dx + dy * dy;
         };
 
-        const nearestEndpoints = (lineA, lineB) => {
-            const candidates = [
-                { a: lineA.start, b: lineB.start },
-                { a: lineA.start, b: lineB.end },
-                { a: lineA.end, b: lineB.start },
-                { a: lineA.end, b: lineB.end }
-            ];
+        const candidates = [
+            { a: lineA.start, b: lineB.start },
+            { a: lineA.start, b: lineB.end },
+            { a: lineA.end, b: lineB.start },
+            { a: lineA.end, b: lineB.end }
+        ];
 
-            let best = candidates[0];
-            let bestScore = distSq(best.a, best.b);
+        let best = candidates[0];
+        let bestScore = distSq(best.a, best.b);
 
-            for (let i = 1; i < candidates.length; i++) {
-                const score = distSq(candidates[i].a, candidates[i].b);
-                if (score < bestScore) {
-                    best = candidates[i];
-                    bestScore = score;
-                }
+        for (let i = 1; i < candidates.length; i++) {
+            const score = distSq(candidates[i].a, candidates[i].b);
+            if (score < bestScore) {
+                best = candidates[i];
+                bestScore = score;
             }
+        }
 
-            return best;
-        };
+        return best;
+    }
+
+    getHoleLineLength() {
+        const centerLines = this._getHoleCenterLines();
+        if (centerLines.length === 0) return 0;
+
+        const segmentLength = (line) => Math.hypot(line.end.x - line.start.x, line.end.y - line.start.y);
+
+        let total = centerLines.reduce((acc, line) => acc + segmentLength(line), 0);
+
+        for (let i = 0; i < centerLines.length - 1; i++) {
+            const pair = Mechanism._nearestEndpointsBetweenLines(centerLines[i], centerLines[i + 1]);
+            total += Math.hypot(pair.b.x - pair.a.x, pair.b.y - pair.a.y);
+        }
+
+        return total;
+    }
+
+    drawHoles(ctx, options = {}) {
+        if (!ctx || !Array.isArray(this.links) || this.links.length === 0) return;
+
+        const strokeStyle = options.holeStrokeStyle || 'rgba(255, 80, 170, 0.95)';
+        const lineWidth = Number.isFinite(options.holeLineWidth) ? options.holeLineWidth : 2;
+
+        const centerLines = this._getHoleCenterLines();
+
+        if (centerLines.length === 0) return;
 
         ctx.save();
         ctx.strokeStyle = strokeStyle;
@@ -482,7 +506,7 @@ class Mechanism {
 
         // Draw lines connecting consecutive center lines.
         for (let i = 0; i < centerLines.length - 1; i++) {
-            const pair = nearestEndpoints(centerLines[i], centerLines[i + 1]);
+            const pair = Mechanism._nearestEndpointsBetweenLines(centerLines[i], centerLines[i + 1]);
             ctx.beginPath();
             ctx.moveTo(pair.a.x, pair.a.y);
             ctx.lineTo(pair.b.x, pair.b.y);
