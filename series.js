@@ -452,6 +452,149 @@ class Series {
         };
     }
 
+    buildJointMechanismForBundle(bundle, options = {}) {
+        const frameIndex = Number.isInteger(options.frameIndex) ? options.frameIndex : 0;
+        const jointKByIndex = options.jointKByIndex && typeof options.jointKByIndex === 'object'
+            ? options.jointKByIndex
+            : {};
+
+        const ChainCtor = options.ChainCtor || window.Chain || null;
+        const MechanismCtor = options.MechanismCtor || window.Mechanism || null;
+
+        if (!MechanismCtor) return null;
+
+        if (!ChainCtor || (!(bundle?.mechanism1 instanceof ChainCtor) && !(bundle?.mechanism2 instanceof ChainCtor))) {
+            return new MechanismCtor({ chains: [], joints: [] });
+        }
+
+        const frameIndices = this.getFrameIndices().sort((a, b) => a - b);
+        const firstFrameIndex = frameIndices[0];
+        const lastFrameIndex = frameIndices[frameIndices.length - 1];
+
+        let jointTheta = 0;
+        if (Number.isFinite(firstFrameIndex) && Number.isFinite(lastFrameIndex) && lastFrameIndex > firstFrameIndex) {
+            const t = (frameIndex - firstFrameIndex) / (lastFrameIndex - firstFrameIndex);
+            jointTheta = Math.min(1, Math.max(0, t));
+        }
+
+        const firstBundle = this.getMechanism(firstFrameIndex) || null;
+        const lastBundle = this.getMechanism(lastFrameIndex) || null;
+
+        const mapAInitial = MechanismCtor.buildRelativeThetaMap(firstBundle?.mechanism1 || bundle.mechanism1);
+        const mapAFinal = MechanismCtor.buildRelativeThetaMap(lastBundle?.mechanism1 || firstBundle?.mechanism1 || bundle.mechanism1);
+        const mapBInitial = MechanismCtor.buildRelativeThetaMap(firstBundle?.mechanism2 || bundle.mechanism2);
+        const mapBFinal = MechanismCtor.buildRelativeThetaMap(lastBundle?.mechanism2 || firstBundle?.mechanism2 || bundle.mechanism2);
+
+        return MechanismCtor.fromTwinChains({
+            chainA: bundle.mechanism1,
+            chainB: bundle.mechanism2,
+            initialThetaBySegmentA: mapAInitial,
+            finalThetaBySegmentA: mapAFinal,
+            initialThetaBySegmentB: mapBInitial,
+            finalThetaBySegmentB: mapBFinal,
+            jointTheta,
+            kByJointIndex: jointKByIndex
+        });
+    }
+
+    createMechanisms(options = {}) {
+        const ChainCtor = options.ChainCtor || window.Chain || null;
+        const MechanismCtor = options.MechanismCtor || window.Mechanism || null;
+        const pivotRadius = Number.isFinite(options.chainThickness) ? options.chainThickness : 50;
+        const jointKByIndex = options.jointKByIndex && typeof options.jointKByIndex === 'object'
+            ? options.jointKByIndex
+            : {};
+
+        const makeBundle = (mechanism1 = null, mechanism2 = null) => ({
+            mechanism1: ChainCtor && mechanism1 instanceof ChainCtor ? mechanism1 : null,
+            mechanism2: ChainCtor && mechanism2 instanceof ChainCtor ? mechanism2 : null,
+            mechanism: null
+        });
+
+        const frameIndices = this.getFrameIndices().sort((a, b) => a - b);
+        if (!ChainCtor || !MechanismCtor || frameIndices.length === 0) {
+            this.clearAllMechanisms();
+            return {
+                builtFrameIndices: [],
+                displayedFrameIndex: 0,
+                displayedBundle: makeBundle(null, null)
+            };
+        }
+
+        this.clearAllMechanisms();
+
+        const startFrameIndex = frameIndices[0];
+        const endFrameIndex = frameIndices[frameIndices.length - 1];
+        const startSkeleton = this.getFrame(startFrameIndex);
+        const endSkeleton = this.getFrame(endFrameIndex);
+
+        const mechanism1Initial = new ChainCtor();
+        mechanism1Initial.generateFromSeries(this, {
+            frameIndex: startFrameIndex,
+            pivotKind: 'ref1',
+            pivotRadius
+        });
+
+        const mechanism2LastFrame = new ChainCtor();
+        mechanism2LastFrame.generateFromSeries(this, {
+            frameIndex: endFrameIndex,
+            pivotKind: 'ref2',
+            pivotRadius
+        });
+
+        let mechanism2Initial = mechanism2LastFrame.clone();
+        if (startSkeleton && endSkeleton && mechanism2Initial.links.length > 0) {
+            mechanism2Initial.poseToSkeleton(endSkeleton, startSkeleton);
+            mechanism2Initial = mechanism2Initial.rebaseToCurrentPose();
+        }
+
+        ChainCtor.pairTwinLinks(mechanism1Initial, mechanism2Initial);
+
+        const startBundle = makeBundle(mechanism1Initial, mechanism2Initial);
+        startBundle.mechanism = this.buildJointMechanismForBundle(startBundle, {
+            frameIndex: startFrameIndex,
+            jointKByIndex,
+            ChainCtor,
+            MechanismCtor
+        });
+        this.setMechanism(startFrameIndex, startBundle);
+
+        let displayedFrameIndex = startFrameIndex;
+        let displayedBundle = startBundle;
+        const builtFrameIndices = [startFrameIndex];
+
+        if (endFrameIndex !== startFrameIndex && startSkeleton && endSkeleton) {
+            const mechanism1Last = mechanism1Initial.clone();
+            if (mechanism1Last.links.length > 0) {
+                mechanism1Last.poseToSkeleton(startSkeleton, endSkeleton);
+            }
+
+            const mechanism2Last = mechanism2LastFrame.clone();
+            ChainCtor.pairTwinLinks(mechanism1Last, mechanism2Last);
+
+            const endBundle = makeBundle(mechanism1Last, mechanism2Last);
+            endBundle.mechanism = this.buildJointMechanismForBundle(endBundle, {
+                frameIndex: endFrameIndex,
+                jointKByIndex,
+                ChainCtor,
+                MechanismCtor
+            });
+
+            this.setMechanism(endFrameIndex, endBundle);
+            displayedFrameIndex = endFrameIndex;
+            displayedBundle = endBundle;
+            builtFrameIndices.push(endFrameIndex);
+        }
+
+        return {
+            builtFrameIndices,
+            displayedFrameIndex,
+            displayedBundle,
+            startFrameIndex,
+            endFrameIndex
+        };
+    }
+
     compareInitialToLastFrameAngles(options = {}) {
         const epsilon = Number.isFinite(options.epsilon) ? options.epsilon : 1e-4;
         const indices = this.getFrameIndices().sort((a, b) => a - b);

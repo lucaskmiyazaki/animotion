@@ -199,36 +199,12 @@ function normalizeMechanismFrameBundle(value) {
 }
 
 function buildJointMechanismForBundle(bundle, frameIndex = currentFrameIndex) {
-    if (!bundle || (!(bundle.mechanism1 instanceof Chain) && !(bundle.mechanism2 instanceof Chain))) {
-        return new Mechanism({ chains: [], joints: [] });
-    }
-
-    const frameIndices = series.getFrameIndices().sort((a, b) => a - b);
-    const firstFrameIndex = frameIndices[0];
-    const lastFrameIndex = frameIndices[frameIndices.length - 1];
-    let jointTheta = 0;
-    if (Number.isFinite(firstFrameIndex) && Number.isFinite(lastFrameIndex) && lastFrameIndex > firstFrameIndex) {
-        const t = (frameIndex - firstFrameIndex) / (lastFrameIndex - firstFrameIndex);
-        jointTheta = Math.min(1, Math.max(0, t));
-    }
-
-    const firstBundle = normalizeMechanismFrameBundle(
-        series.getMechanism(firstFrameIndex) || frameChains[firstFrameIndex] || null
-    );
-    const lastBundle = normalizeMechanismFrameBundle(
-        series.getMechanism(lastFrameIndex) || frameChains[lastFrameIndex] || null
-    );
-
-    return Mechanism.fromTwinChains({
-        chainA: bundle.mechanism1,
-        chainB: bundle.mechanism2,
-        initialThetaBySegmentA: Mechanism.buildRelativeThetaMap(firstBundle.mechanism1 || bundle.mechanism1),
-        finalThetaBySegmentA: Mechanism.buildRelativeThetaMap(lastBundle.mechanism1 || firstBundle.mechanism1 || bundle.mechanism1),
-        initialThetaBySegmentB: Mechanism.buildRelativeThetaMap(firstBundle.mechanism2 || bundle.mechanism2),
-        finalThetaBySegmentB: Mechanism.buildRelativeThetaMap(lastBundle.mechanism2 || firstBundle.mechanism2 || bundle.mechanism2),
-        jointTheta,
-        kByJointIndex: jointKByIndex
-    });
+    return series.buildJointMechanismForBundle(bundle, {
+        frameIndex,
+        jointKByIndex,
+        ChainCtor: Chain,
+        MechanismCtor: Mechanism
+    }) || new Mechanism({ chains: [], joints: [] });
 }
 
 function getCurrentMechanismBundle() {
@@ -249,73 +225,31 @@ function hasRenderableChain() {
 }
 
 function buildChain() {
-    const frameIndices = series.getFrameIndices().sort((a, b) => a - b);
-    if (frameIndices.length === 0) {
-        return new Chain();
-    }
-
-    series.clearAllMechanisms();
     Object.keys(frameChains).forEach((key) => delete frameChains[key]);
     Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
 
-    const startFrameIndex = frameIndices[0];
-    const endFrameIndex = frameIndices[frameIndices.length - 1];
-    const startSkeleton = series.getFrame(startFrameIndex);
-    const endSkeleton = series.getFrame(endFrameIndex);
-
-    const mechanism1Initial = new Chain();
-    mechanism1Initial.generateFromSeries(series, {
-        frameIndex: startFrameIndex,
-        pivotKind: 'ref1',
-        pivotRadius: chainThickness
+    const created = series.createMechanisms({
+        chainThickness,
+        jointKByIndex,
+        ChainCtor: Chain,
+        MechanismCtor: Mechanism
     });
 
-    const mechanism2LastFrame = new Chain();
-    mechanism2LastFrame.generateFromSeries(series, {
-        frameIndex: endFrameIndex,
-        pivotKind: 'ref2',
-        pivotRadius: chainThickness
+    const storedMechanisms = series.getMechanismFrameStore();
+    Object.entries(storedMechanisms).forEach(([key, bundle]) => {
+        frameChains[key] = bundle;
+        frameChainBuilt[key] = Boolean(
+            (bundle?.mechanism1?.links?.length || 0) > 0
+            || (bundle?.mechanism2?.links?.length || 0) > 0
+        );
     });
 
-    let mechanism2Initial = mechanism2LastFrame.clone();
-    if (startSkeleton && endSkeleton && mechanism2Initial.links.length > 0) {
-        mechanism2Initial.poseToSkeleton(endSkeleton, startSkeleton);
-        mechanism2Initial = mechanism2Initial.rebaseToCurrentPose();
-    }
-
-    Chain.pairTwinLinks(mechanism1Initial, mechanism2Initial);
-
-    const startBundle = makeMechanismFrameBundle(mechanism1Initial, mechanism2Initial);
-    series.setMechanism(startFrameIndex, startBundle);
-    frameChains[startFrameIndex] = startBundle;
-    frameChainBuilt[startFrameIndex] = Boolean(
-        (startBundle.mechanism1?.links?.length || 0) > 0
-        || (startBundle.mechanism2?.links?.length || 0) > 0
+    const displayedFrameIndex = Number.isInteger(created?.displayedFrameIndex)
+        ? created.displayedFrameIndex
+        : (series.getFrameIndices().sort((a, b) => a - b).at(-1) || 0);
+    const displayedBundle = normalizeMechanismFrameBundle(
+        created?.displayedBundle || series.getMechanism(displayedFrameIndex) || null
     );
-
-    let displayedFrameIndex = startFrameIndex;
-    let displayedBundle = startBundle;
-
-    if (
-        endFrameIndex !== startFrameIndex
-        && startSkeleton
-        && endSkeleton
-    ) {
-        const mechanism1Last = mechanism1Initial.clone();
-        if (mechanism1Last.links.length > 0) {
-            mechanism1Last.poseToSkeleton(startSkeleton, endSkeleton);
-        }
-
-        const mechanism2Last = mechanism2LastFrame.clone();
-
-        Chain.pairTwinLinks(mechanism1Last, mechanism2Last);
-        const endBundle = makeMechanismFrameBundle(mechanism1Last, mechanism2Last);
-        series.setMechanism(endFrameIndex, endBundle);
-        frameChains[endFrameIndex] = endBundle;
-        frameChainBuilt[endFrameIndex] = true;
-        displayedFrameIndex = endFrameIndex;
-        displayedBundle = endBundle;
-    }
 
     mechanismNeedsRegeneration = false;
     setCurrentFrame(displayedFrameIndex);
