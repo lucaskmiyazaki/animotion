@@ -176,7 +176,33 @@ function emitModeChange() {
 function markCurrentFrameChainDirty() {
     delete frameChains[currentFrameIndex];
     delete frameChainBuilt[currentFrameIndex];
+    mechanismNeedsRegeneration = true;
     emitChainStateChange();
+}
+
+function getCurrentMechanism() {
+    return frameChains[currentFrameIndex] || null;
+}
+
+function hasRenderableChain() {
+    const mechanism = getCurrentMechanism();
+    return Boolean(mechanism && Array.isArray(mechanism.links) && mechanism.links.length > 0);
+}
+
+function buildChain() {
+    const mechanism = new Mechanism();
+    mechanism.generateFromSeries(series, {
+        frameIndex: 0,
+        pivotRadius: chainThickness
+    });
+
+    frameChains[currentFrameIndex] = mechanism;
+    frameChainBuilt[currentFrameIndex] = mechanism.links.length > 0;
+    mechanismNeedsRegeneration = false;
+
+    emitChainStateChange();
+    redrawAll();
+    return mechanism;
 }
 
 function ensureCurrentSkeleton() {
@@ -369,6 +395,15 @@ canvas.addEventListener('mouseleave', () => {
 
 function redrawAll() {
     canvasView.clearViewport();
+
+    if (chainVisible && hasRenderableChain()) {
+        const mechanism = getCurrentMechanism();
+        mechanism?.draw?.(canvasView.getContext(), {
+            strokeStyle: 'rgba(57, 166, 255, 0.95)',
+            fillStyle: 'rgba(57, 166, 255, 0.14)',
+            lineWidth: 2
+        });
+    }
 
     if (skeletonVisible) {
         const skeleton = getCurrentSkeleton();
@@ -631,6 +666,14 @@ window.appActions = {
         });
     },
     deleteCurrentFrame,
+    buildChain,
+    hasRenderableChain,
+    getMechanismNeedsRegeneration: () => mechanismNeedsRegeneration,
+    findKsMinimizingChainSkeletonDistance: async () => {},
+    rebuildCachedChainPoses: () => {},
+    exportDXF: () => {
+        console.warn('Export DXF is not implemented for the new Mechanism model yet.');
+    },
     // Project state management
     getProjectStateRefs: exposeStateForSerialization,
     setSkeletonForFrame: (frameIndex, skeleton) => {
@@ -686,6 +729,33 @@ window.appActions = {
     },
     getSkeletonPivot2Visible: () => skeletonPivot2Visible,
     logPivotClosingDirections,
+    setChainVisible: (visible) => {
+        chainVisible = Boolean(visible);
+        emitChainStateChange();
+        redrawAll();
+    },
+    getChainVisible: () => chainVisible,
+    setHoleEnabled: (enabled) => {
+        holeEnabled = Boolean(enabled);
+        mechanismNeedsRegeneration = true;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getHoleEnabled: () => holeEnabled,
+    setJointsEnabled: (enabled) => {
+        jointsEnabled = Boolean(enabled);
+        mechanismNeedsRegeneration = true;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getJointsEnabled: () => jointsEnabled,
+    setCompanionEnabled: (enabled) => {
+        companionEnabled = Boolean(enabled);
+        mechanismNeedsRegeneration = true;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getCompanionEnabled: () => companionEnabled,
     setFramesVisible: (visible) => {
         window.videoControls?.setFramesVisible?.(Boolean(visible));
         emitChainStateChange();
