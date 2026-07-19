@@ -440,6 +440,87 @@ manualFillText.textContent = 'Manual fill k';
 
 manualFillLabel.append(manualFillCheckbox, manualFillText);
 
+const jointThetaDebugRow = document.createElement('div');
+jointThetaDebugRow.className = 'joint-k-row';
+
+const jointThetaDebugLabel = document.createElement('label');
+jointThetaDebugLabel.className = 'joint-k-label';
+jointThetaDebugLabel.textContent = 'Debug joint';
+
+const jointThetaDebugIndexInput = document.createElement('input');
+jointThetaDebugIndexInput.className = 'joint-k-input';
+jointThetaDebugIndexInput.type = 'number';
+jointThetaDebugIndexInput.min = '0';
+jointThetaDebugIndexInput.step = '1';
+jointThetaDebugIndexInput.value = '0';
+
+jointThetaDebugRow.append(jointThetaDebugLabel, jointThetaDebugIndexInput);
+
+const jointThetaSlider = document.createElement('input');
+jointThetaSlider.className = 'joint-k-input';
+jointThetaSlider.type = 'range';
+jointThetaSlider.min = '0';
+jointThetaSlider.max = '1';
+jointThetaSlider.step = '0.001';
+jointThetaSlider.value = '0';
+
+const jointThetaValueDisplay = document.createElement('div');
+jointThetaValueDisplay.className = 'energy-display';
+jointThetaValueDisplay.textContent = 'Joint theta: 0.000';
+
+function getDebugJointIndex() {
+    const parsed = Number.parseInt(jointThetaDebugIndexInput.value, 10);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function syncJointThetaDebugControls() {
+    const count = window.appActions?.getJointCount?.() ?? 0;
+    const hasJoint = count > 0;
+
+    jointThetaDebugIndexInput.max = String(Math.max(0, count - 1));
+    if (!hasJoint) {
+        jointThetaDebugIndexInput.value = '0';
+        jointThetaSlider.disabled = true;
+        jointThetaSlider.min = '0';
+        jointThetaSlider.max = '1';
+        jointThetaSlider.value = '0';
+        jointThetaValueDisplay.textContent = 'Joint theta: -';
+        return;
+    }
+
+    let index = getDebugJointIndex();
+    if (index >= count) {
+        index = count - 1;
+        jointThetaDebugIndexInput.value = String(index);
+    }
+
+    const bounds = window.appActions?.getJointThetaBounds?.(index) ?? { min: 0, max: 1 };
+    const min = Number.isFinite(bounds.min) ? bounds.min : 0;
+    const max = Number.isFinite(bounds.max) ? bounds.max : 1;
+    const theta = Number(window.appActions?.getJointTheta?.(index));
+    const safeTheta = Number.isFinite(theta) ? theta : min;
+
+    jointThetaSlider.disabled = false;
+    jointThetaSlider.min = String(Math.min(min, max));
+    jointThetaSlider.max = String(Math.max(min, max));
+    jointThetaSlider.value = String(safeTheta);
+    jointThetaValueDisplay.textContent = `Joint theta: ${safeTheta.toFixed(3)} (j${index + 1})`;
+}
+
+jointThetaDebugIndexInput.addEventListener('change', () => {
+    syncJointThetaDebugControls();
+});
+
+jointThetaSlider.addEventListener('input', () => {
+    const index = getDebugJointIndex();
+    const theta = Number.parseFloat(jointThetaSlider.value);
+    if (!Number.isFinite(theta)) return;
+    window.appActions?.setJointTheta?.(index, theta);
+    const displayed = Number(window.appActions?.getJointTheta?.(index));
+    const safeDisplayed = Number.isFinite(displayed) ? displayed : theta;
+    jointThetaValueDisplay.textContent = `Joint theta: ${safeDisplayed.toFixed(3)} (j${index + 1})`;
+});
+
 const regenerateWarning = document.createElement('div');
 regenerateWarning.className = 'energy-display';
 regenerateWarning.style.color = '#d97706';
@@ -500,11 +581,15 @@ function updateEnergyAndLengthDisplay() {
         : 'Joint Thicknesses: -';
     companionJointWarningDisplay.textContent = companionJointWarning ? `Companion Joint Warning: ${companionJointWarning}` : '';
     companionJointWarningDisplay.style.display = companionJointWarning ? '' : 'none';
+    syncJointThetaDebugControls();
 }
 
 advancedChainContent.append(
     manualFillLabel,
     jointKContainer,
+    jointThetaDebugRow,
+    jointThetaSlider,
+    jointThetaValueDisplay,
     regenerateWarning,
     energyDisplay,
     lineLengthDisplay,

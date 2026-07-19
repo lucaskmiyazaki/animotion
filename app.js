@@ -882,6 +882,47 @@ window.appActions = {
         const joint = bundle.mechanism?.joints?.[i];
         return Number.isFinite(joint?.k) ? joint.k : 1;
     },
+    getJointTheta: (index) => {
+        const i = Number.parseInt(index, 10);
+        if (!Number.isInteger(i) || i < 0) return 0;
+
+        const bundle = getCurrentMechanismBundle();
+        const joint = bundle.mechanism?.joints?.[i];
+        return Number.isFinite(joint?.theta) ? joint.theta : 0;
+    },
+    getJointThetaBounds: (index) => {
+        const i = Number.parseInt(index, 10);
+        if (!Number.isInteger(i) || i < 0) {
+            return { min: 0, max: 1 };
+        }
+
+        const bundle = getCurrentMechanismBundle();
+        const joint = bundle.mechanism?.joints?.[i];
+        const min = Number.isFinite(joint?.initialTheta) ? joint.initialTheta : 0;
+        const max = Number.isFinite(joint?.finalTheta) ? joint.finalTheta : 1;
+        return {
+            min: Math.min(min, max),
+            max: Math.max(min, max)
+        };
+    },
+    setJointTheta: (index, value) => {
+        const i = Number.parseInt(index, 10);
+        const theta = Number.parseFloat(value);
+        if (!Number.isInteger(i) || i < 0 || !Number.isFinite(theta)) return;
+
+        const bundle = getCurrentMechanismBundle();
+        if (!(bundle.mechanism instanceof Mechanism)) return;
+
+        const joint = bundle.mechanism.joints?.[i];
+        if (!(joint instanceof Joint)) return;
+
+        joint.setTheta(theta);
+        series.setMechanism(currentFrameIndex, bundle);
+        frameChains[currentFrameIndex] = bundle;
+
+        emitChainStateChange();
+        redrawAll();
+    },
     setJointK: (index, value) => {
         const i = Number.parseInt(index, 10);
         const k = Number.parseFloat(value);

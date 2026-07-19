@@ -545,23 +545,17 @@ class Series {
         let mechanism2Initial = mechanism2LastFrame.clone();
         if (startSkeleton && endSkeleton && mechanism2Initial.links.length > 0) {
             mechanism2Initial.poseToSkeleton(endSkeleton, startSkeleton);
-            mechanism2Initial = mechanism2Initial.rebaseToCurrentPose();
         }
 
         ChainCtor.pairTwinLinks(mechanism1Initial, mechanism2Initial);
 
         const startBundle = makeBundle(mechanism1Initial, mechanism2Initial);
-        startBundle.mechanism = this.buildJointMechanismForBundle(startBundle, {
-            frameIndex: startFrameIndex,
-            jointKByIndex,
-            ChainCtor,
-            MechanismCtor
-        });
         this.setMechanism(startFrameIndex, startBundle);
 
         let displayedFrameIndex = startFrameIndex;
         let displayedBundle = startBundle;
         const builtFrameIndices = [startFrameIndex];
+        let endBundle = null;
 
         if (endFrameIndex !== startFrameIndex && startSkeleton && endSkeleton) {
             const mechanism1Last = mechanism1Initial.clone();
@@ -572,18 +566,32 @@ class Series {
             const mechanism2Last = mechanism2LastFrame.clone();
             ChainCtor.pairTwinLinks(mechanism1Last, mechanism2Last);
 
-            const endBundle = makeBundle(mechanism1Last, mechanism2Last);
+            endBundle = makeBundle(mechanism1Last, mechanism2Last);
+            this.setMechanism(endFrameIndex, endBundle);
+            displayedFrameIndex = endFrameIndex;
+            displayedBundle = endBundle;
+            builtFrameIndices.push(endFrameIndex);
+        }
+
+        // Build mechanisms after endpoint bundles are registered so each frame
+        // sees both start and end references when constructing joint maps.
+        startBundle.mechanism = this.buildJointMechanismForBundle(startBundle, {
+            frameIndex: startFrameIndex,
+            jointKByIndex,
+            ChainCtor,
+            MechanismCtor
+        });
+        this.setMechanism(startFrameIndex, startBundle);
+
+        if (endBundle) {
             endBundle.mechanism = this.buildJointMechanismForBundle(endBundle, {
                 frameIndex: endFrameIndex,
                 jointKByIndex,
                 ChainCtor,
                 MechanismCtor
             });
-
             this.setMechanism(endFrameIndex, endBundle);
-            displayedFrameIndex = endFrameIndex;
             displayedBundle = endBundle;
-            builtFrameIndices.push(endFrameIndex);
         }
 
         return {
