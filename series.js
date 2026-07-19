@@ -509,10 +509,11 @@ class Series {
             ? options.optimizationOptions
             : {};
 
-        const makeBundle = (mechanism1 = null, mechanism2 = null) => ({
+        const makeBundle = (mechanism1 = null, mechanism2 = null, targetHoleLength = null) => ({
             mechanism1: ChainCtor && mechanism1 instanceof ChainCtor ? mechanism1 : null,
             mechanism2: ChainCtor && mechanism2 instanceof ChainCtor ? mechanism2 : null,
-            mechanism: null
+            mechanism: null,
+            targetHoleLength: Number.isFinite(targetHoleLength) ? targetHoleLength : null
         });
 
         const frameIndices = this.getFrameIndices().sort((a, b) => a - b);
@@ -613,15 +614,17 @@ class Series {
                 finalBundle: endBundle || startBundle
             });
 
+            let solveResult = null;
+
             if (mechanism instanceof MechanismCtor) {
-                mechanism.findMinimumEnergyPoseForHoleLength(targetHoleLength, {
+                solveResult = mechanism.findMinimumEnergyPoseForHoleLength(targetHoleLength, {
                     chainIndex: 1,
                     maxIterations: Number.isInteger(optimizationOptions.maxIterations)
                         ? optimizationOptions.maxIterations
-                        : 40,
+                        : 120,
                     lengthTolerance: Number.isFinite(optimizationOptions.lengthTolerance)
                         ? optimizationOptions.lengthTolerance
-                        : 0.5,
+                        : 0.25,
                     holeLengthWeight: Number.isFinite(optimizationOptions.holeLengthWeight)
                         ? optimizationOptions.holeLengthWeight
                         : 5,
@@ -630,15 +633,20 @@ class Series {
                         : 1e-3,
                     stepDecay: Number.isFinite(optimizationOptions.stepDecay)
                         ? optimizationOptions.stepDecay
-                        : 0.6
+                        : 0.6,
+                    hardConstraint: optimizationOptions.hardConstraint !== undefined
+                        ? Boolean(optimizationOptions.hardConstraint)
+                        : true
                 });
             }
 
             const solvedBundle = makeBundle(
                 mechanism?.chains?.[0] instanceof ChainCtor ? mechanism.chains[0] : baseBundle.mechanism1,
-                mechanism?.chains?.[1] instanceof ChainCtor ? mechanism.chains[1] : baseBundle.mechanism2
+                mechanism?.chains?.[1] instanceof ChainCtor ? mechanism.chains[1] : baseBundle.mechanism2,
+                targetHoleLength
             );
             solvedBundle.mechanism = mechanism;
+            solvedBundle.solveResult = solveResult;
             this.setMechanism(frameIndex, solvedBundle);
         });
 

@@ -1048,6 +1048,25 @@ window.appActions = {
             ? bundle.mechanism1.getHoleLineLength()
             : 0;
         return { orangeLength, pinkLength };
+    },
+    getCurrentTargetHoleLength: () => {
+        const frameBundle = series.getMechanism(currentFrameIndex);
+        const target = Number(frameBundle?.targetHoleLength);
+        return Number.isFinite(target) ? target : null;
+    },
+    getCurrentSolveDiagnostics: () => {
+        const frameBundle = series.getMechanism(currentFrameIndex);
+        const result = frameBundle?.solveResult;
+        if (!result || typeof result !== 'object') return null;
+
+        const lengthError = Number(result.lengthError);
+        const feasible = Boolean(result.feasible);
+        const converged = Boolean(result.converged);
+        return {
+            feasible,
+            converged,
+            lengthError: Number.isFinite(lengthError) ? lengthError : null
+        };
     }
 };
 
