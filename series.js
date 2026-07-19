@@ -505,9 +505,6 @@ class Series {
         const jointKByIndex = options.jointKByIndex && typeof options.jointKByIndex === 'object'
             ? options.jointKByIndex
             : {};
-        const optimizationOptions = options.optimizationOptions && typeof options.optimizationOptions === 'object'
-            ? options.optimizationOptions
-            : {};
 
         const makeBundle = (mechanism1 = null, mechanism2 = null, targetHoleLength = null) => ({
             mechanism1: ChainCtor && mechanism1 instanceof ChainCtor ? mechanism1 : null,
@@ -561,6 +558,7 @@ class Series {
         let displayedBundle = startBundle;
         const builtFrameIndices = frameIndices.slice();
         let endBundle = null;
+        let previousThetaVector = null;
 
         if (endFrameIndex !== startFrameIndex && startSkeleton && endSkeleton) {
             const mechanism1Last = mechanism1Initial.clone();
@@ -617,27 +615,11 @@ class Series {
             let solveResult = null;
 
             if (mechanism instanceof MechanismCtor) {
-                solveResult = mechanism.findMinimumEnergyPoseForHoleLength(targetHoleLength, {
-                    chainIndex: 1,
-                    maxIterations: Number.isInteger(optimizationOptions.maxIterations)
-                        ? optimizationOptions.maxIterations
-                        : 120,
-                    lengthTolerance: Number.isFinite(optimizationOptions.lengthTolerance)
-                        ? optimizationOptions.lengthTolerance
-                        : 0.25,
-                    holeLengthWeight: Number.isFinite(optimizationOptions.holeLengthWeight)
-                        ? optimizationOptions.holeLengthWeight
-                        : 5,
-                    minStep: Number.isFinite(optimizationOptions.minStep)
-                        ? optimizationOptions.minStep
-                        : 1e-3,
-                    stepDecay: Number.isFinite(optimizationOptions.stepDecay)
-                        ? optimizationOptions.stepDecay
-                        : 0.6,
-                    hardConstraint: optimizationOptions.hardConstraint !== undefined
-                        ? Boolean(optimizationOptions.hardConstraint)
-                        : true
+                const thetaSolve = mechanism.solveThetasForLength(targetHoleLength, {
+                    startFromInitial: frameIndex === startFrameIndex,
+                    warmStartThetaVector: frameIndex === startFrameIndex ? null : previousThetaVector
                 });
+                solveResult = thetaSolve?.result || null;
             }
 
             const solvedBundle = makeBundle(
@@ -648,6 +630,9 @@ class Series {
             solvedBundle.mechanism = mechanism;
             solvedBundle.solveResult = solveResult;
             this.setMechanism(frameIndex, solvedBundle);
+            previousThetaVector = Array.isArray(solveResult?.thetaVector)
+                ? solveResult.thetaVector.slice()
+                : null;
         });
 
         displayedBundle = this.getMechanism(displayedFrameIndex) || displayedBundle;

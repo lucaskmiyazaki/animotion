@@ -544,7 +544,7 @@ class Joint {
         // Joint theta domain (driver variable).
         this.initialTheta = Number.isFinite(options.initialTheta) ? options.initialTheta : 0;
         this.finalTheta = Number.isFinite(options.finalTheta) ? options.finalTheta : 1;
-        this.theta = Number.isFinite(options.theta) ? options.theta : 0;
+        this._theta = Number.isFinite(options.theta) ? options.theta : 0;
 
         // Connected links (previous and following links for both mechanisms).
         this.prevLinkA = options.prevLinkA instanceof Link ? options.prevLinkA : null;
@@ -569,9 +569,17 @@ class Joint {
             ? options.finalMechanismThetaB
             : this.initialMechanismThetaB;
 
-        this.theta = this._clampTheta(this.theta);
+        this._theta = this._clampTheta(this._theta);
         this._mechanism = null;
         this._index = -1;
+    }
+
+    get theta() {
+        return this._theta;
+    }
+
+    set theta(value) {
+        this._theta = this._clampTheta(value);
     }
 
     _readRelativeTheta(prevLink, nextLink) {
@@ -580,9 +588,11 @@ class Joint {
     }
 
     _clampTheta(value) {
-        if (!Number.isFinite(value)) return this.initialTheta;
-        const minTheta = Math.min(this.initialTheta, this.finalTheta);
-        const maxTheta = Math.max(this.initialTheta, this.finalTheta);
+        const initial = Number.isFinite(this.initialTheta) ? this.initialTheta : 0;
+        const final = Number.isFinite(this.finalTheta) ? this.finalTheta : initial;
+        if (!Number.isFinite(value)) return initial;
+        const minTheta = Math.min(initial, final);
+        const maxTheta = Math.max(initial, final);
         if (value < minTheta) return minTheta;
         if (value > maxTheta) return maxTheta;
         return value;
@@ -786,6 +796,10 @@ class Mechanism {
 
     static _isBetterForHardConstraint(candidate, currentBest, tolerance) {
         return window.MechanismOptimization.isBetterForHardConstraint(candidate, currentBest, tolerance);
+    }
+
+    solveThetasForLength(targetLength, options = {}) {
+        return window.MechanismOptimization.solveThetasForLength(this, targetLength, options);
     }
 
     findMinimumEnergyPoseForHoleLength(targetLength, options = {}) {
