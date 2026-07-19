@@ -876,11 +876,19 @@ class Mechanism {
             const jointIndex = joints.length;
             const k = Number.isFinite(kByJointIndex[jointIndex]) ? kByJointIndex[jointIndex] : 1;
 
+            const initialTheta = Number.isFinite(initialMapA[nextSeg])
+                ? initialMapA[nextSeg]
+                : (Number.isFinite(initialMapB[nextSeg]) ? initialMapB[nextSeg] : 0);
+            const finalTheta = Number.isFinite(finalMapA[nextSeg])
+                ? finalMapA[nextSeg]
+                : (Number.isFinite(finalMapB[nextSeg]) ? finalMapB[nextSeg] : initialTheta);
+            const theta = initialTheta + (finalTheta - initialTheta) * jointTheta;
+
             joints.push(new Joint({
                 k,
-                initialTheta: 0,
-                finalTheta: 1,
-                theta: jointTheta,
+                initialTheta,
+                finalTheta,
+                theta,
                 prevLinkA,
                 nextLinkA,
                 prevLinkB,

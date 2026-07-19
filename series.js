@@ -559,6 +559,7 @@ class Series {
         const builtFrameIndices = frameIndices.slice();
         let endBundle = null;
         let previousThetaVector = null;
+        let previousSolvedBundle = startBundle;
 
         if (endFrameIndex !== startFrameIndex && startSkeleton && endSkeleton) {
             const mechanism1Last = mechanism1Initial.clone();
@@ -601,7 +602,9 @@ class Series {
             const clampedT = Math.min(1, Math.max(0, t));
             const targetHoleLength = initialHoleLength + (finalHoleLength - initialHoleLength) * clampedT;
 
-            const baseBundle = cloneBundle(startBundle);
+            const baseBundle = frameIndex === startFrameIndex
+                ? cloneBundle(startBundle)
+                : cloneBundle(previousSolvedBundle || startBundle);
 
             const mechanism = this.buildJointMechanismForBundle(baseBundle, {
                 frameIndex,
@@ -616,6 +619,7 @@ class Series {
 
             if (mechanism instanceof MechanismCtor) {
                 const thetaSolve = mechanism.solveThetasForLength(targetHoleLength, {
+                    debugFrameIndex: frameIndex,
                     startFromInitial: frameIndex === startFrameIndex,
                     warmStartThetaVector: frameIndex === startFrameIndex ? null : previousThetaVector
                 });
@@ -630,6 +634,7 @@ class Series {
             solvedBundle.mechanism = mechanism;
             solvedBundle.solveResult = solveResult;
             this.setMechanism(frameIndex, solvedBundle);
+            previousSolvedBundle = solvedBundle;
             previousThetaVector = Array.isArray(solveResult?.thetaVector)
                 ? solveResult.thetaVector.slice()
                 : null;

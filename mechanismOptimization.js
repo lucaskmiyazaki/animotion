@@ -1,311 +1,403 @@
 (function attachMechanismOptimization(globalScope) {
-    const MechanismOptimization = {
-        capturePoseState(mechanism) {
-            const ChainCtor = globalScope.Chain;
-            return {
-                chains: (mechanism.chains || []).map((chain) => {
-                    if (!ChainCtor || !(chain instanceof ChainCtor) || !Array.isArray(chain.links)) return [];
-                    return chain.links.map((link) => ({
-                        x: link.position.x,
-                        y: link.position.y,
-                        theta: link.theta
-                    }));
-                }),
-                jointThetas: (mechanism.joints || []).map((joint) => joint.theta)
-            };
-        },
+	const EPS = 1e-12;
 
-        restorePoseState(mechanism, state) {
-            const ChainCtor = globalScope.Chain;
-            const LinkCtor = globalScope.Link;
-            const JointCtor = globalScope.Joint;
+	const MechanismOptimization = {
+		capturePoseState(mechanism) {
+			const ChainCtor = globalScope.Chain;
+			return {
+				chains: (mechanism.chains || []).map((chain) => {
+					if (!ChainCtor || !(chain instanceof ChainCtor) || !Array.isArray(chain.links)) return [];
+					return chain.links.map((link) => ({
+						x: link.position.x,
+						y: link.position.y,
+						theta: link.theta
+					}));
+				}),
+				jointThetas: (mechanism.joints || []).map((joint) => joint.theta)
+			};
+		},
 
-            if (!state || !Array.isArray(state.chains) || !Array.isArray(state.jointThetas)) return;
+		restorePoseState(mechanism, state) {
+			const JointCtor = globalScope.Joint;
 
-            (mechanism.chains || []).forEach((chain, chainIndex) => {
-                const chainState = state.chains[chainIndex];
-                if (!ChainCtor || !(chain instanceof ChainCtor) || !Array.isArray(chain.links) || !Array.isArray(chainState)) return;
+			if (!state || !Array.isArray(state.jointThetas)) return;
 
-                chain.links.forEach((link, linkIndex) => {
-                    const linkState = chainState[linkIndex];
-                    if (!LinkCtor || !(link instanceof LinkCtor) || !linkState) return;
-                    if (Number.isFinite(linkState.x)) link.position.x = linkState.x;
-                    if (Number.isFinite(linkState.y)) link.position.y = linkState.y;
-                    if (Number.isFinite(linkState.theta)) link.theta = linkState.theta;
-                });
-            });
+			const count = Math.min((mechanism.joints || []).length, state.jointThetas.length);
+			for (let i = 0; i < count; i++) {
+				const joint = mechanism.joints[i];
+				const theta = state.jointThetas[i];
+				if (!JointCtor || !(joint instanceof JointCtor) || !Number.isFinite(theta)) continue;
+				mechanism.setJointThetaByIndex(i, theta);
+			}
+		},
 
-            (mechanism.joints || []).forEach((joint, jointIndex) => {
-                const theta = state.jointThetas[jointIndex];
-                if (JointCtor && joint instanceof JointCtor && Number.isFinite(theta) && typeof joint._clampTheta === 'function') {
-                    joint.theta = joint._clampTheta(theta);
-                }
-            });
-        },
+		getJointThetaVector(mechanism) {
+			const JointCtor = globalScope.Joint;
+			return (mechanism.joints || []).map((joint) => {
+				if (!JointCtor || !(joint instanceof JointCtor)) return 0;
+				return Number.isFinite(joint.theta) ? joint.theta : 0;
+			});
+		},
 
-        getJointThetaVector(mechanism) {
-            const JointCtor = globalScope.Joint;
-            return (mechanism.joints || []).map((joint) => {
-                if (!JointCtor || !(joint instanceof JointCtor)) return 0;
-                return Number.isFinite(joint.theta) ? joint.theta : 0;
-            });
-        },
+		applyJointThetaVector(mechanism, thetaVector, baseState) {
+			if (!Array.isArray(thetaVector)) return;
+			if (baseState) {
+				this.restorePoseState(mechanism, baseState);
+			}
 
-        applyJointThetaVector(mechanism, thetaVector, baseState) {
-            if (!Array.isArray(thetaVector)) return;
-            if (baseState) {
-                this.restorePoseState(mechanism, baseState);
-            }
+			const count = Math.min((mechanism.joints || []).length, thetaVector.length);
+			for (let i = 0; i < count; i++) {
+				if (!Number.isFinite(thetaVector[i])) continue;
+				mechanism.setJointThetaByIndex(i, thetaVector[i]);
+			}
+		},
 
-            const count = Math.min((mechanism.joints || []).length, thetaVector.length);
-            for (let i = 0; i < count; i++) {
-                const theta = thetaVector[i];
-                if (!Number.isFinite(theta)) continue;
-                mechanism.setJointThetaByIndex(i, theta);
-            }
-        },
+		objectiveForTargetHoleLength(mechanism, targetLength, options = {}) {
+			const ChainCtor = globalScope.Chain;
+			const chainIndex = Number.isInteger(options.chainIndex) ? options.chainIndex : 1;
+			const targetChain = ChainCtor && mechanism.chains?.[chainIndex] instanceof ChainCtor
+				? mechanism.chains[chainIndex]
+				: null;
 
-        objectiveForTargetHoleLength(mechanism, targetLength, options = {}) {
-            const ChainCtor = globalScope.Chain;
-            const chainIndex = Number.isInteger(options.chainIndex) ? options.chainIndex : 1;
-            const holeWeight = Number.isFinite(options.holeLengthWeight) ? Math.max(0, options.holeLengthWeight) : 1;
-            const targetChain = ChainCtor && mechanism.chains?.[chainIndex] instanceof ChainCtor
-                ? mechanism.chains[chainIndex]
-                : null;
+			const currentLength = targetChain ? targetChain.getHoleLineLength() : 0;
+			const lengthError = Number.isFinite(targetLength) ? (currentLength - targetLength) : 0;
+			const elastic = mechanism.calculateTotalElasticEnergy();
+			const score = Math.abs(lengthError) + 1e-6 * elastic;
+			return {
+				score,
+				elastic,
+				currentLength,
+				lengthError
+			};
+		},
 
-            const currentLength = targetChain ? targetChain.getHoleLineLength() : 0;
-            const lengthError = Number.isFinite(targetLength) ? (currentLength - targetLength) : 0;
-            const elastic = mechanism.calculateTotalElasticEnergy();
-            return {
-                score: elastic + holeWeight * lengthError * lengthError,
-                elastic,
-                currentLength,
-                lengthError
-            };
-        },
+		isBetterForHardConstraint(candidate, currentBest, tolerance) {
+			if (!candidate) return false;
+			if (!currentBest) return true;
 
-        isBetterForHardConstraint(candidate, currentBest, tolerance) {
-            if (!candidate) return false;
-            if (!currentBest) return true;
+			const candErr = Math.abs(candidate.lengthError);
+			const bestErr = Math.abs(currentBest.lengthError);
+			if (candErr + EPS < bestErr) return true;
+			if (Math.abs(candErr - bestErr) <= EPS && candidate.elastic + EPS < currentBest.elastic) return true;
+			return false;
+		},
 
-            const candError = Math.abs(candidate.lengthError);
-            const bestError = Math.abs(currentBest.lengthError);
-            const candFeasible = candError <= tolerance;
-            const bestFeasible = bestError <= tolerance;
+		solveThetasForLength(mechanism, targetLength, options = {}) {
+			const result = this.findMinimumEnergyPoseForHoleLength(mechanism, targetLength, options);
+			return {
+				thetas: Array.isArray(result?.thetaVector) ? result.thetaVector.slice() : [],
+				result
+			};
+		},
 
-            if (candFeasible && !bestFeasible) return true;
-            if (!candFeasible && bestFeasible) return false;
+		findMinimumEnergyPoseForHoleLength(mechanism, targetLength, options = {}) {
+			const ChainCtor = globalScope.Chain;
+			const JointCtor = globalScope.Joint;
+			const debugFrameIndex = Number.isInteger(options.debugFrameIndex) ? options.debugFrameIndex : null;
 
-            if (candFeasible && bestFeasible) {
-                if (candidate.elastic + 1e-12 < currentBest.elastic) return true;
-                if (Math.abs(candidate.elastic - currentBest.elastic) <= 1e-12 && candError + 1e-12 < bestError) return true;
-                return false;
-            }
+			if (!Number.isFinite(targetLength) || !Array.isArray(mechanism.joints) || mechanism.joints.length === 0) {
+				console.warn('[Optimization] Invalid input or empty joints', {
+					frameIndex: debugFrameIndex,
+					targetLength
+				});
+				return {
+					converged: false,
+					iterations: 0,
+					reason: 'invalid-input-or-empty-joints',
+					targetLength,
+					finalLength: ChainCtor && mechanism.chains?.[1] instanceof ChainCtor ? mechanism.chains[1].getHoleLineLength() : 0,
+					finalEnergy: mechanism.calculateTotalElasticEnergy(),
+					lengthError: 0,
+					thetaVector: this.getJointThetaVector(mechanism),
+					feasible: true,
+					hardConstraint: false,
+					method: 'incremental-greedy-local-refine'
+				};
+			}
 
-            if (candError + 1e-12 < bestError) return true;
-            if (Math.abs(candError - bestError) <= 1e-12 && candidate.elastic + 1e-12 < currentBest.elastic) return true;
-            return false;
-        },
+			const chainIndex = Number.isInteger(options.chainIndex) ? options.chainIndex : 1;
+			const maxIterations = Number.isInteger(options.maxIterations) ? Math.max(20, options.maxIterations) : 1500;
+			const warmStartThetaVector = Array.isArray(options.warmStartThetaVector) ? options.warmStartThetaVector : null;
+			const startFromInitial = options.startFromInitial !== undefined ? Boolean(options.startFromInitial) : true;
+			const enforceMonotonic = options.enforceMonotonic !== undefined ? Boolean(options.enforceMonotonic) : true;
+			const minStep = Number.isFinite(options.minIncrement) ? Math.max(1e-6, options.minIncrement) : 1e-4;
+			const maxStep = Number.isFinite(options.maxIncrement) ? Math.max(minStep, options.maxIncrement) : 0.05;
+			const initialStepRatio = Number.isFinite(options.initialStepRatio) ? Math.max(0.005, options.initialStepRatio) : 0.08;
+			const crossOvershootRatio = Number.isFinite(options.crossOvershootRatio) ? Math.max(1e-5, options.crossOvershootRatio) : 0.002;
 
-        solveThetasForLength(mechanism, targetLength, options = {}) {
-            const result = this.findMinimumEnergyPoseForHoleLength(mechanism, targetLength, options);
-            return {
-                thetas: Array.isArray(result?.thetaVector) ? result.thetaVector.slice() : [],
-                result
-            };
-        },
+			const targetTolerance = Math.max(1e-6, Math.abs(targetLength) * 0.001);
+			const closeThreshold = Math.max(targetTolerance * 10, Math.abs(targetLength) * 0.02);
+			const targetAbs = Math.max(Math.abs(targetLength), 1e-9);
 
-        findMinimumEnergyPoseForHoleLength(mechanism, targetLength, options = {}) {
-            const ChainCtor = globalScope.Chain;
-            const JointCtor = globalScope.Joint;
+			const baseState = this.capturePoseState(mechanism);
+			const currentTheta = this.getJointThetaVector(mechanism);
+			const bounds = (mechanism.joints || []).map((joint, index) => {
+				if (!JointCtor || !(joint instanceof JointCtor)) {
+					return {
+						min: currentTheta[index] || 0,
+						max: currentTheta[index] || 0,
+						span: 1e-6,
+						direction: 0,
+						initial: currentTheta[index] || 0,
+						final: currentTheta[index] || 0
+					};
+				}
+				const initial = Number.isFinite(joint.initialTheta) ? joint.initialTheta : (currentTheta[index] || 0);
+				const final = Number.isFinite(joint.finalTheta) ? joint.finalTheta : initial;
+				const min = Math.min(initial, final);
+				const max = Math.max(initial, final);
+				return {
+					min,
+					max,
+					span: Math.max(1e-6, max - min),
+					direction: Math.sign(final - initial),
+					initial,
+					final
+				};
+			});
 
-            if (!Number.isFinite(targetLength) || !Array.isArray(mechanism.joints) || mechanism.joints.length === 0) {
-                return {
-                    converged: false,
-                    iterations: 0,
-                    reason: 'invalid-input-or-empty-joints',
-                    targetLength,
-                    finalLength: ChainCtor && mechanism.chains?.[1] instanceof ChainCtor ? mechanism.chains[1].getHoleLineLength() : 0,
-                    finalEnergy: mechanism.calculateTotalElasticEnergy(),
-                    thetaVector: this.getJointThetaVector(mechanism)
-                };
-            }
+			const clampThetaVector = (thetaVec) => bounds.map((bound, i) => {
+				const raw = Array.isArray(thetaVec) && Number.isFinite(thetaVec[i]) ? thetaVec[i] : bound.initial;
+				return Math.min(bound.max, Math.max(bound.min, raw));
+			});
 
-            const maxSteps = Number.isInteger(options.maxIterations) ? Math.max(1, options.maxIterations) : 600;
-            const tolerance = Number.isFinite(options.lengthTolerance) ? Math.max(0, options.lengthTolerance) : 0.25;
-            const minIncrement = Number.isFinite(options.minIncrement)
-                ? Math.max(1e-6, options.minIncrement)
-                : (Number.isFinite(options.minStep) ? Math.max(1e-6, options.minStep) : 1e-4);
-            const maxIncrement = Number.isFinite(options.maxIncrement) ? Math.max(minIncrement, options.maxIncrement) : 0.05;
-            const incrementRatio = Number.isFinite(options.incrementRatio) ? Math.max(1e-5, options.incrementRatio) : 0.02;
-            const chainIndex = Number.isInteger(options.chainIndex) ? options.chainIndex : 1;
-            const holeWeight = Number.isFinite(options.holeLengthWeight) ? Math.max(0, options.holeLengthWeight) : 5;
-            const startFromInitial = options.startFromInitial !== undefined ? Boolean(options.startFromInitial) : true;
-            const strictDirection = options.strictDirection !== undefined ? Boolean(options.strictDirection) : true;
-            const warmStartThetaVector = Array.isArray(options.warmStartThetaVector)
-                ? options.warmStartThetaVector
-                : null;
-            const hardConstraint = Boolean(options.hardConstraint);
-            const improvementEpsilon = 1e-9;
+			let theta = startFromInitial
+				? bounds.map((b) => b.initial)
+				: currentTheta.slice();
 
-            const baseState = this.capturePoseState(mechanism);
-            const currentTheta = this.getJointThetaVector(mechanism);
-            const jointBounds = (mechanism.joints || []).map((joint) => {
-                if (!JointCtor || !(joint instanceof JointCtor)) {
-                    return { min: 0, max: 0.05, span: 0.05 };
-                }
-                const minTheta = Math.min(joint.initialTheta, joint.finalTheta);
-                const maxTheta = Math.max(joint.initialTheta, joint.finalTheta);
-                return {
-                    min: minTheta,
-                    max: maxTheta,
-                    span: Math.max(1e-6, maxTheta - minTheta)
-                };
-            });
+			if (warmStartThetaVector) {
+				theta = theta.map((value, i) => (Number.isFinite(warmStartThetaVector[i]) ? warmStartThetaVector[i] : value));
+			}
+			theta = clampThetaVector(theta);
+			const monotonicAnchorTheta = theta.slice();
 
-            const initialTheta = (mechanism.joints || []).map((joint, index) => {
-                if (!JointCtor || !(joint instanceof JointCtor)) return currentTheta[index] || 0;
-                return Number.isFinite(joint.initialTheta) ? joint.initialTheta : currentTheta[index] || 0;
-            });
+			const normalizeThetaVector = (thetaVec) => {
+				let normalized = clampThetaVector(thetaVec);
+				if (enforceMonotonic) {
+					normalized = normalized.map((value, i) => {
+						const direction = bounds[i].direction;
+						const anchor = monotonicAnchorTheta[i];
+						if (direction > 0) return Math.max(value, anchor);
+						if (direction < 0) return Math.min(value, anchor);
+						return value;
+					});
+				}
+				return normalized;
+			};
 
-            const clampThetaVector = (thetaVec) => {
-                const safe = Array.isArray(thetaVec) ? thetaVec.slice() : [];
-                return jointBounds.map((bound, index) => {
-                    const raw = Number.isFinite(safe[index]) ? safe[index] : initialTheta[index] || bound.min;
-                    return Math.min(bound.max, Math.max(bound.min, raw));
-                });
-            };
+			const evaluateTheta = (thetaVec) => {
+				const normalized = normalizeThetaVector(thetaVec);
+				this.applyJointThetaVector(mechanism, normalized, baseState);
+				return this.objectiveForTargetHoleLength(mechanism, targetLength, { chainIndex });
+			};
 
-            let workingTheta = clampThetaVector(currentTheta.slice());
-            if (startFromInitial) {
-                workingTheta = clampThetaVector(initialTheta.slice());
-            }
-            if (warmStartThetaVector && warmStartThetaVector.length > 0) {
-                workingTheta = workingTheta.map((value, index) => {
-                    const warmValue = warmStartThetaVector[index];
-                    return Number.isFinite(warmValue) ? warmValue : value;
-                });
-                workingTheta = clampThetaVector(workingTheta);
-            }
+			let currentEval = evaluateTheta(theta);
+			let iterations = 0;
+			let stepScale = 1;
+			let stalled = false;
+			let greedyStopReason = 'max-iterations';
+			let refinementStopReason = 'not-started';
+			const rejectionCounts = {
+				zeroDirection: 0,
+				atBoundary: 0,
+				stepTooSmall: 0,
+				outOfBounds: 0,
+				wrongDirection: 0,
+				overCrossLimit: 0,
+				noValidCandidate: 0
+			};
 
-            const evaluateTheta = (thetaVec) => {
-                this.applyJointThetaVector(mechanism, thetaVec, baseState);
-                return this.objectiveForTargetHoleLength(mechanism, targetLength, {
-                    chainIndex,
-                    holeLengthWeight: holeWeight
-                });
-            };
-            let bestTheta = clampThetaVector(workingTheta.slice());
-            let best = evaluateTheta(bestTheta);
-            let iterations = 0;
-            let stalled = false;
+			// Phase 1: incremental greedy walk.
+			for (let iter = 0; iter < maxIterations; iter++) {
+				iterations = iter + 1;
+				const currentError = currentEval.lengthError;
+				const absError = Math.abs(currentError);
+				if (absError <= targetTolerance) {
+					greedyStopReason = 'target-tolerance-reached';
+					break;
+				}
 
-            for (let stepIndex = 0; stepIndex < maxSteps; stepIndex++) {
-                const currentAbsError = Math.abs(best.lengthError);
-                if (currentAbsError <= tolerance) break;
+				if (absError < closeThreshold) {
+					stepScale = Math.max(0.05, stepScale * 0.7);
+				}
 
-                let bestCandidate = null;
+				const wantedLengthDirection = Math.sign(targetLength - currentEval.currentLength);
+				let bestCandidate = null;
+				let crossedTooMuch = false;
 
-                for (let i = 0; i < (mechanism.joints || []).length; i++) {
-                    const joint = mechanism.joints[i];
-                    const bound = jointBounds[i];
-                    const baseTheta = bestTheta[i];
-                    const jointDirection = JointCtor && joint instanceof JointCtor
-                        ? Math.sign(joint.finalTheta - joint.initialTheta)
-                        : 0;
+				for (let i = 0; i < bounds.length; i++) {
+					const bound = bounds[i];
+					if (bound.direction === 0) {
+						rejectionCounts.zeroDirection += 1;
+						continue;
+					}
 
-                    const directions = [];
-                    if (jointDirection !== 0) {
-                        directions.push(jointDirection);
-                    } else if (!strictDirection) {
-                        directions.push(1, -1);
-                    }
+					const atBoundary = bound.direction > 0
+						? theta[i] >= bound.max - EPS
+						: theta[i] <= bound.min + EPS;
+					if (atBoundary) {
+						rejectionCounts.atBoundary += 1;
+						continue;
+					}
 
-                    if (directions.length === 0) continue;
+					let localStep = Math.min(maxStep, Math.max(minStep, bound.span * initialStepRatio * stepScale));
+					localStep = Math.min(localStep, bound.direction > 0 ? (bound.max - theta[i]) : (theta[i] - bound.min));
+					if (!Number.isFinite(localStep) || localStep < minStep) {
+						rejectionCounts.stepTooSmall += 1;
+						continue;
+					}
 
-                    const baseIncrement = Math.min(maxIncrement, Math.max(minIncrement, bound.span * incrementRatio));
-                    const trialScales = [1, 0.5, 0.25];
+					const trialTheta = theta.slice();
+					trialTheta[i] = theta[i] + bound.direction * localStep;
 
-                    for (let d = 0; d < directions.length; d++) {
-                        const dir = directions[d];
-                        for (let s = 0; s < trialScales.length; s++) {
-                            const delta = dir * baseIncrement * trialScales[s];
-                            const candidateTheta = Math.min(bound.max, Math.max(bound.min, baseTheta + delta));
-                            if (!Number.isFinite(candidateTheta) || Math.abs(candidateTheta - baseTheta) < 1e-12) continue;
+					if (trialTheta[i] < bound.min - EPS || trialTheta[i] > bound.max + EPS) {
+						rejectionCounts.outOfBounds += 1;
+						continue;
+					}
 
-                            const trialTheta = bestTheta.slice();
-                            trialTheta[i] = candidateTheta;
-                            const clampedTrialTheta = clampThetaVector(trialTheta);
-                            const trialEval = evaluateTheta(clampedTrialTheta);
-                            const trialAbsError = Math.abs(trialEval.lengthError);
-                            const lengthImprovement = currentAbsError - trialAbsError;
-                            const crossesTarget = best.lengthError * trialEval.lengthError <= 0;
+					const normalizedTrialTheta = normalizeThetaVector(trialTheta);
+					const trialEval = evaluateTheta(normalizedTrialTheta);
+					const deltaLength = trialEval.currentLength - currentEval.currentLength;
 
-                            if (lengthImprovement <= improvementEpsilon && !crossesTarget && trialAbsError > tolerance) {
-                                continue;
-                            }
+					// Reject candidates moving string length in the wrong direction.
+					if (wantedLengthDirection > 0 && deltaLength <= EPS) {
+						rejectionCounts.wrongDirection += 1;
+						continue;
+					}
+					if (wantedLengthDirection < 0 && deltaLength >= -EPS) {
+						rejectionCounts.wrongDirection += 1;
+						continue;
+					}
 
-                            const energyIncrease = trialEval.elastic - best.elastic;
-                            const candidate = {
-                                theta: clampedTrialTheta,
-                                eval: trialEval,
-                                lengthImprovement,
-                                energyIncrease,
-                                absError: trialAbsError
-                            };
+					const crossed = Math.sign(currentEval.lengthError) !== 0
+						&& Math.sign(trialEval.lengthError) !== 0
+						&& Math.sign(currentEval.lengthError) !== Math.sign(trialEval.lengthError);
 
-                            if (!bestCandidate) {
-                                bestCandidate = candidate;
-                                continue;
-                            }
+					// Reject large overshoot when crossing target.
+					const overshootLimit = Math.max(targetTolerance * 2, targetAbs * crossOvershootRatio);
+					if (crossed && Math.abs(trialEval.lengthError) > overshootLimit) {
+						crossedTooMuch = true;
+						rejectionCounts.overCrossLimit += 1;
+						continue;
+					}
 
-                            const betterLength = candidate.lengthImprovement > bestCandidate.lengthImprovement + 1e-12;
-                            const sameLength = Math.abs(candidate.lengthImprovement - bestCandidate.lengthImprovement) <= 1e-12;
-                            const betterEnergy = candidate.energyIncrease < bestCandidate.energyIncrease - 1e-12;
-                            const sameEnergy = Math.abs(candidate.energyIncrease - bestCandidate.energyIncrease) <= 1e-12;
-                            const lowerAbsError = candidate.absError < bestCandidate.absError - 1e-12;
-                            const lowerElastic = candidate.eval.elastic < bestCandidate.eval.elastic - 1e-12;
+					const candidate = {
+						theta: normalizedTrialTheta,
+						eval: trialEval
+					};
 
-                            if (betterLength
-                                || (sameLength && betterEnergy)
-                                || (sameLength && sameEnergy && lowerAbsError)
-                                || (sameLength && sameEnergy && !lowerAbsError && lowerElastic)) {
-                                bestCandidate = candidate;
-                            }
-                        }
-                    }
-                }
+					if (!bestCandidate) {
+						bestCandidate = candidate;
+						continue;
+					}
 
-                if (!bestCandidate) {
-                    stalled = true;
-                    break;
-                }
+					const trialAbsErr = Math.abs(candidate.eval.lengthError);
+					const bestAbsErr = Math.abs(bestCandidate.eval.lengthError);
+					if (trialAbsErr + EPS < bestAbsErr) {
+						bestCandidate = candidate;
+					} else if (Math.abs(trialAbsErr - bestAbsErr) <= EPS && candidate.eval.elastic + EPS < bestCandidate.eval.elastic) {
+						bestCandidate = candidate;
+					}
+				}
 
-                bestTheta = clampThetaVector(bestCandidate.theta);
-                best = bestCandidate.eval;
-                iterations = stepIndex + 1;
-            }
+				if (!bestCandidate) {
+					rejectionCounts.noValidCandidate += 1;
+					stepScale *= 0.5;
+					if (stepScale < 0.02) {
+						stalled = true;
+						greedyStopReason = 'no-valid-candidate-min-step';
+						break;
+					}
+					continue;
+				}
 
-            bestTheta = clampThetaVector(bestTheta);
-            this.applyJointThetaVector(mechanism, bestTheta, baseState);
-            const final = evaluateTheta(bestTheta);
-            const converged = Math.abs(final.lengthError) <= tolerance;
+				const wasCrossing = Math.sign(currentEval.lengthError) !== 0
+					&& Math.sign(bestCandidate.eval.lengthError) !== 0
+					&& Math.sign(currentEval.lengthError) !== Math.sign(bestCandidate.eval.lengthError);
 
-            return {
-                converged,
-                iterations,
-                targetLength,
-                finalLength: final.currentLength,
-                finalEnergy: final.elastic,
-                lengthError: final.lengthError,
-                thetaVector: bestTheta.slice(),
-                feasible: Math.abs(final.lengthError) <= tolerance,
-                hardConstraint,
-                stalled,
-                method: 'greedy-forward-increment'
-            };
-        }
-    };
+				theta = bestCandidate.theta;
+				currentEval = bestCandidate.eval;
 
-    globalScope.MechanismOptimization = MechanismOptimization;
+				if (crossedTooMuch || wasCrossing) {
+					stepScale = Math.max(0.05, stepScale * 0.5);
+				}
+			}
+
+			// Phase 2: local refinement around current solution.
+			let refineStep = Math.min(maxStep, Math.max(minStep, Math.max(...bounds.map((b) => b.span)) * 0.03));
+			let refinementIterations = 0;
+			refinementStopReason = 'min-refine-step-or-max-iters';
+			while (refineStep >= minStep && refinementIterations < maxIterations) {
+				refinementIterations += 1;
+				const base = currentEval;
+				let improved = false;
+
+				for (let i = 0; i < bounds.length; i++) {
+					const bound = bounds[i];
+					if (bound.direction === 0) continue;
+					const forwardCandidate = theta[i] + bound.direction * refineStep;
+					const candidates = [Math.min(bound.max, Math.max(bound.min, forwardCandidate))];
+
+					for (let c = 0; c < candidates.length; c++) {
+						const candidateTheta = candidates[c];
+						if (Math.abs(candidateTheta - theta[i]) <= EPS) continue;
+
+						const trialTheta = theta.slice();
+						trialTheta[i] = candidateTheta;
+						const normalizedTrialTheta = normalizeThetaVector(trialTheta);
+						const trialEval = evaluateTheta(normalizedTrialTheta);
+
+						const better = this.isBetterForHardConstraint(trialEval, currentEval, targetTolerance);
+						if (better) {
+							theta = normalizedTrialTheta;
+							currentEval = trialEval;
+							improved = true;
+						}
+					}
+				}
+
+				if (!improved) {
+					refineStep *= 0.5;
+				}
+
+				if (Math.abs(currentEval.lengthError) <= targetTolerance && Math.abs(base.lengthError - currentEval.lengthError) <= EPS) {
+					refinementStopReason = 'refine-converged-or-flat';
+					break;
+				}
+			}
+
+			theta = normalizeThetaVector(theta);
+			this.applyJointThetaVector(mechanism, theta, baseState);
+			const finalEval = evaluateTheta(theta);
+			const finalError = Math.abs(finalEval.lengthError);
+			const converged = finalError <= targetTolerance;
+
+			console.log('[Optimization] joint theta range', {
+				frameIndex: debugFrameIndex,
+				joints: bounds.map((bound, i) => ({
+					jointIndex: i,
+					minTheta: bound.min,
+					maxTheta: bound.max,
+					currentTheta: theta[i]
+				}))
+			});
+
+			return {
+				converged,
+				iterations: iterations + refinementIterations,
+				targetLength,
+				finalLength: finalEval.currentLength,
+				finalEnergy: finalEval.elastic,
+				lengthError: finalEval.lengthError,
+				thetaVector: theta.slice(),
+				feasible: true,
+				hardConstraint: false,
+				tolerance: targetTolerance,
+				stalled,
+				method: 'incremental-greedy-local-refine'
+			};
+		}
+	};
+
+	globalScope.MechanismOptimization = MechanismOptimization;
 })(window);
