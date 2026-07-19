@@ -913,10 +913,7 @@ window.appActions = {
         const bundle = getCurrentMechanismBundle();
         if (!(bundle.mechanism instanceof Mechanism)) return;
 
-        const joint = bundle.mechanism.joints?.[i];
-        if (!(joint instanceof Joint)) return;
-
-        joint.setTheta(theta);
+        bundle.mechanism.setJointThetaByIndex(i, theta);
         series.setMechanism(currentFrameIndex, bundle);
         frameChains[currentFrameIndex] = bundle;
 

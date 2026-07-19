@@ -570,6 +570,8 @@ class Joint {
             : this.initialMechanismThetaB;
 
         this.theta = this._clampTheta(this.theta);
+        this._mechanism = null;
+        this._index = -1;
     }
 
     _readRelativeTheta(prevLink, nextLink) {
@@ -593,8 +595,20 @@ class Joint {
         return Math.min(1, Math.max(0, t));
     }
 
+    _progressAt(thetaValue) {
+        const denom = this.finalTheta - this.initialTheta;
+        if (!Number.isFinite(denom) || Math.abs(denom) < 1e-10) return 0;
+        const t = (thetaValue - this.initialTheta) / denom;
+        return Math.min(1, Math.max(0, t));
+    }
+
     _convertToMechanismTheta(initialValue, finalValue) {
         const t = this._jointProgress();
+        return initialValue + (finalValue - initialValue) * t;
+    }
+
+    _convertToMechanismThetaAt(thetaValue, initialValue, finalValue) {
+        const t = this._progressAt(thetaValue);
         return initialValue + (finalValue - initialValue) * t;
     }
 
@@ -610,10 +624,51 @@ class Joint {
         }
     }
 
-    // Updates only the two following links (never previous links).
+    _bindMechanism(mechanism, index) {
+        this._mechanism = mechanism instanceof Mechanism ? mechanism : null;
+        this._index = Number.isInteger(index) ? index : -1;
+    }
+
+    // Updates this joint and propagates movement only to following links.
     setTheta(nextTheta) {
-        this.theta = this._clampTheta(nextTheta);
-        this._applyToFollowingLinks();
+        const previousTheta = this.theta;
+        const clampedTheta = this._clampTheta(nextTheta);
+        if (Math.abs(clampedTheta - previousTheta) < 1e-12) {
+            return this.theta;
+        }
+
+        const oldRelA = this._convertToMechanismThetaAt(
+            previousTheta,
+            this.initialMechanismThetaA,
+            this.finalMechanismThetaA
+        );
+        const newRelA = this._convertToMechanismThetaAt(
+            clampedTheta,
+            this.initialMechanismThetaA,
+            this.finalMechanismThetaA
+        );
+        const oldRelB = this._convertToMechanismThetaAt(
+            previousTheta,
+            this.initialMechanismThetaB,
+            this.finalMechanismThetaB
+        );
+        const newRelB = this._convertToMechanismThetaAt(
+            clampedTheta,
+            this.initialMechanismThetaB,
+            this.finalMechanismThetaB
+        );
+
+        this.theta = clampedTheta;
+        if (this._mechanism instanceof Mechanism && this._index >= 0) {
+            this._mechanism._propagateRigidFromJoint(this._index, {
+                deltaA: newRelA - oldRelA,
+                deltaB: newRelB - oldRelB,
+                pivotA: this.nextLinkA ? { x: this.nextLinkA.position.x, y: this.nextLinkA.position.y } : null,
+                pivotB: this.nextLinkB ? { x: this.nextLinkB.position.x, y: this.nextLinkB.position.y } : null
+            });
+        } else {
+            this._applyToFollowingLinks();
+        }
         return this.theta;
     }
 
@@ -637,6 +692,63 @@ class Mechanism {
         this.joints = Array.isArray(options.joints)
             ? options.joints.filter((joint) => joint instanceof Joint)
             : [];
+
+        this._bindJoints();
+    }
+
+    _bindJoints() {
+        this.joints.forEach((joint, index) => {
+            if (joint instanceof Joint) {
+                joint._bindMechanism(this, index);
+            }
+        });
+    }
+
+    _findChainForLink(link) {
+        if (!(link instanceof Link)) return null;
+        for (let i = 0; i < this.chains.length; i++) {
+            const chain = this.chains[i];
+            if (chain instanceof Chain && Array.isArray(chain.links) && chain.links.includes(link)) {
+                return chain;
+            }
+        }
+        return null;
+    }
+
+    _rotateTailInChain(chain, startSegment, pivot, delta) {
+        if (!(chain instanceof Chain) || !Array.isArray(chain.links)) return;
+        if (!Number.isInteger(startSegment) || !pivot || !Number.isFinite(delta) || Math.abs(delta) < 1e-12) return;
+
+        const c = Math.cos(delta);
+        const s = Math.sin(delta);
+        chain.links.forEach((link) => {
+            if (!(link instanceof Link)) return;
+            const seg = link.metadata?.segmentIndex;
+            if (!Number.isInteger(seg) || seg < startSegment) return;
+
+            const dx = link.position.x - pivot.x;
+            const dy = link.position.y - pivot.y;
+            link.position.x = pivot.x + (dx * c - dy * s);
+            link.position.y = pivot.y + (dx * s + dy * c);
+            link.theta += delta;
+        });
+    }
+
+    _propagateRigidFromJoint(startIndex, motion = {}) {
+        const joint = this.joints[startIndex];
+        if (!(joint instanceof Joint)) return;
+
+        if (joint.nextLinkA instanceof Link) {
+            const chainA = this._findChainForLink(joint.nextLinkA);
+            const segA = joint.nextLinkA.metadata?.segmentIndex;
+            this._rotateTailInChain(chainA, segA, motion.pivotA, motion.deltaA);
+        }
+
+        if (joint.nextLinkB instanceof Link) {
+            const chainB = this._findChainForLink(joint.nextLinkB);
+            const segB = joint.nextLinkB.metadata?.segmentIndex;
+            this._rotateTailInChain(chainB, segB, motion.pivotB, motion.deltaB);
+        }
     }
 
     addChain(chain) {
