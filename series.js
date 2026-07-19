@@ -395,6 +395,7 @@ class Series {
 
         this.frameEntries.push({
             skeleton: null,
+            mechanism: null,
             sourceFrame: lastSourceFrame + 1
         });
     }
@@ -477,8 +478,8 @@ class Series {
             jointTheta = Math.min(1, Math.max(0, t));
         }
 
-        const firstBundle = this.getMechanism(firstFrameIndex) || null;
-        const lastBundle = this.getMechanism(lastFrameIndex) || null;
+        const firstBundle = options.initialBundle || this.getMechanism(firstFrameIndex) || null;
+        const lastBundle = options.finalBundle || this.getMechanism(lastFrameIndex) || null;
 
         const mapAInitial = MechanismCtor.buildRelativeThetaMap(firstBundle?.mechanism1 || bundle.mechanism1);
         const mapAFinal = MechanismCtor.buildRelativeThetaMap(lastBundle?.mechanism1 || firstBundle?.mechanism1 || bundle.mechanism1);
@@ -503,6 +504,9 @@ class Series {
         const pivotRadius = Number.isFinite(options.chainThickness) ? options.chainThickness : 50;
         const jointKByIndex = options.jointKByIndex && typeof options.jointKByIndex === 'object'
             ? options.jointKByIndex
+            : {};
+        const optimizationOptions = options.optimizationOptions && typeof options.optimizationOptions === 'object'
+            ? options.optimizationOptions
             : {};
 
         const makeBundle = (mechanism1 = null, mechanism2 = null) => ({
@@ -554,7 +558,7 @@ class Series {
 
         let displayedFrameIndex = startFrameIndex;
         let displayedBundle = startBundle;
-        const builtFrameIndices = [startFrameIndex];
+        const builtFrameIndices = frameIndices.slice();
         let endBundle = null;
 
         if (endFrameIndex !== startFrameIndex && startSkeleton && endSkeleton) {
@@ -570,36 +574,84 @@ class Series {
             this.setMechanism(endFrameIndex, endBundle);
             displayedFrameIndex = endFrameIndex;
             displayedBundle = endBundle;
-            builtFrameIndices.push(endFrameIndex);
         }
 
-        // Build mechanisms after endpoint bundles are registered so each frame
-        // sees both start and end references when constructing joint maps.
-        startBundle.mechanism = this.buildJointMechanismForBundle(startBundle, {
-            frameIndex: startFrameIndex,
-            jointKByIndex,
-            ChainCtor,
-            MechanismCtor
-        });
-        this.setMechanism(startFrameIndex, startBundle);
+        const initialHoleLength = Number.isFinite(startBundle.mechanism2?.getHoleLineLength?.())
+            ? startBundle.mechanism2.getHoleLineLength()
+            : 0;
+        const finalHoleLength = Number.isFinite((endBundle || startBundle).mechanism2?.getHoleLineLength?.())
+            ? (endBundle || startBundle).mechanism2.getHoleLineLength()
+            : initialHoleLength;
+        const frameSpan = Math.max(1, endFrameIndex - startFrameIndex);
 
-        if (endBundle) {
-            endBundle.mechanism = this.buildJointMechanismForBundle(endBundle, {
-                frameIndex: endFrameIndex,
+        const cloneBundle = (bundle) => {
+            const cloned = makeBundle(
+                bundle?.mechanism1 ? bundle.mechanism1.clone() : null,
+                bundle?.mechanism2 ? bundle.mechanism2.clone() : null
+            );
+            if (cloned.mechanism1 && cloned.mechanism2) {
+                ChainCtor.pairTwinLinks(cloned.mechanism1, cloned.mechanism2);
+            }
+            return cloned;
+        };
+
+        // Build and solve one mechanism per frame entry so it stays aligned with
+        // frame deletion/remap operations.
+        frameIndices.forEach((frameIndex) => {
+            const t = frameSpan > 0 ? (frameIndex - startFrameIndex) / frameSpan : 0;
+            const clampedT = Math.min(1, Math.max(0, t));
+            const targetHoleLength = initialHoleLength + (finalHoleLength - initialHoleLength) * clampedT;
+
+            const baseBundle = cloneBundle(startBundle);
+
+            const mechanism = this.buildJointMechanismForBundle(baseBundle, {
+                frameIndex,
                 jointKByIndex,
                 ChainCtor,
-                MechanismCtor
+                MechanismCtor,
+                initialBundle: startBundle,
+                finalBundle: endBundle || startBundle
             });
-            this.setMechanism(endFrameIndex, endBundle);
-            displayedBundle = endBundle;
-        }
+
+            if (mechanism instanceof MechanismCtor) {
+                mechanism.findMinimumEnergyPoseForHoleLength(targetHoleLength, {
+                    chainIndex: 1,
+                    maxIterations: Number.isInteger(optimizationOptions.maxIterations)
+                        ? optimizationOptions.maxIterations
+                        : 40,
+                    lengthTolerance: Number.isFinite(optimizationOptions.lengthTolerance)
+                        ? optimizationOptions.lengthTolerance
+                        : 0.5,
+                    holeLengthWeight: Number.isFinite(optimizationOptions.holeLengthWeight)
+                        ? optimizationOptions.holeLengthWeight
+                        : 5,
+                    minStep: Number.isFinite(optimizationOptions.minStep)
+                        ? optimizationOptions.minStep
+                        : 1e-3,
+                    stepDecay: Number.isFinite(optimizationOptions.stepDecay)
+                        ? optimizationOptions.stepDecay
+                        : 0.6
+                });
+            }
+
+            const solvedBundle = makeBundle(
+                mechanism?.chains?.[0] instanceof ChainCtor ? mechanism.chains[0] : baseBundle.mechanism1,
+                mechanism?.chains?.[1] instanceof ChainCtor ? mechanism.chains[1] : baseBundle.mechanism2
+            );
+            solvedBundle.mechanism = mechanism;
+            this.setMechanism(frameIndex, solvedBundle);
+        });
+
+        displayedBundle = this.getMechanism(displayedFrameIndex) || displayedBundle;
 
         return {
             builtFrameIndices,
             displayedFrameIndex,
             displayedBundle,
             startFrameIndex,
-            endFrameIndex
+            endFrameIndex,
+            initialHoleLength,
+            finalHoleLength
         };
     }
 
