@@ -534,14 +534,19 @@ class Series {
             pivotRadius
         });
 
-        const mechanism2LastFrame = new ChainCtor();
-        mechanism2LastFrame.generateFromSeries(this, {
+        const mechanism2EndReference = new ChainCtor();
+        mechanism2EndReference.generateFromSeries(this, {
             frameIndex: endFrameIndex,
             pivotKind: 'ref2',
             pivotRadius
         });
 
-        let mechanism2Initial = mechanism2LastFrame.clone();
+        const mechanism2Initial = new ChainCtor();
+        mechanism2Initial.generateFromSeries(this, {
+            frameIndex: endFrameIndex,
+            pivotKind: 'ref2',
+            pivotRadius
+        });
         if (startSkeleton && endSkeleton && mechanism2Initial.links.length > 0) {
             mechanism2Initial.poseToSkeleton(endSkeleton, startSkeleton);
         }
@@ -555,16 +560,20 @@ class Series {
         let displayedBundle = startBundle;
         const builtFrameIndices = frameIndices.slice();
         let endBundle = null;
-        let previousThetaVector = null;
-        let previousSolvedBundle = startBundle;
 
-        if (endFrameIndex !== startFrameIndex && startSkeleton && endSkeleton) {
-            const mechanism1Last = mechanism1Initial.clone();
-            if (mechanism1Last.links.length > 0) {
+        if (endFrameIndex !== startFrameIndex) {
+            const mechanism1Last = new ChainCtor();
+            mechanism1Last.generateFromSeries(this, {
+                frameIndex: startFrameIndex,
+                pivotKind: 'ref1',
+                pivotRadius
+            });
+            if (startSkeleton && endSkeleton && mechanism1Last.links.length > 0) {
                 mechanism1Last.poseToSkeleton(startSkeleton, endSkeleton);
             }
 
-            const mechanism2Last = mechanism2LastFrame.clone();
+            const mechanism2Last = mechanism2EndReference;
+
             ChainCtor.pairTwinLinks(mechanism1Last, mechanism2Last);
 
             endBundle = makeBundle(mechanism1Last, mechanism2Last);
@@ -587,68 +596,22 @@ class Series {
             : initialHoleLengthA;
         const frameSpan = Math.max(1, endFrameIndex - startFrameIndex);
 
-        const cloneBundle = (bundle) => {
-            const cloned = makeBundle(
-                bundle?.mechanism1 ? bundle.mechanism1.clone() : null,
-                bundle?.mechanism2 ? bundle.mechanism2.clone() : null
-            );
-            if (cloned.mechanism1 && cloned.mechanism2) {
-                ChainCtor.pairTwinLinks(cloned.mechanism1, cloned.mechanism2);
-            }
-            return cloned;
-        };
-
-        // Build and solve one mechanism per frame entry so it stays aligned with
-        // frame deletion/remap operations.
+        // Store only per-frame target lengths; solving is handled by app-level
+        // live mechanism reuse so all frames share the same mechanism model.
         frameIndices.forEach((frameIndex) => {
             const t = frameSpan > 0 ? (frameIndex - startFrameIndex) / frameSpan : 0;
             const clampedT = Math.min(1, Math.max(0, t));
             const targetHoleLength = initialHoleLength + (finalHoleLength - initialHoleLength) * clampedT;
             const targetHoleLengthA = initialHoleLengthA + (finalHoleLengthA - initialHoleLengthA) * clampedT;
 
-            const baseBundle = frameIndex === startFrameIndex
-                ? cloneBundle(startBundle)
-                : cloneBundle(previousSolvedBundle || startBundle);
-
-            const mechanism = this.buildJointMechanismForBundle(baseBundle, {
-                frameIndex,
-                jointKByIndex,
-                ChainCtor,
-                MechanismCtor,
-                initialBundle: startBundle,
-                finalBundle: endBundle || startBundle
-            });
-
-            let solveResult = null;
-
-            if (mechanism instanceof MechanismCtor) {
-                const thetaSolve = mechanism.solveThetasForLength(targetHoleLength, {
-                    debugFrameIndex: frameIndex,
-                    startFromInitial: true,
-                    warmStartThetaVector: frameIndex === startFrameIndex ? null : previousThetaVector,
-                    maxBinaryIterations: Number.isFinite(solveOptions.maxBinaryIterations)
-                        ? Number(solveOptions.maxBinaryIterations)
-                        : undefined,
-                    maxBracketExpansions: Number.isFinite(solveOptions.maxBracketExpansions)
-                        ? Number(solveOptions.maxBracketExpansions)
-                        : undefined
-                });
-                solveResult = thetaSolve?.result || null;
+            const existing = this.getMechanism(frameIndex);
+            const mechanism1 = existing?.mechanism1 || (frameIndex === startFrameIndex ? startBundle.mechanism1 : null);
+            const mechanism2 = existing?.mechanism2 || (frameIndex === startFrameIndex ? startBundle.mechanism2 : null);
+            const frameBundle = makeBundle(mechanism1, mechanism2, targetHoleLength, targetHoleLengthA);
+            if (existing?.mechanism instanceof MechanismCtor) {
+                frameBundle.mechanism = existing.mechanism;
             }
-
-            const solvedBundle = makeBundle(
-                mechanism?.chains?.[0] instanceof ChainCtor ? mechanism.chains[0] : baseBundle.mechanism1,
-                mechanism?.chains?.[1] instanceof ChainCtor ? mechanism.chains[1] : baseBundle.mechanism2,
-                targetHoleLength,
-                targetHoleLengthA
-            );
-            solvedBundle.mechanism = mechanism;
-            solvedBundle.solveResult = solveResult;
-            this.setMechanism(frameIndex, solvedBundle);
-            previousSolvedBundle = solvedBundle;
-            previousThetaVector = Array.isArray(solveResult?.thetaVector)
-                ? solveResult.thetaVector.slice()
-                : null;
+            this.setMechanism(frameIndex, frameBundle);
         });
 
         displayedBundle = this.getMechanism(displayedFrameIndex) || displayedBundle;

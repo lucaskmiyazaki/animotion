@@ -327,6 +327,23 @@ function hasRenderableChain() {
     return hasM1 || hasM2;
 }
 
+function solveMechanismBundleForTargetLength(bundle, targetLength, options = {}) {
+    const target = Number(targetLength);
+    if (!Number.isFinite(target)) return null;
+    if (!(bundle?.mechanism instanceof Mechanism)) return null;
+
+    const solve = bundle.mechanism.findMinimumEnergyPoseForHoleLength(target, {
+        maxBinaryIterations: optimizationMaxBinaryIterations,
+        maxBracketExpansions: optimizationMaxBracketExpansions,
+        ...options
+    });
+    const result = solve?.result || null;
+
+    bundle.targetHoleLength = target;
+    bundle.solveResult = result;
+    return result;
+}
+
 function buildChain() {
     Object.keys(frameChains).forEach((key) => delete frameChains[key]);
     Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
@@ -358,8 +375,56 @@ function buildChain() {
         liveMechanismBaseState = templateBundle.mechanism?._capturePoseState?.() || null;
     }
 
-    Object.entries(storedMechanisms).forEach(([key, bundle]) => {
-        setFramePoseState(Number.parseInt(key, 10), extractMechanismPoseState(bundle));
+    const frameIndices = Array.isArray(created?.builtFrameIndices)
+        ? created.builtFrameIndices.slice().sort((a, b) => a - b)
+        : series.getFrameIndices().sort((a, b) => a - b);
+    const fallbackTargetB = Number.isFinite(liveMechanismBundle?.mechanism2?.getHoleLineLength?.())
+        ? liveMechanismBundle.mechanism2.getHoleLineLength()
+        : 0;
+    const fallbackTargetA = Number.isFinite(liveMechanismBundle?.mechanism1?.getHoleLineLength?.())
+        ? liveMechanismBundle.mechanism1.getHoleLineLength()
+        : 0;
+    const initialHoleLength = Number.isFinite(created?.initialHoleLength)
+        ? Number(created.initialHoleLength)
+        : fallbackTargetB;
+    const finalHoleLength = Number.isFinite(created?.finalHoleLength)
+        ? Number(created.finalHoleLength)
+        : initialHoleLength;
+    const initialHoleLengthA = Number.isFinite(created?.initialHoleLengthA)
+        ? Number(created.initialHoleLengthA)
+        : fallbackTargetA;
+    const finalHoleLengthA = Number.isFinite(created?.finalHoleLengthA)
+        ? Number(created.finalHoleLengthA)
+        : initialHoleLengthA;
+    const frameSpan = Math.max(1, (frameIndices.at(-1) ?? startFrameIndex) - (frameIndices[0] ?? startFrameIndex));
+
+    frameIndices.forEach((frameIndex) => {
+        const t = frameSpan > 0 ? ((frameIndex - (frameIndices[0] ?? startFrameIndex)) / frameSpan) : 0;
+        const clampedT = Math.min(1, Math.max(0, t));
+        const targetHoleLength = initialHoleLength + (finalHoleLength - initialHoleLength) * clampedT;
+        const targetHoleLengthA = initialHoleLengthA + (finalHoleLengthA - initialHoleLengthA) * clampedT;
+
+        if (liveMechanismBundle?.mechanism instanceof Mechanism) {
+            const solveResult = solveMechanismBundleForTargetLength(liveMechanismBundle, targetHoleLength, {
+                debugFrameIndex: frameIndex,
+                startFromInitial: true
+            });
+            setFramePoseState(frameIndex, makeMechanismPoseState(
+                liveMechanismBundle.mechanism._getJointThetaVector(),
+                {
+                    targetHoleLength,
+                    targetHoleLengthA,
+                    solveResult
+                }
+            ));
+            return;
+        }
+
+        setFramePoseState(frameIndex, makeMechanismPoseState([], {
+            targetHoleLength,
+            targetHoleLengthA,
+            solveResult: null
+        }));
     });
 
     const displayedFrameIndex = Number.isInteger(created?.displayedFrameIndex)
@@ -1071,21 +1136,10 @@ window.appActions = {
         redrawAll();
     },
     optimizeCurrentMechanismForStringLength: (targetLength, options = {}) => {
-        const target = Number(targetLength);
-        if (!Number.isFinite(target)) return null;
-
         const bundle = getCurrentMechanismBundle();
-        if (!(bundle.mechanism instanceof Mechanism)) return null;
-
-        const solve = bundle.mechanism.findMinimumEnergyPoseForHoleLength(target, {
-            maxBinaryIterations: optimizationMaxBinaryIterations,
-            maxBracketExpansions: optimizationMaxBracketExpansions,
-            ...options
-        });
-        const result = solve?.result || null;
-
-        bundle.targetHoleLength = target;
-        bundle.solveResult = result;
+        const target = Number(targetLength);
+        const result = solveMechanismBundleForTargetLength(bundle, target, options);
+        if (!Number.isFinite(target)) return null;
         persistCurrentFramePose({ targetHoleLength: target, solveResult: result });
 
         emitChainStateChange();
