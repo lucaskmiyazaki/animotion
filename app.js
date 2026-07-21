@@ -920,6 +920,26 @@ window.appActions = {
         emitChainStateChange();
         redrawAll();
     },
+    optimizeCurrentMechanismForStringLength: (targetLength, options = {}) => {
+        const target = Number(targetLength);
+        if (!Number.isFinite(target)) return null;
+
+        const bundle = getCurrentMechanismBundle();
+        if (!(bundle.mechanism instanceof Mechanism)) return null;
+
+        const solve = bundle.mechanism.findMinimumEnergyPoseForHoleLength(target, options);
+        const result = solve?.result || null;
+
+        bundle.targetHoleLength = target;
+        bundle.solveResult = result;
+        series.setMechanism(currentFrameIndex, bundle);
+        frameChains[currentFrameIndex] = bundle;
+
+        emitChainStateChange();
+        redrawAll();
+
+        return result;
+    },
     setJointK: (index, value) => {
         const i = Number.parseInt(index, 10);
         const k = Number.parseFloat(value);
@@ -1049,10 +1069,26 @@ window.appActions = {
             : 0;
         return { orangeLength, pinkLength };
     },
+    getCurrentStringLengthChainB: () => {
+        const bundle = getCurrentMechanismBundle();
+        const chainB = bundle.mechanism?.chains?.[1];
+        const length = Number(chainB?.getHoleLineLength?.());
+        return Number.isFinite(length) ? length : 0;
+    },
     getCurrentTargetHoleLength: () => {
         const frameBundle = series.getMechanism(currentFrameIndex);
         const target = Number(frameBundle?.targetHoleLength);
         return Number.isFinite(target) ? target : null;
+    },
+    getCurrentStringLengthBounds: () => {
+        const frameBundle = series.getMechanism(currentFrameIndex);
+        const min = Number(frameBundle?.solveResult?.lengthBounds?.min);
+        const max = Number(frameBundle?.solveResult?.lengthBounds?.max);
+        if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+        return {
+            min: Math.min(min, max),
+            max: Math.max(min, max)
+        };
     },
     getCurrentSolveDiagnostics: () => {
         const frameBundle = series.getMechanism(currentFrameIndex);

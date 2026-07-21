@@ -541,6 +541,106 @@ companionJointWarningDisplay.style.color = '#b45309';
 companionJointWarningDisplay.style.display = 'none';
 companionJointWarningDisplay.textContent = '';
 
+const targetStringLengthRow = document.createElement('div');
+targetStringLengthRow.className = 'joint-k-row';
+
+const targetStringLengthLabel = document.createElement('label');
+targetStringLengthLabel.className = 'joint-k-label';
+targetStringLengthLabel.textContent = 'Target string length';
+
+const targetStringLengthSlider = document.createElement('input');
+targetStringLengthSlider.className = 'joint-k-input';
+targetStringLengthSlider.type = 'range';
+targetStringLengthSlider.min = '0';
+targetStringLengthSlider.max = '1';
+targetStringLengthSlider.step = '0.001';
+targetStringLengthSlider.value = '0';
+targetStringLengthSlider.disabled = true;
+
+targetStringLengthRow.append(targetStringLengthLabel, targetStringLengthSlider);
+
+const targetStringLengthDisplay = document.createElement('div');
+targetStringLengthDisplay.className = 'energy-display';
+targetStringLengthDisplay.textContent = 'Target string length: -';
+
+const targetStringLengthStatusDisplay = document.createElement('div');
+targetStringLengthStatusDisplay.className = 'energy-display';
+targetStringLengthStatusDisplay.textContent = 'Length solve: -';
+
+let targetStringLengthDebounce = null;
+
+function getFallbackTargetBounds(currentLength) {
+    const safeCurrent = Number.isFinite(currentLength) ? Math.max(0, currentLength) : 0;
+    const spread = Math.max(1, safeCurrent * 0.25);
+    return {
+        min: Math.max(0, safeCurrent - spread),
+        max: safeCurrent + spread
+    };
+}
+
+function syncTargetStringLengthControls(chainBLength) {
+    const hasMechanism = window.appActions?.hasRenderableChain?.() ?? false;
+    if (!hasMechanism) {
+        targetStringLengthSlider.disabled = true;
+        targetStringLengthDisplay.textContent = 'Target string length: -';
+        targetStringLengthStatusDisplay.textContent = 'Length solve: -';
+        return;
+    }
+
+    const stateTarget = Number(window.appActions?.getCurrentTargetHoleLength?.());
+    const resolvedTarget = Number.isFinite(stateTarget) ? stateTarget : chainBLength;
+
+    const bounds = window.appActions?.getCurrentStringLengthBounds?.();
+    const fallback = getFallbackTargetBounds(chainBLength);
+    const minBound = Number.isFinite(bounds?.min) ? bounds.min : fallback.min;
+    const maxBound = Number.isFinite(bounds?.max) ? bounds.max : fallback.max;
+    const lower = Math.min(minBound, maxBound);
+    const upper = Math.max(minBound, maxBound);
+
+    const span = Math.max(1e-3, upper - lower);
+    const clampedTarget = Math.min(upper, Math.max(lower, resolvedTarget));
+
+    targetStringLengthSlider.disabled = false;
+    targetStringLengthSlider.min = String(lower);
+    targetStringLengthSlider.max = String(upper);
+    targetStringLengthSlider.step = String(Math.max(1e-4, span / 500));
+    targetStringLengthSlider.value = String(clampedTarget);
+
+    targetStringLengthDisplay.textContent = `Target string length: ${clampedTarget.toFixed(2)}`;
+
+    const diagnostics = window.appActions?.getCurrentSolveDiagnostics?.();
+    const hasDiagnostics = diagnostics && Number.isFinite(diagnostics.lengthError);
+    if (!hasDiagnostics) {
+        targetStringLengthStatusDisplay.textContent = 'Length solve: not solved';
+        return;
+    }
+
+    const prefix = diagnostics.converged
+        ? 'Length solve: converged'
+        : (diagnostics.feasible ? 'Length solve: near-feasible' : 'Length solve: closest limit');
+    targetStringLengthStatusDisplay.textContent = `${prefix} (error ${diagnostics.lengthError.toFixed(3)})`;
+}
+
+targetStringLengthSlider.addEventListener('input', () => {
+    const nextTarget = Number.parseFloat(targetStringLengthSlider.value);
+    if (!Number.isFinite(nextTarget)) return;
+
+    targetStringLengthDisplay.textContent = `Target string length: ${nextTarget.toFixed(2)}`;
+
+    if (targetStringLengthDebounce) {
+        clearTimeout(targetStringLengthDebounce);
+    }
+
+    targetStringLengthDebounce = setTimeout(() => {
+        window.appActions?.optimizeCurrentMechanismForStringLength?.(nextTarget, {
+            lengthTolerance: 0.05,
+            maxBinaryIterations: 22,
+            samplesPerJoint: 17,
+            sweepPasses: 2
+        });
+    }, 40);
+});
+
 const advancedChainDetails = document.createElement('details');
 advancedChainDetails.className = 'advanced-details';
 
@@ -554,13 +654,16 @@ function updateEnergyAndLengthDisplay() {
     const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
     const holeLengths = window.appActions?.calculateHoleLineLengths?.() ?? { orangeLength: 0, pinkLength: 0 };
     const chainALength = Number.isFinite(holeLengths.orangeLength) ? holeLengths.orangeLength : 0;
-    const chainBLength = Number.isFinite(holeLengths.pinkLength) ? holeLengths.pinkLength : 0;
+    const chainBLengthDisplay = Number.isFinite(holeLengths.pinkLength) ? holeLengths.pinkLength : 0;
+    const chainBLength = Number(window.appActions?.getCurrentStringLengthChainB?.());
+    const effectiveChainBLength = Number.isFinite(chainBLength) ? chainBLength : chainBLengthDisplay;
     const companionJointWarning = window.appActions?.getCompanionJointWarning?.() ?? '';
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
     lineLengthDisplay.textContent = `Chain A centerline: ${chainALength.toFixed(2)}`;
-    companionLineLengthDisplay.textContent = `Chain B centerline: ${chainBLength.toFixed(2)}`;
+    companionLineLengthDisplay.textContent = `Chain B centerline: ${chainBLengthDisplay.toFixed(2)}`;
     companionJointWarningDisplay.textContent = companionJointWarning ? `Companion Joint Warning: ${companionJointWarning}` : '';
     companionJointWarningDisplay.style.display = companionJointWarning ? '' : 'none';
+    syncTargetStringLengthControls(effectiveChainBLength);
     syncJointThetaDebugControls();
 }
 
@@ -570,6 +673,9 @@ advancedChainContent.append(
     jointThetaDebugRow,
     jointThetaSlider,
     jointThetaValueDisplay,
+    targetStringLengthRow,
+    targetStringLengthDisplay,
+    targetStringLengthStatusDisplay,
     energyDisplay,
     lineLengthDisplay,
     companionLineLengthDisplay,
