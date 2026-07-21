@@ -6,6 +6,8 @@ let observedBackgroundVideo = null;
 
 // one chain per frame
 const frameChains = {};
+let liveMechanismBundle = null;
+let liveMechanismBaseState = null;
 
 // one skeleton per frame
 const series = window.appSeries || new Series();
@@ -96,11 +98,21 @@ function transformAllGeometryToNewVideoRect(oldRect, newRect) {
         });
     };
 
-    Object.values(frameChains).forEach((entry) => {
-        const bundle = normalizeMechanismFrameBundle(entry);
-        scaleMechanism(bundle.mechanism1);
-        scaleMechanism(bundle.mechanism2);
-    });
+    if (liveMechanismBundle) {
+        const frameIndices = series.getFrameIndices().sort((a, b) => a - b);
+        const startFrameIndex = frameIndices[0] ?? 0;
+        syncLiveMechanismToFrame(startFrameIndex);
+        scaleMechanism(liveMechanismBundle.mechanism1);
+        scaleMechanism(liveMechanismBundle.mechanism2);
+        liveMechanismBaseState = liveMechanismBundle.mechanism?._capturePoseState?.() || liveMechanismBaseState;
+        syncLiveMechanismToFrame(currentFrameIndex);
+    } else {
+        Object.values(frameChains).forEach((entry) => {
+            const bundle = normalizeMechanismFrameBundle(entry);
+            scaleMechanism(bundle.mechanism1);
+            scaleMechanism(bundle.mechanism2);
+        });
+    }
 
     chainThickness *= uniformScale;
     jointMinimumThickness *= uniformScale;
@@ -172,6 +184,8 @@ function markCurrentFrameChainDirty() {
     series.clearAllMechanisms();
     Object.keys(frameChains).forEach((key) => delete frameChains[key]);
     Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
+    liveMechanismBundle = null;
+    liveMechanismBaseState = null;
     mechanismNeedsRegeneration = true;
     emitChainStateChange();
 }
@@ -200,6 +214,89 @@ function normalizeMechanismFrameBundle(value) {
     return bundle;
 }
 
+function isMechanismPoseState(value) {
+    return Boolean(value && typeof value === 'object' && Array.isArray(value.thetaVector));
+}
+
+function makeMechanismPoseState(thetaVector = [], extras = {}) {
+    return {
+        thetaVector: Array.isArray(thetaVector) ? thetaVector.slice() : [],
+        targetHoleLength: Number.isFinite(extras.targetHoleLength) ? Number(extras.targetHoleLength) : null,
+        targetHoleLengthA: Number.isFinite(extras.targetHoleLengthA) ? Number(extras.targetHoleLengthA) : null,
+        solveResult: extras.solveResult && typeof extras.solveResult === 'object'
+            ? { ...extras.solveResult }
+            : null
+    };
+}
+
+function extractMechanismPoseState(value) {
+    const bundle = normalizeMechanismFrameBundle(value);
+    const thetaVector = bundle.mechanism instanceof Mechanism
+        ? bundle.mechanism._getJointThetaVector()
+        : [];
+    return makeMechanismPoseState(thetaVector, {
+        targetHoleLength: value?.targetHoleLength,
+        targetHoleLengthA: value?.targetHoleLengthA,
+        solveResult: value?.solveResult || null
+    });
+}
+
+function setFramePoseState(frameIndex, poseState) {
+    const normalized = isMechanismPoseState(poseState)
+        ? makeMechanismPoseState(poseState.thetaVector, poseState)
+        : makeMechanismPoseState();
+    series.setMechanism(frameIndex, normalized);
+    frameChains[frameIndex] = normalized;
+    frameChainBuilt[frameIndex] = true;
+    return normalized;
+}
+
+function getFramePoseState(frameIndex) {
+    const stored = series.getMechanism(frameIndex) || frameChains[frameIndex] || null;
+    if (isMechanismPoseState(stored)) return stored;
+    if (stored) return extractMechanismPoseState(stored);
+    return null;
+}
+
+function syncLiveMechanismToFrame(frameIndex) {
+    if (!(liveMechanismBundle?.mechanism instanceof Mechanism) || !liveMechanismBaseState) {
+        return null;
+    }
+
+    const poseState = getFramePoseState(frameIndex);
+    const thetaVector = Array.isArray(poseState?.thetaVector) ? poseState.thetaVector : [];
+
+    liveMechanismBundle.mechanism._applyJointThetaVector(thetaVector, liveMechanismBaseState);
+    liveMechanismBundle.targetHoleLength = Number.isFinite(poseState?.targetHoleLength)
+        ? Number(poseState.targetHoleLength)
+        : null;
+    liveMechanismBundle.targetHoleLengthA = Number.isFinite(poseState?.targetHoleLengthA)
+        ? Number(poseState.targetHoleLengthA)
+        : null;
+    liveMechanismBundle.solveResult = poseState?.solveResult || null;
+
+    return liveMechanismBundle;
+}
+
+function persistCurrentFramePose(overrides = {}) {
+    if (!(liveMechanismBundle?.mechanism instanceof Mechanism)) return null;
+
+    const currentState = getFramePoseState(currentFrameIndex) || {};
+    const poseState = makeMechanismPoseState(liveMechanismBundle.mechanism._getJointThetaVector(), {
+        targetHoleLength: Object.prototype.hasOwnProperty.call(overrides, 'targetHoleLength')
+            ? overrides.targetHoleLength
+            : currentState.targetHoleLength,
+        targetHoleLengthA: Object.prototype.hasOwnProperty.call(overrides, 'targetHoleLengthA')
+            ? overrides.targetHoleLengthA
+            : currentState.targetHoleLengthA,
+        solveResult: Object.prototype.hasOwnProperty.call(overrides, 'solveResult')
+            ? overrides.solveResult
+            : currentState.solveResult
+    });
+
+    return setFramePoseState(currentFrameIndex, poseState);
+}
+
 function buildJointMechanismForBundle(bundle, frameIndex = currentFrameIndex) {
     return series.buildJointMechanismForBundle(bundle, {
         frameIndex,
@@ -210,6 +307,10 @@ function buildJointMechanismForBundle(bundle, frameIndex = currentFrameIndex) {
 }
 
 function getCurrentMechanismBundle() {
+    if (liveMechanismBundle?.mechanism instanceof Mechanism) {
+        return syncLiveMechanismToFrame(currentFrameIndex) || liveMechanismBundle;
+    }
+
     const bundle = normalizeMechanismFrameBundle(series.getMechanism(currentFrameIndex) || frameChains[currentFrameIndex] || null);
     if (!(bundle.mechanism instanceof Mechanism)) {
         bundle.mechanism = buildJointMechanismForBundle(bundle, currentFrameIndex);
@@ -229,6 +330,8 @@ function hasRenderableChain() {
 function buildChain() {
     Object.keys(frameChains).forEach((key) => delete frameChains[key]);
     Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
+    liveMechanismBundle = null;
+    liveMechanismBaseState = null;
 
     const created = series.createMechanisms({
         chainThickness,
@@ -242,20 +345,29 @@ function buildChain() {
     });
 
     const storedMechanisms = series.getMechanismFrameStore();
+    const startFrameIndex = Number.isInteger(created?.startFrameIndex)
+        ? created.startFrameIndex
+        : (series.getFrameIndices().sort((a, b) => a - b)[0] || 0);
+    const templateBundle = normalizeMechanismFrameBundle(storedMechanisms[startFrameIndex] || null);
+
+    if (templateBundle.mechanism1 || templateBundle.mechanism2) {
+        if (!(templateBundle.mechanism instanceof Mechanism)) {
+            templateBundle.mechanism = buildJointMechanismForBundle(templateBundle, startFrameIndex);
+        }
+        liveMechanismBundle = templateBundle;
+        liveMechanismBaseState = templateBundle.mechanism?._capturePoseState?.() || null;
+    }
+
     Object.entries(storedMechanisms).forEach(([key, bundle]) => {
-        frameChains[key] = bundle;
-        frameChainBuilt[key] = Boolean(
-            (bundle?.mechanism1?.links?.length || 0) > 0
-            || (bundle?.mechanism2?.links?.length || 0) > 0
-        );
+        setFramePoseState(Number.parseInt(key, 10), extractMechanismPoseState(bundle));
     });
 
     const displayedFrameIndex = Number.isInteger(created?.displayedFrameIndex)
         ? created.displayedFrameIndex
         : (series.getFrameIndices().sort((a, b) => a - b).at(-1) || 0);
-    const displayedBundle = normalizeMechanismFrameBundle(
-        created?.displayedBundle || series.getMechanism(displayedFrameIndex) || null
-    );
+    const displayedBundle = liveMechanismBundle?.mechanism instanceof Mechanism
+        ? (syncLiveMechanismToFrame(displayedFrameIndex) || liveMechanismBundle)
+        : getCurrentMechanismBundle();
 
     mechanismNeedsRegeneration = false;
     setCurrentFrame(displayedFrameIndex);
@@ -273,6 +385,10 @@ function setCurrentFrame(frameIndex) {
     currentFrameIndex = series.clampFrameIndex(frameIndex);
     hoveredPoint = null;
     draggedPoint = null;
+
+    if (liveMechanismBundle?.mechanism instanceof Mechanism) {
+        syncLiveMechanismToFrame(currentFrameIndex);
+    }
 
     emitChainStateChange();
     redrawAll();
@@ -762,8 +878,11 @@ window.appActions = {
     setChainForFrame: (frameIndex, chain, isBuilt) => {
         const bundle = normalizeMechanismFrameBundle(chain);
         bundle.mechanism = buildJointMechanismForBundle(bundle, frameIndex);
-        series.setMechanism(frameIndex, bundle);
-        frameChains[frameIndex] = bundle;
+        if (!(liveMechanismBundle?.mechanism instanceof Mechanism) && (bundle.mechanism1 || bundle.mechanism2)) {
+            liveMechanismBundle = bundle;
+            liveMechanismBaseState = bundle.mechanism?._capturePoseState?.() || null;
+        }
+        setFramePoseState(frameIndex, extractMechanismPoseState(bundle));
         if (isBuilt !== undefined) frameChainBuilt[frameIndex] = isBuilt;
         emitChainStateChange();
         // Also redraw immediately so restored chains show up
@@ -946,8 +1065,7 @@ window.appActions = {
         if (!(bundle.mechanism instanceof Mechanism)) return;
 
         bundle.mechanism.setJointThetaByIndex(i, theta);
-        series.setMechanism(currentFrameIndex, bundle);
-        frameChains[currentFrameIndex] = bundle;
+        persistCurrentFramePose();
 
         emitChainStateChange();
         redrawAll();
@@ -968,8 +1086,7 @@ window.appActions = {
 
         bundle.targetHoleLength = target;
         bundle.solveResult = result;
-        series.setMechanism(currentFrameIndex, bundle);
-        frameChains[currentFrameIndex] = bundle;
+        persistCurrentFramePose({ targetHoleLength: target, solveResult: result });
 
         emitChainStateChange();
         redrawAll();
@@ -982,17 +1099,12 @@ window.appActions = {
         if (!Number.isInteger(i) || i < 0 || !Number.isFinite(k) || k <= 0) return;
         jointKByIndex[i] = k;
 
-        Object.entries(frameChains).forEach(([key, entry]) => {
-            const frameIndex = Number.parseInt(key, 10);
-            const bundle = normalizeMechanismFrameBundle(entry);
-            if (!(bundle.mechanism instanceof Mechanism)) {
-                bundle.mechanism = buildJointMechanismForBundle(bundle, frameIndex);
-            }
-            const joint = bundle.mechanism.joints[i];
-            if (joint instanceof Joint) {
-                joint.setK(k);
-            }
-        });
+        const bundle = getCurrentMechanismBundle();
+        const joint = bundle.mechanism?.joints?.[i];
+        if (joint instanceof Joint) {
+            joint.setK(k);
+            persistCurrentFramePose();
+        }
 
         emitChainStateChange();
         redrawAll();
@@ -1009,11 +1121,16 @@ window.appActions = {
             });
         }
 
-        Object.entries(frameChains).forEach(([key, entry]) => {
-            const frameIndex = Number.parseInt(key, 10);
-            const bundle = normalizeMechanismFrameBundle(entry);
-            bundle.mechanism = buildJointMechanismForBundle(bundle, frameIndex);
-        });
+        const bundle = getCurrentMechanismBundle();
+        if (bundle.mechanism instanceof Mechanism) {
+            bundle.mechanism.joints.forEach((joint, index) => {
+                const nextK = Number(jointKByIndex[index]);
+                if (joint instanceof Joint && Number.isFinite(nextK) && nextK > 0) {
+                    joint.setK(nextK);
+                }
+            });
+            persistCurrentFramePose();
+        }
 
         emitChainStateChange();
         redrawAll();

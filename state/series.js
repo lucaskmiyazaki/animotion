@@ -629,18 +629,19 @@ class Series {
             let solveResult = null;
 
             if (mechanism instanceof MechanismCtor) {
-                const thetaSolve = mechanism.solveThetasForLength(targetHoleLength, {
-                    debugFrameIndex: frameIndex,
-                    startFromInitial: frameIndex === startFrameIndex,
-                    warmStartThetaVector: frameIndex === startFrameIndex ? null : previousThetaVector,
-                    maxBinaryIterations: Number.isFinite(solveOptions.maxBinaryIterations)
-                        ? Number(solveOptions.maxBinaryIterations)
-                        : undefined,
-                    maxBracketExpansions: Number.isFinite(solveOptions.maxBracketExpansions)
-                        ? Number(solveOptions.maxBracketExpansions)
-                        : undefined
-                });
-                solveResult = thetaSolve?.result || null;
+                // DEBUG: skip per-frame theta solving and keep the initial pose.
+                // const thetaSolve = mechanism.solveThetasForLength(targetHoleLength, {
+                //     debugFrameIndex: frameIndex,
+                //     startFromInitial: frameIndex === startFrameIndex,
+                //     warmStartThetaVector: frameIndex === startFrameIndex ? null : previousThetaVector,
+                //     maxBinaryIterations: Number.isFinite(solveOptions.maxBinaryIterations)
+                //         ? Number(solveOptions.maxBinaryIterations)
+                //         : undefined,
+                //     maxBracketExpansions: Number.isFinite(solveOptions.maxBracketExpansions)
+                //         ? Number(solveOptions.maxBracketExpansions)
+                //         : undefined
+                // });
+                // solveResult = thetaSolve?.result || null;
             }
 
             const solvedBundle = makeBundle(
