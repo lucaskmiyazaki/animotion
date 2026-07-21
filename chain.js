@@ -552,6 +552,10 @@ class Joint {
         this.prevLinkB = options.prevLinkB instanceof Link ? options.prevLinkB : null;
         this.nextLinkB = options.nextLinkB instanceof Link ? options.nextLinkB : null;
 
+        // Shared pivot between mechanism A and B for this joint.
+        // Must coincide across both mechanisms when both links exist.
+        this._pivotPoint = null;
+
         // Per-mechanism theta references used to convert joint theta
         // into each mechanism's local relative theta.
         const currentRelA = this._readRelativeTheta(this.prevLinkA, this.nextLinkA);
@@ -572,6 +576,8 @@ class Joint {
         this._theta = this._clampTheta(this._theta);
         this._mechanism = null;
         this._index = -1;
+
+        this._initializePivotPoint();
     }
 
     get theta() {
@@ -580,6 +586,87 @@ class Joint {
 
     set theta(value) {
         this._theta = this._clampTheta(value);
+    }
+
+    get pivotPoint() {
+        return this._pivotPoint ? { x: this._pivotPoint.x, y: this._pivotPoint.y } : null;
+    }
+
+    set pivotPoint(value) {
+        const normalized = this._normalizePivotPoint(value);
+        this._pivotPoint = normalized;
+        this._applyPivotToNextLinks(normalized);
+    }
+
+    _normalizePivotPoint(value) {
+        if (!value || !Number.isFinite(value.x) || !Number.isFinite(value.y)) {
+            throw new Error('Joint pivotPoint must be a finite {x, y} point.');
+        }
+        return {
+            x: Number(value.x),
+            y: Number(value.y)
+        };
+    }
+
+    _getNextLinkPivot(link) {
+        if (!(link instanceof Link)) return null;
+        if (!link.position || !Number.isFinite(link.position.x) || !Number.isFinite(link.position.y)) {
+            throw new Error('Joint next link has invalid position for pivot.');
+        }
+        return {
+            x: Number(link.position.x),
+            y: Number(link.position.y)
+        };
+    }
+
+    _assertCoincidentPivotPoints(pointA, pointB, tolerance = 1e-6) {
+        if (!pointA || !pointB) return;
+        const dx = pointA.x - pointB.x;
+        const dy = pointA.y - pointB.y;
+        if (Math.hypot(dx, dy) > tolerance) {
+            throw new Error(`Joint pivot mismatch between mechanism A and B: A=(${pointA.x}, ${pointA.y}), B=(${pointB.x}, ${pointB.y})`);
+        }
+    }
+
+    _applyPivotToNextLinks(pivot) {
+        if (!pivot) return;
+        if (this.nextLinkA instanceof Link) {
+            this.nextLinkA.position.x = pivot.x;
+            this.nextLinkA.position.y = pivot.y;
+        }
+        if (this.nextLinkB instanceof Link) {
+            this.nextLinkB.position.x = pivot.x;
+            this.nextLinkB.position.y = pivot.y;
+        }
+    }
+
+    _initializePivotPoint() {
+        const pivotA = this._getNextLinkPivot(this.nextLinkA);
+        const pivotB = this._getNextLinkPivot(this.nextLinkB);
+
+        this._assertCoincidentPivotPoints(pivotA, pivotB);
+
+        const chosen = pivotA || pivotB;
+        if (chosen) {
+            this._pivotPoint = chosen;
+            this._applyPivotToNextLinks(chosen);
+        }
+    }
+
+    _syncPivotPointFromNextLinks() {
+        const pivotA = this._getNextLinkPivot(this.nextLinkA);
+        const pivotB = this._getNextLinkPivot(this.nextLinkB);
+
+        this._assertCoincidentPivotPoints(pivotA, pivotB);
+
+        const chosen = pivotA || pivotB || this._pivotPoint;
+        if (chosen) {
+            this._pivotPoint = {
+                x: chosen.x,
+                y: chosen.y
+            };
+            this._applyPivotToNextLinks(this._pivotPoint);
+        }
     }
 
     _readRelativeTheta(prevLink, nextLink) {
@@ -647,6 +734,8 @@ class Joint {
             return this.theta;
         }
 
+        this._syncPivotPointFromNextLinks();
+
         const oldRelA = this._convertToMechanismThetaAt(
             previousTheta,
             this.initialMechanismThetaA,
@@ -673,8 +762,8 @@ class Joint {
             this._mechanism._propagateRigidFromJoint(this._index, {
                 deltaA: newRelA - oldRelA,
                 deltaB: newRelB - oldRelB,
-                pivotA: this.nextLinkA ? { x: this.nextLinkA.position.x, y: this.nextLinkA.position.y } : null,
-                pivotB: this.nextLinkB ? { x: this.nextLinkB.position.x, y: this.nextLinkB.position.y } : null
+                pivotA: this.pivotPoint,
+                pivotB: this.pivotPoint
             });
         } else {
             this._applyToFollowingLinks();
