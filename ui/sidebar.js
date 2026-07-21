@@ -521,12 +521,6 @@ jointThetaSlider.addEventListener('input', () => {
     jointThetaValueDisplay.textContent = `Joint theta: ${safeDisplayed.toFixed(3)} (j${index + 1})`;
 });
 
-const regenerateWarning = document.createElement('div');
-regenerateWarning.className = 'energy-display';
-regenerateWarning.style.color = '#d97706';
-regenerateWarning.textContent = 'Warning: parameters changed. Regenerate mechanism.';
-regenerateWarning.style.display = 'none';
-
 const energyDisplay = document.createElement('div');
 energyDisplay.className = 'energy-display';
 energyDisplay.textContent = 'Elastic Energy: 0';
@@ -540,24 +534,6 @@ const companionLineLengthDisplay = document.createElement('div');
 companionLineLengthDisplay.className = 'energy-display';
 companionLineLengthDisplay.textContent = 'Pink L: 0';
 companionLineLengthDisplay.style.color = '#f550aa';
-
-const targetLineLengthDisplay = document.createElement('div');
-targetLineLengthDisplay.className = 'energy-display';
-targetLineLengthDisplay.textContent = 'Target L: -';
-targetLineLengthDisplay.style.color = '#9ca3af';
-
-const targetSolveStatusDisplay = document.createElement('div');
-targetSolveStatusDisplay.className = 'energy-display';
-targetSolveStatusDisplay.textContent = 'Target solve: -';
-targetSolveStatusDisplay.style.color = '#9ca3af';
-
-const skeletonLengthDisplay = document.createElement('div');
-skeletonLengthDisplay.className = 'energy-display';
-skeletonLengthDisplay.textContent = 'Skeleton Length: 0';
-
-const jointThicknessDisplay = document.createElement('div');
-jointThicknessDisplay.className = 'energy-display';
-jointThicknessDisplay.textContent = 'Joint Thicknesses: -';
 
 const companionJointWarningDisplay = document.createElement('div');
 companionJointWarningDisplay.className = 'energy-display';
@@ -579,29 +555,10 @@ function updateEnergyAndLengthDisplay() {
     const holeLengths = window.appActions?.calculateHoleLineLengths?.() ?? { orangeLength: 0, pinkLength: 0 };
     const orangeLength = Number.isFinite(holeLengths.orangeLength) ? holeLengths.orangeLength : 0;
     const pinkLength = Number.isFinite(holeLengths.pinkLength) ? holeLengths.pinkLength : 0;
-    const targetLength = window.appActions?.getCurrentTargetHoleLength?.();
-    const diagnostics = window.appActions?.getCurrentSolveDiagnostics?.();
-    const skeletonLength = window.appActions?.calculateCurrentSkeletonLength?.() ?? 0;
-    const jointThicknesses = window.appActions?.getJointThicknesses?.() ?? [];
     const companionJointWarning = window.appActions?.getCompanionJointWarning?.() ?? '';
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
     lineLengthDisplay.textContent = `Orange L: ${orangeLength.toFixed(2)}`;
     companionLineLengthDisplay.textContent = `Pink L: ${pinkLength.toFixed(2)}`;
-    targetLineLengthDisplay.textContent = Number.isFinite(targetLength)
-        ? `Target L: ${targetLength.toFixed(2)}`
-        : 'Target L: -';
-    if (diagnostics && Number.isFinite(diagnostics.lengthError)) {
-        const absErr = Math.abs(diagnostics.lengthError);
-        targetSolveStatusDisplay.textContent = `Target solve: ${diagnostics.feasible ? 'feasible' : 'infeasible'} | |e|=${absErr.toFixed(2)}`;
-        targetSolveStatusDisplay.style.color = diagnostics.feasible ? '#22c55e' : '#ef4444';
-    } else {
-        targetSolveStatusDisplay.textContent = 'Target solve: -';
-        targetSolveStatusDisplay.style.color = '#9ca3af';
-    }
-    skeletonLengthDisplay.textContent = `Skeleton Length: ${skeletonLength.toFixed(2)}`;
-    jointThicknessDisplay.textContent = jointThicknesses.length > 0
-        ? `Joint Thicknesses: ${jointThicknesses.map(v => v.toFixed(2)).join(', ')}`
-        : 'Joint Thicknesses: -';
     companionJointWarningDisplay.textContent = companionJointWarning ? `Companion Joint Warning: ${companionJointWarning}` : '';
     companionJointWarningDisplay.style.display = companionJointWarning ? '' : 'none';
     syncJointThetaDebugControls();
@@ -613,14 +570,9 @@ advancedChainContent.append(
     jointThetaDebugRow,
     jointThetaSlider,
     jointThetaValueDisplay,
-    regenerateWarning,
     energyDisplay,
     lineLengthDisplay,
     companionLineLengthDisplay,
-    targetLineLengthDisplay,
-    targetSolveStatusDisplay,
-    skeletonLengthDisplay,
-    jointThicknessDisplay,
     companionJointWarningDisplay
 );
 
@@ -878,8 +830,6 @@ function updateBuildControls() {
     bottomSecondaryActions.style.display = hasChain ? 'grid' : 'none';
     buildButton.disabled = !hasAnySkeleton;
 
-    const needsRegeneration = window.appActions?.getMechanismNeedsRegeneration?.() ?? false;
-    regenerateWarning.style.display = (needsRegeneration && hasChain) ? '' : 'none';
 }
 
 function updateProgressiveVisibility() {
