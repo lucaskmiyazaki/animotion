@@ -545,6 +545,50 @@ targetLineLengthBDisplay.className = 'energy-display';
 targetLineLengthBDisplay.textContent = 'Target Chain B centerline: -';
 targetLineLengthBDisplay.style.color = '#f550aa';
 
+const targetLengthBRow = document.createElement('div');
+targetLengthBRow.className = 'joint-k-row';
+targetLengthBRow.style.alignItems = 'stretch';
+targetLengthBRow.style.display = 'grid';
+targetLengthBRow.style.gridTemplateColumns = '1fr';
+targetLengthBRow.style.gap = '8px';
+
+const targetLengthBLabel = document.createElement('label');
+targetLengthBLabel.className = 'joint-k-label';
+targetLengthBLabel.textContent = 'Target length B';
+targetLengthBLabel.style.alignSelf = 'start';
+
+const targetLengthBControls = document.createElement('div');
+targetLengthBControls.style.display = 'flex';
+targetLengthBControls.style.gap = '8px';
+targetLengthBControls.style.alignItems = 'center';
+targetLengthBControls.style.width = '100%';
+
+const targetLengthBInput = document.createElement('input');
+targetLengthBInput.className = 'joint-k-input';
+targetLengthBInput.type = 'number';
+targetLengthBInput.step = '0.01';
+targetLengthBInput.placeholder = 'Chain B target';
+targetLengthBInput.style.flex = '1 1 auto';
+targetLengthBInput.style.minWidth = '0';
+targetLengthBInput.style.padding = '10px 12px';
+targetLengthBInput.style.fontSize = '14px';
+
+const findTargetLengthBButton = document.createElement('button');
+findTargetLengthBButton.type = 'button';
+findTargetLengthBButton.textContent = 'Find';
+findTargetLengthBButton.style.flex = '0 0 auto';
+findTargetLengthBButton.style.minWidth = '64px';
+findTargetLengthBButton.style.padding = '10px 14px';
+findTargetLengthBButton.addEventListener('click', () => {
+    const target = Number.parseFloat(targetLengthBInput.value);
+    if (!Number.isFinite(target)) return;
+    window.appActions?.optimizeCurrentMechanismForStringLength?.(target);
+    updateEnergyAndLengthDisplay();
+});
+
+targetLengthBControls.append(targetLengthBInput, findTargetLengthBButton);
+targetLengthBRow.append(targetLengthBLabel, targetLengthBControls);
+
 const companionJointWarningDisplay = document.createElement('div');
 companionJointWarningDisplay.className = 'energy-display';
 companionJointWarningDisplay.style.color = '#b45309';
@@ -639,6 +683,9 @@ function updateEnergyAndLengthDisplay() {
     targetLineLengthBDisplay.textContent = Number.isFinite(targetChainB)
         ? `Target Chain B centerline: ${targetChainB.toFixed(2)}`
         : 'Target Chain B centerline: -';
+    targetLengthBInput.value = Number.isFinite(targetChainB)
+        ? targetChainB.toFixed(2)
+        : '';
     companionJointWarningDisplay.textContent = companionJointWarning ? `Companion Joint Warning: ${companionJointWarning}` : '';
     companionJointWarningDisplay.style.display = companionJointWarning ? '' : 'none';
     syncJointThetaDebugControls();
@@ -650,6 +697,7 @@ advancedChainContent.append(
     jointThetaDebugRow,
     jointThetaSlider,
     jointThetaValueDisplay,
+    targetLengthBRow,
     maxBinaryIterationsRow,
     maxBracketExpansionsRow,
     energyDisplay,

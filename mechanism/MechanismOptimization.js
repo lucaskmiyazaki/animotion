@@ -497,12 +497,18 @@ const MechanismOptimization = (() => {
 
 		if (Number.isInteger(options.debugFrameIndex)) {
 			const frameIndex = options.debugFrameIndex;
+			const thetaSummary = Array.isArray(result.thetaVector)
+				? result.thetaVector.map((theta, index) => `j${index}=${Number(theta).toFixed(6)}`).join(' ')
+				: '';
 			console.log(
 				`[MechanismOptimization][frame ${frameIndex}] stopReason=${result.stopReason} `
 				+ `converged=${result.converged} `
+				+ `targetLength=${target.toFixed(6)} `
+				+ `reachedLength=${result.resultingLength.toFixed(6)} `
 				+ `lengthError=${result.lengthError.toFixed(6)} `
 				+ `binaryIterations=${result.binaryIterations}/${result.maxBinaryIterations} `
-				+ `bracketExpansions=${result.bracketExpansions}/${result.maxBracketExpansions}`
+				+ `bracketExpansions=${result.bracketExpansions}/${result.maxBracketExpansions} `
+				+ `thetaVector=[${thetaSummary}]`
 			);
 		}
 
