@@ -140,24 +140,6 @@ class Joint {
         this._index = Number.isInteger(index) ? index : -1;
     }
 
-    _debugLogAngles(previousTheta, nextTheta) {
-        const prevA = this.prevLinkA instanceof Link ? this.prevLinkA.theta : null;
-        const nextA = this.nextLinkA instanceof Link ? this.nextLinkA.theta : null;
-        const prevB = this.prevLinkB instanceof Link ? this.prevLinkB.theta : null;
-        const nextB = this.nextLinkB instanceof Link ? this.nextLinkB.theta : null;
-
-        const fmt = (value) => (Number.isFinite(value) ? Number(value).toFixed(6) : 'n/a');
-        const rangeMin = Math.min(this.initialTheta, this.finalTheta);
-        const rangeMax = Math.max(this.initialTheta, this.finalTheta);
-
-        console.log(
-            `[Joint ${this._index}] theta: ${fmt(previousTheta)} -> ${fmt(nextTheta)} | `
-            + `range=[${fmt(rangeMin)}, ${fmt(rangeMax)}] | `
-            + `A(abs prev/next): ${fmt(prevA)} / ${fmt(nextA)} | `
-            + `B(abs prev/next): ${fmt(prevB)} / ${fmt(nextB)}`
-        );
-    }
-
     // Updates this joint and propagates movement only to following links.
     setTheta(nextTheta) {
         const previousTheta = this.theta;
@@ -181,8 +163,6 @@ class Joint {
         } else {
             this._applyToFollowingLinks();
         }
-
-        this._debugLogAngles(previousTheta, this.theta);
         return this.theta;
     }
 
