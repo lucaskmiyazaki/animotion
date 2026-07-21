@@ -519,6 +519,16 @@ jointThetaSlider.addEventListener('input', () => {
     const displayed = Number(window.appActions?.getJointTheta?.(index));
     const safeDisplayed = Number.isFinite(displayed) ? displayed : theta;
     jointThetaValueDisplay.textContent = `Joint theta: ${safeDisplayed.toFixed(3)} (j${index + 1})`;
+
+    const debug = window.appActions?.getJointAngleDebug?.(index);
+    if (debug) {
+        const fmt = (value) => (Number.isFinite(value) ? Number(value).toFixed(6) : 'n/a');
+        console.log(
+            `[Slider][Joint ${debug.jointIndex}] relative(theta)=${fmt(debug.relativeTheta)} | `
+            + `A absolute(prev,next)=(${fmt(debug.absoluteA.prev)}, ${fmt(debug.absoluteA.next)}) | `
+            + `B absolute(prev,next)=(${fmt(debug.absoluteB.prev)}, ${fmt(debug.absoluteB.next)})`
+        );
+    }
 });
 
 const energyDisplay = document.createElement('div');

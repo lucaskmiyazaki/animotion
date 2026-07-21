@@ -2,7 +2,7 @@ class Joint {
     constructor(options = {}) {
         this.k = Number.isFinite(options.k) ? Math.max(0, options.k) : 1;
 
-        // Joint theta domain (driver variable).
+        // Joint theta domain (driver variable, interpreted as relative angle).
         this.initialTheta = Number.isFinite(options.initialTheta) ? options.initialTheta : 0;
         this.finalTheta = Number.isFinite(options.finalTheta) ? options.finalTheta : 1;
         this._theta = Number.isFinite(options.theta) ? options.theta : 0;
@@ -187,6 +187,23 @@ class Joint {
         this._index = Number.isInteger(index) ? index : -1;
     }
 
+    _debugLogAngles(previousTheta, nextTheta) {
+        const prevA = this.prevLinkA instanceof Link ? this.prevLinkA.theta : null;
+        const nextA = this.nextLinkA instanceof Link ? this.nextLinkA.theta : null;
+        const prevB = this.prevLinkB instanceof Link ? this.prevLinkB.theta : null;
+        const nextB = this.nextLinkB instanceof Link ? this.nextLinkB.theta : null;
+
+        const fmt = (value) => (Number.isFinite(value) ? Number(value).toFixed(6) : 'n/a');
+        const relA = this._readRelativeTheta(this.prevLinkA, this.nextLinkA);
+        const relB = this._readRelativeTheta(this.prevLinkB, this.nextLinkB);
+
+        console.log(
+            `[Joint ${this._index}] theta(relative): ${fmt(previousTheta)} -> ${fmt(nextTheta)} | `
+            + `A(abs prev/next): ${fmt(prevA)} / ${fmt(nextA)} | A(relative now): ${fmt(relA)} | `
+            + `B(abs prev/next): ${fmt(prevB)} / ${fmt(nextB)} | B(relative now): ${fmt(relB)}`
+        );
+    }
+
     // Updates this joint and propagates movement only to following links.
     setTheta(nextTheta) {
         const previousTheta = this.theta;
@@ -229,6 +246,8 @@ class Joint {
         } else {
             this._applyToFollowingLinks();
         }
+
+        this._debugLogAngles(previousTheta, this.theta);
         return this.theta;
     }
 

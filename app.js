@@ -896,6 +896,32 @@ window.appActions = {
         const joint = bundle.mechanism?.joints?.[i];
         return Number.isFinite(joint?.theta) ? joint.theta : 0;
     },
+    getJointAngleDebug: (index) => {
+        const i = Number.parseInt(index, 10);
+        if (!Number.isInteger(i) || i < 0) return null;
+
+        const bundle = getCurrentMechanismBundle();
+        const joint = bundle.mechanism?.joints?.[i];
+        if (!(joint instanceof Joint)) return null;
+
+        const absA_prev = Number(joint.prevLinkA?.theta);
+        const absA_next = Number(joint.nextLinkA?.theta);
+        const absB_prev = Number(joint.prevLinkB?.theta);
+        const absB_next = Number(joint.nextLinkB?.theta);
+
+        return {
+            jointIndex: i,
+            relativeTheta: Number.isFinite(joint.theta) ? joint.theta : null,
+            absoluteA: {
+                prev: Number.isFinite(absA_prev) ? absA_prev : null,
+                next: Number.isFinite(absA_next) ? absA_next : null
+            },
+            absoluteB: {
+                prev: Number.isFinite(absB_prev) ? absB_prev : null,
+                next: Number.isFinite(absB_next) ? absB_next : null
+            }
+        };
+    },
     getJointThetaBounds: (index) => {
         const i = Number.parseInt(index, 10);
         if (!Number.isInteger(i) || i < 0) {
