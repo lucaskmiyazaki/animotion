@@ -454,7 +454,6 @@ class Series {
     }
 
     buildJointMechanismForBundle(bundle, options = {}) {
-        const frameIndex = Number.isInteger(options.frameIndex) ? options.frameIndex : 0;
         const jointKByIndex = options.jointKByIndex && typeof options.jointKByIndex === 'object'
             ? options.jointKByIndex
             : {};
@@ -472,12 +471,6 @@ class Series {
         const firstFrameIndex = frameIndices[0];
         const lastFrameIndex = frameIndices[frameIndices.length - 1];
 
-        let jointTheta = 0;
-        if (Number.isFinite(firstFrameIndex) && Number.isFinite(lastFrameIndex) && lastFrameIndex > firstFrameIndex) {
-            const t = (frameIndex - firstFrameIndex) / (lastFrameIndex - firstFrameIndex);
-            jointTheta = Math.min(1, Math.max(0, t));
-        }
-
         const firstBundle = options.initialBundle || this.getMechanism(firstFrameIndex) || null;
         const lastBundle = options.finalBundle || this.getMechanism(lastFrameIndex) || null;
 
@@ -493,7 +486,7 @@ class Series {
             finalThetaBySegmentA: mapAFinal,
             initialThetaBySegmentB: mapBInitial,
             finalThetaBySegmentB: mapBFinal,
-            jointTheta,
+            jointTheta: 0,
             kByJointIndex: jointKByIndex
         });
     }
@@ -629,19 +622,18 @@ class Series {
             let solveResult = null;
 
             if (mechanism instanceof MechanismCtor) {
-                // DEBUG: skip per-frame theta solving and keep the initial pose.
-                // const thetaSolve = mechanism.solveThetasForLength(targetHoleLength, {
-                //     debugFrameIndex: frameIndex,
-                //     startFromInitial: frameIndex === startFrameIndex,
-                //     warmStartThetaVector: frameIndex === startFrameIndex ? null : previousThetaVector,
-                //     maxBinaryIterations: Number.isFinite(solveOptions.maxBinaryIterations)
-                //         ? Number(solveOptions.maxBinaryIterations)
-                //         : undefined,
-                //     maxBracketExpansions: Number.isFinite(solveOptions.maxBracketExpansions)
-                //         ? Number(solveOptions.maxBracketExpansions)
-                //         : undefined
-                // });
-                // solveResult = thetaSolve?.result || null;
+                const thetaSolve = mechanism.solveThetasForLength(targetHoleLength, {
+                    debugFrameIndex: frameIndex,
+                    startFromInitial: true,
+                    warmStartThetaVector: frameIndex === startFrameIndex ? null : previousThetaVector,
+                    maxBinaryIterations: Number.isFinite(solveOptions.maxBinaryIterations)
+                        ? Number(solveOptions.maxBinaryIterations)
+                        : undefined,
+                    maxBracketExpansions: Number.isFinite(solveOptions.maxBracketExpansions)
+                        ? Number(solveOptions.maxBracketExpansions)
+                        : undefined
+                });
+                solveResult = thetaSolve?.result || null;
             }
 
             const solvedBundle = makeBundle(
