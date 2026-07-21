@@ -305,7 +305,8 @@ class Chain {
             });
         }
 
-        // Final link mirrors initial pattern at tail.
+        // Final link keeps the same geometry but re-anchors to the
+        // second-last skeleton point so the tail joint uses that pivot.
         if (points.length >= 3 && pivotByIndex[lastIndex - 1]) {
             const anchor = points[lastIndex];
             const second = points[lastIndex - 1];
@@ -313,9 +314,10 @@ class Chain {
             const fourth = Chain._computeTerminalFourthPoint(anchor, second, pivotPoint);
             if (fourth) {
                 const ordered = Chain._orderQuadWithoutIntersection([anchor, second, pivotPoint, fourth], anchor);
-                this.addLinkFromWorldPoints(ordered, {
+                const reanchored = Chain._rotateStart(ordered, second);
+                this.addLinkFromWorldPoints(reanchored, {
                     role: 'final',
-                    anchorPointIndex: lastIndex,
+                    anchorPointIndex: lastIndex - 1,
                     segmentIndex: lastIndex - 1,
                     refKind
                 });
