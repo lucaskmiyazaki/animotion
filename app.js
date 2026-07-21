@@ -39,6 +39,8 @@ let companionJointWarning = '';
 let chainThickness = 50;
 let jointMinimumThickness = 5;
 let companionSlack = 10;
+let optimizationMaxBinaryIterations = 24;
+let optimizationMaxBracketExpansions = 14;
 let companionRigidModel = null;
 const pointRadius = 5;
 const hoverRadius = 9;
@@ -231,6 +233,10 @@ function buildChain() {
     const created = series.createMechanisms({
         chainThickness,
         jointKByIndex,
+        solveOptions: {
+            maxBinaryIterations: optimizationMaxBinaryIterations,
+            maxBracketExpansions: optimizationMaxBracketExpansions
+        },
         ChainCtor: Chain,
         MechanismCtor: Mechanism
     });
@@ -927,7 +933,11 @@ window.appActions = {
         const bundle = getCurrentMechanismBundle();
         if (!(bundle.mechanism instanceof Mechanism)) return null;
 
-        const solve = bundle.mechanism.findMinimumEnergyPoseForHoleLength(target, options);
+        const solve = bundle.mechanism.findMinimumEnergyPoseForHoleLength(target, {
+            maxBinaryIterations: optimizationMaxBinaryIterations,
+            maxBracketExpansions: optimizationMaxBracketExpansions,
+            ...options
+        });
         const result = solve?.result || null;
 
         bundle.targetHoleLength = target;
@@ -982,6 +992,20 @@ window.appActions = {
         emitChainStateChange();
         redrawAll();
     },
+    setOptimizationMaxBinaryIterations: (value) => {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isInteger(parsed) || parsed < 1) return;
+        optimizationMaxBinaryIterations = parsed;
+        emitChainStateChange();
+    },
+    getOptimizationMaxBinaryIterations: () => optimizationMaxBinaryIterations,
+    setOptimizationMaxBracketExpansions: (value) => {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isInteger(parsed) || parsed < 1) return;
+        optimizationMaxBracketExpansions = parsed;
+        emitChainStateChange();
+    },
+    getOptimizationMaxBracketExpansions: () => optimizationMaxBracketExpansions,
     calculateTotalElasticEnergy: () => {
         const bundle = getCurrentMechanismBundle();
         return bundle.mechanism instanceof Mechanism
@@ -1061,11 +1085,11 @@ window.appActions = {
     },
     calculateHoleLineLengths: () => {
         const bundle = getCurrentMechanismBundle();
-        const orangeLength = Number.isFinite(bundle.mechanism2?.getHoleLineLength?.())
-            ? bundle.mechanism2.getHoleLineLength()
-            : 0;
-        const pinkLength = Number.isFinite(bundle.mechanism1?.getHoleLineLength?.())
+        const orangeLength = Number.isFinite(bundle.mechanism1?.getHoleLineLength?.())
             ? bundle.mechanism1.getHoleLineLength()
+            : 0;
+        const pinkLength = Number.isFinite(bundle.mechanism2?.getHoleLineLength?.())
+            ? bundle.mechanism2.getHoleLineLength()
             : 0;
         return { orangeLength, pinkLength };
     },
@@ -1078,6 +1102,11 @@ window.appActions = {
     getCurrentTargetHoleLength: () => {
         const frameBundle = series.getMechanism(currentFrameIndex);
         const target = Number(frameBundle?.targetHoleLength);
+        return Number.isFinite(target) ? target : null;
+    },
+    getCurrentTargetHoleLengthA: () => {
+        const frameBundle = series.getMechanism(currentFrameIndex);
+        const target = Number(frameBundle?.targetHoleLengthA);
         return Number.isFinite(target) ? target : null;
     },
     getCurrentStringLengthBounds: () => {

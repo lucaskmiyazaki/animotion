@@ -367,6 +367,7 @@ const MechanismOptimization = (() => {
 		let monotonicDirection = Math.sign(highEval.resultingLength - lowEval.resultingLength);
 
 		let expansion = 0;
+		let bracketFound = false;
 		while (expansion < maxBracketExpansions) {
 			if (Math.abs(monotonicDirection) < 1e-12) {
 				step *= 2;
@@ -392,6 +393,7 @@ const MechanismOptimization = (() => {
 			const highErr = highEval.resultingLength - target;
 
 			if (lowErr === 0 || highErr === 0 || lowErr * highErr <= 0) {
+				bracketFound = true;
 				break;
 			}
 
@@ -424,8 +426,10 @@ const MechanismOptimization = (() => {
 		}
 
 		let binaryIterations = 0;
+		let stopReason = 'max-binary-iterations';
 		while (binaryIterations < maxBinaryIterations) {
 			if (Math.abs(best.lengthError) <= lengthTolerance) {
+				stopReason = 'length-tolerance-reached';
 				break;
 			}
 
@@ -454,6 +458,10 @@ const MechanismOptimization = (() => {
 			binaryIterations += 1;
 		}
 
+		if (!bracketFound && stopReason !== 'length-tolerance-reached') {
+			stopReason = 'max-bracket-expansions';
+		}
+
 		restorePoseState(mechanism, baseState);
 		applyJointThetaVector(mechanism, best.thetaVector);
 
@@ -474,13 +482,29 @@ const MechanismOptimization = (() => {
 			converged: Math.abs(best.lengthError) <= lengthTolerance,
 			feasible: target >= boundsMin - lengthTolerance && target <= boundsMax + lengthTolerance,
 			lambda: Number(best.lambda),
+			stopReason,
 			binaryIterations,
+			maxBinaryIterations,
+			bracketExpansions: expansion,
+			maxBracketExpansions,
+			bracketFound,
 			lengthTolerance,
 			lengthBounds: {
 				min: Number(boundsMin),
 				max: Number(boundsMax)
 			}
 		};
+
+		if (Number.isInteger(options.debugFrameIndex)) {
+			const frameIndex = options.debugFrameIndex;
+			console.log(
+				`[MechanismOptimization][frame ${frameIndex}] stopReason=${result.stopReason} `
+				+ `converged=${result.converged} `
+				+ `lengthError=${result.lengthError.toFixed(6)} `
+				+ `binaryIterations=${result.binaryIterations}/${result.maxBinaryIterations} `
+				+ `bracketExpansions=${result.bracketExpansions}/${result.maxBracketExpansions}`
+			);
+		}
 
 		return { result };
 	}

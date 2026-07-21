@@ -252,6 +252,22 @@ canvas.create-mode {
     box-shadow: 0 0 0 2px rgba(121, 167, 255, 0.22);
 }
 
+.iteration-setting-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+}
+
+.iteration-setting-row .joint-k-label {
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+.iteration-setting-row .joint-k-input {
+    min-height: 34px;
+    font-size: 13px;
+    padding: 8px 10px;
+}
+
 .energy-display {
     margin-top: 12px;
     padding: 8px;

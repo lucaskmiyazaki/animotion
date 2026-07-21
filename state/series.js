@@ -502,15 +502,19 @@ class Series {
         const ChainCtor = options.ChainCtor || window.Chain || null;
         const MechanismCtor = options.MechanismCtor || window.Mechanism || null;
         const pivotRadius = Number.isFinite(options.chainThickness) ? options.chainThickness : 50;
+        const solveOptions = options.solveOptions && typeof options.solveOptions === 'object'
+            ? options.solveOptions
+            : {};
         const jointKByIndex = options.jointKByIndex && typeof options.jointKByIndex === 'object'
             ? options.jointKByIndex
             : {};
 
-        const makeBundle = (mechanism1 = null, mechanism2 = null, targetHoleLength = null) => ({
+        const makeBundle = (mechanism1 = null, mechanism2 = null, targetHoleLength = null, targetHoleLengthA = null) => ({
             mechanism1: ChainCtor && mechanism1 instanceof ChainCtor ? mechanism1 : null,
             mechanism2: ChainCtor && mechanism2 instanceof ChainCtor ? mechanism2 : null,
             mechanism: null,
-            targetHoleLength: Number.isFinite(targetHoleLength) ? targetHoleLength : null
+            targetHoleLength: Number.isFinite(targetHoleLength) ? targetHoleLength : null,
+            targetHoleLengthA: Number.isFinite(targetHoleLengthA) ? targetHoleLengthA : null
         });
 
         const frameIndices = this.getFrameIndices().sort((a, b) => a - b);
@@ -582,6 +586,12 @@ class Series {
         const finalHoleLength = Number.isFinite((endBundle || startBundle).mechanism2?.getHoleLineLength?.())
             ? (endBundle || startBundle).mechanism2.getHoleLineLength()
             : initialHoleLength;
+        const initialHoleLengthA = Number.isFinite(startBundle.mechanism1?.getHoleLineLength?.())
+            ? startBundle.mechanism1.getHoleLineLength()
+            : 0;
+        const finalHoleLengthA = Number.isFinite((endBundle || startBundle).mechanism1?.getHoleLineLength?.())
+            ? (endBundle || startBundle).mechanism1.getHoleLineLength()
+            : initialHoleLengthA;
         const frameSpan = Math.max(1, endFrameIndex - startFrameIndex);
 
         const cloneBundle = (bundle) => {
@@ -601,6 +611,7 @@ class Series {
             const t = frameSpan > 0 ? (frameIndex - startFrameIndex) / frameSpan : 0;
             const clampedT = Math.min(1, Math.max(0, t));
             const targetHoleLength = initialHoleLength + (finalHoleLength - initialHoleLength) * clampedT;
+            const targetHoleLengthA = initialHoleLengthA + (finalHoleLengthA - initialHoleLengthA) * clampedT;
 
             const baseBundle = frameIndex === startFrameIndex
                 ? cloneBundle(startBundle)
@@ -621,7 +632,13 @@ class Series {
                 const thetaSolve = mechanism.solveThetasForLength(targetHoleLength, {
                     debugFrameIndex: frameIndex,
                     startFromInitial: frameIndex === startFrameIndex,
-                    warmStartThetaVector: frameIndex === startFrameIndex ? null : previousThetaVector
+                    warmStartThetaVector: frameIndex === startFrameIndex ? null : previousThetaVector,
+                    maxBinaryIterations: Number.isFinite(solveOptions.maxBinaryIterations)
+                        ? Number(solveOptions.maxBinaryIterations)
+                        : undefined,
+                    maxBracketExpansions: Number.isFinite(solveOptions.maxBracketExpansions)
+                        ? Number(solveOptions.maxBracketExpansions)
+                        : undefined
                 });
                 solveResult = thetaSolve?.result || null;
             }
@@ -629,7 +646,8 @@ class Series {
             const solvedBundle = makeBundle(
                 mechanism?.chains?.[0] instanceof ChainCtor ? mechanism.chains[0] : baseBundle.mechanism1,
                 mechanism?.chains?.[1] instanceof ChainCtor ? mechanism.chains[1] : baseBundle.mechanism2,
-                targetHoleLength
+                targetHoleLength,
+                targetHoleLengthA
             );
             solvedBundle.mechanism = mechanism;
             solvedBundle.solveResult = solveResult;
@@ -649,7 +667,9 @@ class Series {
             startFrameIndex,
             endFrameIndex,
             initialHoleLength,
-            finalHoleLength
+            finalHoleLength,
+            initialHoleLengthA,
+            finalHoleLengthA
         };
     }
 
