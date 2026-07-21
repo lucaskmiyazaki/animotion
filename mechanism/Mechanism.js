@@ -196,11 +196,7 @@ class Mechanism {
                 prevLinkA,
                 nextLinkA,
                 prevLinkB,
-                nextLinkB,
-                initialMechanismThetaA: Number.isFinite(initialMapA[nextSeg]) ? initialMapA[nextSeg] : 0,
-                finalMechanismThetaA: Number.isFinite(finalMapA[nextSeg]) ? finalMapA[nextSeg] : (Number.isFinite(initialMapA[nextSeg]) ? initialMapA[nextSeg] : 0),
-                initialMechanismThetaB: Number.isFinite(initialMapB[nextSeg]) ? initialMapB[nextSeg] : 0,
-                finalMechanismThetaB: Number.isFinite(finalMapB[nextSeg]) ? finalMapB[nextSeg] : (Number.isFinite(initialMapB[nextSeg]) ? initialMapB[nextSeg] : 0)
+                nextLinkB
             }));
         }
 

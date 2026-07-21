@@ -521,10 +521,12 @@ jointThetaSlider.addEventListener('input', () => {
     jointThetaValueDisplay.textContent = `Joint theta: ${safeDisplayed.toFixed(3)} (j${index + 1})`;
 
     const debug = window.appActions?.getJointAngleDebug?.(index);
+    const bounds = window.appActions?.getJointThetaBounds?.(index) ?? { min: null, max: null };
     if (debug) {
         const fmt = (value) => (Number.isFinite(value) ? Number(value).toFixed(6) : 'n/a');
         console.log(
             `[Slider][Joint ${debug.jointIndex}] relative(theta)=${fmt(debug.relativeTheta)} | `
+            + `range=[${fmt(bounds.min)}, ${fmt(bounds.max)}] | `
             + `A absolute(prev,next)=(${fmt(debug.absoluteA.prev)}, ${fmt(debug.absoluteA.next)}) | `
             + `B absolute(prev,next)=(${fmt(debug.absoluteB.prev)}, ${fmt(debug.absoluteB.next)})`
         );

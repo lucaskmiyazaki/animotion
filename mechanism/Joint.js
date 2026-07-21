@@ -17,23 +17,6 @@ class Joint {
         // Must coincide across both mechanisms when both links exist.
         this._pivotPoint = null;
 
-        // Per-mechanism theta references used to convert joint theta
-        // into each mechanism's local relative theta.
-        const currentRelA = this._readRelativeTheta(this.prevLinkA, this.nextLinkA);
-        const currentRelB = this._readRelativeTheta(this.prevLinkB, this.nextLinkB);
-        this.initialMechanismThetaA = Number.isFinite(options.initialMechanismThetaA)
-            ? options.initialMechanismThetaA
-            : currentRelA;
-        this.finalMechanismThetaA = Number.isFinite(options.finalMechanismThetaA)
-            ? options.finalMechanismThetaA
-            : this.initialMechanismThetaA;
-        this.initialMechanismThetaB = Number.isFinite(options.initialMechanismThetaB)
-            ? options.initialMechanismThetaB
-            : currentRelB;
-        this.finalMechanismThetaB = Number.isFinite(options.finalMechanismThetaB)
-            ? options.finalMechanismThetaB
-            : this.initialMechanismThetaB;
-
         this._theta = this._clampTheta(this._theta);
         this._mechanism = null;
         this._index = -1;
@@ -130,11 +113,6 @@ class Joint {
         }
     }
 
-    _readRelativeTheta(prevLink, nextLink) {
-        if (!(prevLink instanceof Link) || !(nextLink instanceof Link)) return 0;
-        return Link.normalizeAngleSigned(nextLink.theta - prevLink.theta);
-    }
-
     _clampTheta(value) {
         const initial = Number.isFinite(this.initialTheta) ? this.initialTheta : 0;
         const final = Number.isFinite(this.finalTheta) ? this.finalTheta : initial;
@@ -146,39 +124,14 @@ class Joint {
         return value;
     }
 
-    _jointProgress() {
-        const denom = this.finalTheta - this.initialTheta;
-        if (!Number.isFinite(denom) || Math.abs(denom) < 1e-10) return 0;
-        const t = (this.theta - this.initialTheta) / denom;
-        return Math.min(1, Math.max(0, t));
-    }
-
-    _progressAt(thetaValue) {
-        const denom = this.finalTheta - this.initialTheta;
-        if (!Number.isFinite(denom) || Math.abs(denom) < 1e-10) return 0;
-        const t = (thetaValue - this.initialTheta) / denom;
-        return Math.min(1, Math.max(0, t));
-    }
-
-    _convertToMechanismTheta(initialValue, finalValue) {
-        const t = this._jointProgress();
-        return initialValue + (finalValue - initialValue) * t;
-    }
-
-    _convertToMechanismThetaAt(thetaValue, initialValue, finalValue) {
-        const t = this._progressAt(thetaValue);
-        return initialValue + (finalValue - initialValue) * t;
-    }
-
     _applyToFollowingLinks() {
-        const relA = this._convertToMechanismTheta(this.initialMechanismThetaA, this.finalMechanismThetaA);
-        const relB = this._convertToMechanismTheta(this.initialMechanismThetaB, this.finalMechanismThetaB);
+        const jointTheta = Number(this.theta) || 0;
 
         if (this.prevLinkA instanceof Link && this.nextLinkA instanceof Link) {
-            this.nextLinkA.theta = this.prevLinkA.theta + relA;
+            this.nextLinkA.theta = this.prevLinkA.theta + jointTheta;
         }
         if (this.prevLinkB instanceof Link && this.nextLinkB instanceof Link) {
-            this.nextLinkB.theta = this.prevLinkB.theta + relB;
+            this.nextLinkB.theta = this.prevLinkB.theta + jointTheta;
         }
     }
 
@@ -194,13 +147,14 @@ class Joint {
         const nextB = this.nextLinkB instanceof Link ? this.nextLinkB.theta : null;
 
         const fmt = (value) => (Number.isFinite(value) ? Number(value).toFixed(6) : 'n/a');
-        const relA = this._readRelativeTheta(this.prevLinkA, this.nextLinkA);
-        const relB = this._readRelativeTheta(this.prevLinkB, this.nextLinkB);
+        const rangeMin = Math.min(this.initialTheta, this.finalTheta);
+        const rangeMax = Math.max(this.initialTheta, this.finalTheta);
 
         console.log(
-            `[Joint ${this._index}] theta(relative): ${fmt(previousTheta)} -> ${fmt(nextTheta)} | `
-            + `A(abs prev/next): ${fmt(prevA)} / ${fmt(nextA)} | A(relative now): ${fmt(relA)} | `
-            + `B(abs prev/next): ${fmt(prevB)} / ${fmt(nextB)} | B(relative now): ${fmt(relB)}`
+            `[Joint ${this._index}] theta: ${fmt(previousTheta)} -> ${fmt(nextTheta)} | `
+            + `range=[${fmt(rangeMin)}, ${fmt(rangeMax)}] | `
+            + `A(abs prev/next): ${fmt(prevA)} / ${fmt(nextA)} | `
+            + `B(abs prev/next): ${fmt(prevB)} / ${fmt(nextB)}`
         );
     }
 
@@ -214,32 +168,13 @@ class Joint {
 
         this._syncPivotPointFromNextLinks();
 
-        const oldRelA = this._convertToMechanismThetaAt(
-            previousTheta,
-            this.initialMechanismThetaA,
-            this.finalMechanismThetaA
-        );
-        const newRelA = this._convertToMechanismThetaAt(
-            clampedTheta,
-            this.initialMechanismThetaA,
-            this.finalMechanismThetaA
-        );
-        const oldRelB = this._convertToMechanismThetaAt(
-            previousTheta,
-            this.initialMechanismThetaB,
-            this.finalMechanismThetaB
-        );
-        const newRelB = this._convertToMechanismThetaAt(
-            clampedTheta,
-            this.initialMechanismThetaB,
-            this.finalMechanismThetaB
-        );
+        const delta = clampedTheta - previousTheta;
 
         this.theta = clampedTheta;
         if (this._mechanism instanceof Mechanism && this._index >= 0) {
             this._mechanism._propagateRigidFromJoint(this._index, {
-                deltaA: newRelA - oldRelA,
-                deltaB: newRelB - oldRelB,
+                deltaA: delta,
+                deltaB: delta,
                 pivotA: this.pivotPoint,
                 pivotB: this.pivotPoint
             });
