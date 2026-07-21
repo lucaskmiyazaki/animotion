@@ -132,7 +132,7 @@ class Joint {
 
     _readRelativeTheta(prevLink, nextLink) {
         if (!(prevLink instanceof Link) || !(nextLink instanceof Link)) return 0;
-        return nextLink.theta - prevLink.theta;
+        return Link.normalizeAngleSigned(nextLink.theta - prevLink.theta);
     }
 
     _clampTheta(value) {

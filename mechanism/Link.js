@@ -1,4 +1,12 @@
 class Link {
+    static normalizeAngleSigned(angle) {
+        if (!Number.isFinite(angle)) return 0;
+        let value = Number(angle);
+        while (value > Math.PI) value -= Math.PI * 2;
+        while (value < -Math.PI) value += Math.PI * 2;
+        return value;
+    }
+
     constructor(worldPoints, options = {}) {
         if (!Array.isArray(worldPoints) || (worldPoints.length !== 3 && worldPoints.length !== 4)) {
             throw new Error('Link requires 3 (triangle) or 4 (trapezoid-like) points.');
@@ -9,7 +17,8 @@ class Link {
             x: Number(anchor.x) || 0,
             y: Number(anchor.y) || 0
         };
-        this.theta = Number(options.theta) || 0;
+        this._theta = 0;
+        this.theta = Number.isFinite(options.theta) ? Number(options.theta) : 0;
         this.kind = worldPoints.length === 3 ? 'triangle' : 'trapezoid';
         this.metadata = options.metadata && typeof options.metadata === 'object'
             ? { ...options.metadata }
@@ -31,12 +40,20 @@ class Link {
     clone() {
         const clone = Object.create(Link.prototype);
         clone.position = { x: this.position.x, y: this.position.y };
-        clone.theta = this.theta;
+        clone._theta = this._theta;
         clone.kind = this.kind;
         clone.localPoints = this.localPoints.map((p) => ({ x: p.x, y: p.y }));
         clone.metadata = { ...(this.metadata || {}) };
         clone.twin = null;
         return clone;
+    }
+
+    get theta() {
+        return this._theta;
+    }
+
+    set theta(value) {
+        this._theta = Link.normalizeAngleSigned(Number(value) || 0);
     }
 
     setTwin(link) {

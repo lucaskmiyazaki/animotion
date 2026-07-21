@@ -131,7 +131,7 @@ class Mechanism {
             const prevLink = bySegment.get(sorted[i - 1]);
             const nextLink = bySegment.get(sorted[i]);
             if (!(prevLink instanceof Link) || !(nextLink instanceof Link)) continue;
-            result[sorted[i]] = nextLink.theta - prevLink.theta;
+            result[sorted[i]] = Link.normalizeAngleSigned(nextLink.theta - prevLink.theta);
         }
 
         return result;
