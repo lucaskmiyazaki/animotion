@@ -260,7 +260,7 @@ mechanism1Checkbox.addEventListener('change', () => {
 });
 
 const mechanism1OptionText = document.createElement('span');
-mechanism1OptionText.textContent = 'Mechanism 1';
+mechanism1OptionText.textContent = 'Chain A';
 
 mechanism1OptionLabel.append(mechanism1Checkbox, mechanism1OptionText);
 
@@ -275,7 +275,7 @@ mechanism2Checkbox.addEventListener('change', () => {
 });
 
 const mechanism2OptionText = document.createElement('span');
-mechanism2OptionText.textContent = 'Mechanism 2';
+mechanism2OptionText.textContent = 'Chain B';
 
 mechanism2OptionLabel.append(mechanism2Checkbox, mechanism2OptionText);
 
@@ -527,12 +527,12 @@ energyDisplay.textContent = 'Elastic Energy: 0';
 
 const lineLengthDisplay = document.createElement('div');
 lineLengthDisplay.className = 'energy-display';
-lineLengthDisplay.textContent = 'Orange L: 0';
+lineLengthDisplay.textContent = 'Chain A centerline: 0';
 lineLengthDisplay.style.color = '#f58220';
 
 const companionLineLengthDisplay = document.createElement('div');
 companionLineLengthDisplay.className = 'energy-display';
-companionLineLengthDisplay.textContent = 'Pink L: 0';
+companionLineLengthDisplay.textContent = 'Chain B centerline: 0';
 companionLineLengthDisplay.style.color = '#f550aa';
 
 const companionJointWarningDisplay = document.createElement('div');
@@ -553,12 +553,12 @@ advancedChainContent.className = 'advanced-content';
 function updateEnergyAndLengthDisplay() {
     const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
     const holeLengths = window.appActions?.calculateHoleLineLengths?.() ?? { orangeLength: 0, pinkLength: 0 };
-    const orangeLength = Number.isFinite(holeLengths.orangeLength) ? holeLengths.orangeLength : 0;
-    const pinkLength = Number.isFinite(holeLengths.pinkLength) ? holeLengths.pinkLength : 0;
+    const chainALength = Number.isFinite(holeLengths.orangeLength) ? holeLengths.orangeLength : 0;
+    const chainBLength = Number.isFinite(holeLengths.pinkLength) ? holeLengths.pinkLength : 0;
     const companionJointWarning = window.appActions?.getCompanionJointWarning?.() ?? '';
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
-    lineLengthDisplay.textContent = `Orange L: ${orangeLength.toFixed(2)}`;
-    companionLineLengthDisplay.textContent = `Pink L: ${pinkLength.toFixed(2)}`;
+    lineLengthDisplay.textContent = `Chain A centerline: ${chainALength.toFixed(2)}`;
+    companionLineLengthDisplay.textContent = `Chain B centerline: ${chainBLength.toFixed(2)}`;
     companionJointWarningDisplay.textContent = companionJointWarning ? `Companion Joint Warning: ${companionJointWarning}` : '';
     companionJointWarningDisplay.style.display = companionJointWarning ? '' : 'none';
     syncJointThetaDebugControls();
