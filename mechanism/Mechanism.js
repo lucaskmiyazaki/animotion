@@ -245,6 +245,73 @@ class Mechanism {
         return this.joints.reduce((sum, joint) => sum + joint.getElasticEnergy(), 0);
     }
 
+    getNormalizedJointThicknesses(minimumThickness = 5, chainKey = 'A') {
+        const requestedMinimum = Number(minimumThickness);
+        const safeMinimum = Number.isFinite(requestedMinimum) && requestedMinimum > 0 ? requestedMinimum : 5;
+
+        const rawThicknesses = this.joints.map((joint) => {
+            if (!(joint instanceof Joint) || typeof joint.getRawThickness !== 'function') {
+                return Number.NaN;
+            }
+            return Number(joint.getRawThickness(chainKey));
+        });
+
+        const finiteRaw = rawThicknesses.filter((value) => Number.isFinite(value) && value > 0);
+        const minRaw = finiteRaw.length > 0 ? Math.min(...finiteRaw) : Number.NaN;
+        if (!Number.isFinite(minRaw) || minRaw <= 0) {
+            return rawThicknesses.map(() => safeMinimum);
+        }
+
+        const scale = safeMinimum / minRaw;
+        return rawThicknesses.map((value) => {
+            if (!Number.isFinite(value) || value <= 0) return safeMinimum;
+            return value * scale;
+        });
+    }
+
+    drawJoints(ctx, options = {}) {
+        if (!ctx || !Array.isArray(this.joints) || this.joints.length === 0) return;
+
+        const minimumThickness = Number(options.minimumThickness);
+        const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 1.5;
+        const showChainA = options.showChainA !== false;
+        const showChainB = options.showChainB === true;
+        const fillStyleA = options.fillStyleA || 'rgba(255, 255, 255, 0.82)';
+        const fillStyleB = options.fillStyleB || 'rgba(255, 255, 255, 0.6)';
+        const strokeStyleA = options.strokeStyleA || 'rgba(255, 80, 170, 0.95)';
+        const strokeStyleB = options.strokeStyleB || 'rgba(245, 130, 32, 0.95)';
+
+        const thicknessesA = this.getNormalizedJointThicknesses(minimumThickness, 'A');
+        const thicknessesB = this.getNormalizedJointThicknesses(minimumThickness, 'B');
+
+        const drawShape = (shape, fillStyle, strokeStyle) => {
+            if (!shape) return;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(shape.pivot.x, shape.pivot.y);
+            ctx.lineTo(shape.leftBase.x, shape.leftBase.y);
+            ctx.lineTo(shape.rightBase.x, shape.rightBase.y);
+            ctx.closePath();
+            ctx.fillStyle = fillStyle;
+            ctx.strokeStyle = strokeStyle;
+            ctx.lineWidth = lineWidth;
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        };
+
+        this.joints.forEach((joint, index) => {
+            if (!(joint instanceof Joint)) return;
+
+            if (showChainA) {
+                drawShape(joint.getJointShape(thicknessesA[index], 'A'), fillStyleA, strokeStyleA);
+            }
+            if (showChainB) {
+                drawShape(joint.getJointShape(thicknessesB[index], 'B'), fillStyleB, strokeStyleB);
+            }
+        });
+    }
+
     static buildRelativeThetaMap(chain) {
         const result = {};
         if (!(chain instanceof Chain) || !Array.isArray(chain.links)) return result;

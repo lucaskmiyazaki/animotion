@@ -124,6 +124,199 @@ class Joint {
         return value;
     }
 
+    _getChainLinks(chainKey = 'A') {
+        if (chainKey === 'B') {
+            return {
+                prevLink: this.prevLinkB,
+                nextLink: this.nextLinkB
+            };
+        }
+
+        return {
+            prevLink: this.prevLinkA,
+            nextLink: this.nextLinkA
+        };
+    }
+
+    _normalizeVector(vector) {
+        if (!vector || !Number.isFinite(vector.x) || !Number.isFinite(vector.y)) return null;
+        const magnitude = Math.hypot(vector.x, vector.y);
+        if (magnitude < 1e-8) return null;
+        return {
+            x: vector.x / magnitude,
+            y: vector.y / magnitude
+        };
+    }
+
+    _distanceSquared(pointA, pointB) {
+        if (!pointA || !pointB) return Number.POSITIVE_INFINITY;
+        const dx = pointA.x - pointB.x;
+        const dy = pointA.y - pointB.y;
+        return dx * dx + dy * dy;
+    }
+
+    _getLinkReferencePoint(link, pivot) {
+        if (!(link instanceof Link) || !pivot) return null;
+
+        const holeCenterLine = typeof link.getHoleCenterLine === 'function'
+            ? link.getHoleCenterLine()
+            : null;
+
+        if (holeCenterLine?.start && holeCenterLine?.end) {
+            const startDistance = this._distanceSquared(holeCenterLine.start, pivot);
+            const endDistance = this._distanceSquared(holeCenterLine.end, pivot);
+            return startDistance <= endDistance ? holeCenterLine.start : holeCenterLine.end;
+        }
+
+        const points = link.getWorldPoints?.() || [];
+        if (points.length < 2) return null;
+
+        let bestMidpoint = null;
+        let bestScore = Number.POSITIVE_INFINITY;
+        for (let index = 0; index < points.length; index += 1) {
+            const nextIndex = (index + 1) % points.length;
+            const midpoint = {
+                x: (points[index].x + points[nextIndex].x) / 2,
+                y: (points[index].y + points[nextIndex].y) / 2
+            };
+            const score = this._distanceSquared(midpoint, pivot);
+            if (score < bestScore) {
+                bestScore = score;
+                bestMidpoint = midpoint;
+            }
+        }
+
+        return bestMidpoint;
+    }
+
+    _getReferenceGeometry(chainKey = 'A') {
+        const pivot = this.pivotPoint;
+        if (!pivot) return null;
+
+        const primaryLinks = this._getChainLinks(chainKey);
+        let prevLink = primaryLinks.prevLink;
+        let nextLink = primaryLinks.nextLink;
+
+        if (!(prevLink instanceof Link) || !(nextLink instanceof Link)) {
+            const fallbackLinks = this._getChainLinks(chainKey === 'A' ? 'B' : 'A');
+            prevLink = fallbackLinks.prevLink;
+            nextLink = fallbackLinks.nextLink;
+        }
+
+        if (!(prevLink instanceof Link) || !(nextLink instanceof Link)) return null;
+
+        const prevReferencePoint = this._getLinkReferencePoint(prevLink, pivot);
+        const nextReferencePoint = this._getLinkReferencePoint(nextLink, pivot);
+        if (!prevReferencePoint || !nextReferencePoint) return null;
+
+        const prevVector = {
+            x: prevReferencePoint.x - pivot.x,
+            y: prevReferencePoint.y - pivot.y
+        };
+        const nextVector = {
+            x: nextReferencePoint.x - pivot.x,
+            y: nextReferencePoint.y - pivot.y
+        };
+
+        const prevDirection = this._normalizeVector(prevVector);
+        const nextDirection = this._normalizeVector(nextVector);
+        if (!prevDirection || !nextDirection) return null;
+
+        const dot = Math.max(-1, Math.min(1, prevDirection.x * nextDirection.x + prevDirection.y * nextDirection.y));
+        const angle = Math.acos(dot);
+        const prevLength = Math.hypot(prevVector.x, prevVector.y);
+        const nextLength = Math.hypot(nextVector.x, nextVector.y);
+
+        return {
+            pivot,
+            prevReferencePoint,
+            nextReferencePoint,
+            prevDirection,
+            nextDirection,
+            prevLength,
+            nextLength,
+            angle
+        };
+    }
+
+    getJointAngleRadians(chainKey = 'A') {
+        const geometry = this._getReferenceGeometry(chainKey);
+        return Number.isFinite(geometry?.angle) ? geometry.angle : 0;
+    }
+
+    getRawThickness(chainKey = 'A') {
+        const angle = this.getJointAngleRadians(chainKey);
+        const halfAngle = angle / 2;
+        const tanHalfAngle = Math.tan(halfAngle);
+        const safeTanHalfAngle = Math.max(tanHalfAngle, 1e-6);
+        const safeK = Math.max(Number(this.k) || 0, 1e-8);
+        return Math.sqrt(safeK * safeTanHalfAngle);
+    }
+
+    getJointShape(thickness, chainKey = 'A') {
+        const geometry = this._getReferenceGeometry(chainKey);
+        const requestedThickness = Number(thickness);
+        if (!geometry || !Number.isFinite(requestedThickness) || requestedThickness <= 0) return null;
+
+        const halfAngle = geometry.angle / 2;
+        const tanHalfAngle = Math.tan(halfAngle);
+        const cosHalfAngle = Math.cos(halfAngle);
+        if (!Number.isFinite(tanHalfAngle) || tanHalfAngle <= 1e-6 || !Number.isFinite(cosHalfAngle) || cosHalfAngle <= 1e-6) {
+            return null;
+        }
+
+        let bisectorDirection = this._normalizeVector({
+            x: geometry.prevDirection.x + geometry.nextDirection.x,
+            y: geometry.prevDirection.y + geometry.nextDirection.y
+        });
+
+        if (!bisectorDirection) {
+            bisectorDirection = this._normalizeVector({
+                x: -geometry.prevDirection.y,
+                y: geometry.prevDirection.x
+            });
+        }
+
+        if (!bisectorDirection) return null;
+
+        const maxDistanceAlongBisector = Math.min(geometry.prevLength, geometry.nextLength) * cosHalfAngle * 0.8;
+        const desiredDistanceAlongBisector = requestedThickness / (2 * tanHalfAngle);
+        const distanceAlongBisector = Math.min(desiredDistanceAlongBisector, maxDistanceAlongBisector);
+        if (!Number.isFinite(distanceAlongBisector) || distanceAlongBisector <= 1e-6) return null;
+
+        const baseCenter = {
+            x: geometry.pivot.x + bisectorDirection.x * distanceAlongBisector,
+            y: geometry.pivot.y + bisectorDirection.y * distanceAlongBisector
+        };
+
+        const perpendicularDirection = {
+            x: -bisectorDirection.y,
+            y: bisectorDirection.x
+        };
+
+        const actualThickness = 2 * distanceAlongBisector * tanHalfAngle;
+        const halfThickness = actualThickness / 2;
+
+        return {
+            pivot: { x: geometry.pivot.x, y: geometry.pivot.y },
+            leftBase: {
+                x: baseCenter.x - perpendicularDirection.x * halfThickness,
+                y: baseCenter.y - perpendicularDirection.y * halfThickness
+            },
+            rightBase: {
+                x: baseCenter.x + perpendicularDirection.x * halfThickness,
+                y: baseCenter.y + perpendicularDirection.y * halfThickness
+            },
+            baseCenter,
+            bisectorDirection,
+            perpendicularDirection,
+            actualThickness,
+            angle: geometry.angle,
+            prevReferencePoint: geometry.prevReferencePoint,
+            nextReferencePoint: geometry.nextReferencePoint
+        };
+    }
+
     _applyToFollowingLinks() {
         const jointTheta = Number(this.theta) || 0;
 

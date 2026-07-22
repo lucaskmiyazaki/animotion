@@ -755,6 +755,19 @@ function redrawAll() {
             });
         }
 
+        if (jointsEnabled && bundle.mechanism instanceof Mechanism) {
+            bundle.mechanism.drawJoints(ctx, {
+                minimumThickness: jointMinimumThickness,
+                lineWidth: 1.5,
+                showChainA: mechanism1Visible,
+                showChainB: mechanism2Visible,
+                fillStyleA: 'rgba(255, 255, 255, 0.82)',
+                fillStyleB: 'rgba(255, 255, 255, 0.65)',
+                strokeStyleA: 'rgba(255, 80, 170, 0.95)',
+                strokeStyleB: 'rgba(245, 130, 32, 0.95)'
+            });
+        }
+
         if (mechanismErrorVisible) {
             const skeleton = getCurrentSkeleton();
             const errorData = getMechanismSkeletonErrorData(bundle, skeleton);
