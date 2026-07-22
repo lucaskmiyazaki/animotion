@@ -70,6 +70,53 @@ class Link {
         }));
     }
 
+    getHoleCenterLine() {
+        const points = this.getWorldPoints();
+        if (!Array.isArray(points) || points.length < 4) {
+            return null;
+        }
+
+        const p0 = points[0];
+        const p1 = points[1];
+        const p2 = points[2];
+        const p3 = points[3];
+
+        const v01 = { x: p1.x - p0.x, y: p1.y - p0.y };
+        const v12 = { x: p2.x - p1.x, y: p2.y - p1.y };
+        const v23 = { x: p3.x - p2.x, y: p3.y - p2.y };
+        const v30 = { x: p0.x - p3.x, y: p0.y - p3.y };
+
+        const normalize = (v) => {
+            const mag = Math.hypot(v.x, v.y);
+            if (mag < 1e-8) return null;
+            return { x: v.x / mag, y: v.y / mag };
+        };
+
+        const crossAbs = (a, b) => {
+            const na = normalize(a);
+            const nb = normalize(b);
+            if (!na || !nb) return Number.POSITIVE_INFINITY;
+            return Math.abs(na.x * nb.y - na.y * nb.x);
+        };
+
+        const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+        const scorePair01_23 = crossAbs(v01, v23);
+        const scorePair12_30 = crossAbs(v12, v30);
+
+        if (scorePair01_23 <= scorePair12_30) {
+            return {
+                start: midpoint(p0, p3),
+                end: midpoint(p1, p2)
+            };
+        }
+
+        return {
+            start: midpoint(p0, p1),
+            end: midpoint(p2, p3)
+        };
+    }
+
     draw(ctx, options = {}) {
         if (!ctx) return;
 
