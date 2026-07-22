@@ -982,6 +982,196 @@ function deleteCurrentFrame() {
     window.videoControls?.showFrameIndex?.(newFrameIndex);
 }
 
+function getFramesWithTargets() {
+    return series
+        .getFrameIndices()
+        .sort((a, b) => a - b)
+        .filter((frameIndex) => {
+            const skeleton = series.getFrame(frameIndex);
+            const target = Number(getFramePoseState(frameIndex)?.targetHoleLength);
+            return Boolean(skeleton && Array.isArray(skeleton.points) && skeleton.points.length >= 2 && Number.isFinite(target));
+        });
+}
+
+function getIntermediateTargetFrames() {
+    const frames = getFramesWithTargets();
+    if (frames.length <= 2) return frames.slice();
+    return frames.slice(1, -1);
+}
+
+function selectFramesByFractions(frameIndices, fractions) {
+    const frames = Array.isArray(frameIndices) ? frameIndices.slice() : [];
+    if (frames.length === 0) return [];
+    if (frames.length === 1) return [frames[0]];
+
+    const chosen = new Set();
+    const normalizedFractions = Array.isArray(fractions) ? fractions : [];
+    normalizedFractions.forEach((rawFraction) => {
+        const fraction = Number(rawFraction);
+        if (!Number.isFinite(fraction)) return;
+        const clamped = Math.max(0, Math.min(1, fraction));
+        const index = Math.round(clamped * (frames.length - 1));
+        chosen.add(frames[Math.max(0, Math.min(frames.length - 1, index))]);
+    });
+
+    if (chosen.size === 0) {
+        chosen.add(frames[Math.floor((frames.length - 1) / 2)]);
+    }
+
+    return Array.from(chosen).sort((a, b) => a - b);
+}
+
+function makeKByIndexRecordFromJointStore() {
+    const record = {};
+    const bundle = getCurrentMechanismBundle();
+    const jointCount = bundle.mechanism instanceof Mechanism ? bundle.mechanism.joints.length : 0;
+    for (let i = 0; i < jointCount; i += 1) {
+        record[i] = Number(window.appActions?.getJointK?.(i)) || 1;
+    }
+    return record;
+}
+
+function applyKByIndexRecord(kByIndex) {
+    Object.keys(jointKByIndex).forEach((key) => delete jointKByIndex[key]);
+
+    Object.entries(kByIndex || {}).forEach(([key, raw]) => {
+        const index = Number.parseInt(key, 10);
+        const value = Number(raw);
+        if (!Number.isInteger(index) || index < 0 || !Number.isFinite(value) || value <= 0) return;
+        jointKByIndex[index] = value;
+    });
+
+    const bundle = getCurrentMechanismBundle();
+    if (bundle.mechanism instanceof Mechanism) {
+        bundle.mechanism.joints.forEach((joint, index) => {
+            const nextK = Number(jointKByIndex[index]);
+            if (!(joint instanceof Joint) || !Number.isFinite(nextK) || nextK <= 0) return;
+            joint.setK(nextK);
+        });
+    }
+}
+
+function captureSpringOptimizationSnapshot(frameIndices) {
+    const indices = Array.isArray(frameIndices)
+        ? frameIndices.slice()
+        : series.getFrameIndices().slice();
+
+    const framePoseByIndex = {};
+    indices.forEach((frameIndex) => {
+        const pose = getFramePoseState(frameIndex);
+        framePoseByIndex[frameIndex] = makeMechanismPoseState(
+            pose?.thetaVector,
+            {
+                targetHoleLength: pose?.targetHoleLength,
+                targetHoleLengthA: pose?.targetHoleLengthA,
+                solveResult: pose?.solveResult || null
+            }
+        );
+    });
+
+    return {
+        currentFrameIndex,
+        kByIndex: makeKByIndexRecordFromJointStore(),
+        framePoseByIndex
+    };
+}
+
+function restoreSpringOptimizationSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return;
+
+    applyKByIndexRecord(snapshot.kByIndex || {});
+
+    Object.entries(snapshot.framePoseByIndex || {}).forEach(([key, pose]) => {
+        const frameIndex = Number.parseInt(key, 10);
+        if (!Number.isInteger(frameIndex) || frameIndex < 0) return;
+        setFramePoseState(frameIndex, pose);
+    });
+
+    currentFrameIndex = series.clampFrameIndex(snapshot.currentFrameIndex);
+    if (liveMechanismBundle?.mechanism instanceof Mechanism) {
+        syncLiveMechanismToFrame(currentFrameIndex);
+    }
+}
+
+function evaluatePathErrorForKByIndex(kByIndex, frameIndices, movementOptions = {}) {
+    const selectedFrames = Array.isArray(frameIndices) ? frameIndices.slice() : [];
+    if (selectedFrames.length === 0) return Number.POSITIVE_INFINITY;
+
+    applyKByIndexRecord(kByIndex);
+
+    let totalDistance = 0;
+    let measuredCount = 0;
+
+    selectedFrames.forEach((frameIndex) => {
+        currentFrameIndex = series.clampFrameIndex(frameIndex);
+        const bundle = getCurrentMechanismBundle();
+        if (!(bundle.mechanism instanceof Mechanism)) return;
+
+        const poseState = getFramePoseState(frameIndex);
+        const target = Number(poseState?.targetHoleLength);
+        if (!Number.isFinite(target)) return;
+
+        const solveResult = solveMechanismBundleForTargetLength(bundle, target, movementOptions);
+        setFramePoseState(frameIndex, makeMechanismPoseState(
+            bundle.mechanism._getJointThetaVector(),
+            {
+                targetHoleLength: target,
+                targetHoleLengthA: poseState?.targetHoleLengthA,
+                solveResult
+            }
+        ));
+
+        const skeleton = series.getFrame(frameIndex);
+        const distance = getMechanismSkeletonErrorData(bundle, skeleton).totalDistance;
+        if (!Number.isFinite(distance)) return;
+
+        totalDistance += distance;
+        measuredCount += 1;
+    });
+
+    if (measuredCount <= 0) return Number.POSITIVE_INFINITY;
+    return totalDistance / measuredCount;
+}
+
+function rebuildCachedChainPosesInternal() {
+    const frameIndices = getFramesWithTargets();
+    if (frameIndices.length === 0) return;
+
+    const previousFrameIndex = currentFrameIndex;
+
+    frameIndices.forEach((frameIndex) => {
+        currentFrameIndex = series.clampFrameIndex(frameIndex);
+        const bundle = getCurrentMechanismBundle();
+        if (!(bundle.mechanism instanceof Mechanism)) return;
+
+        const poseState = getFramePoseState(frameIndex);
+        const targetHoleLength = Number(poseState?.targetHoleLength);
+        if (!Number.isFinite(targetHoleLength)) return;
+
+        const solveResult = solveMechanismBundleForTargetLength(bundle, targetHoleLength, {
+            maxBinaryIterations: optimizationMaxBinaryIterations,
+            maxBracketExpansions: optimizationMaxBracketExpansions,
+            samplesPerJoint: 21,
+            sweepPasses: 4,
+            lengthTolerance: 0.005
+        });
+
+        setFramePoseState(frameIndex, makeMechanismPoseState(
+            bundle.mechanism._getJointThetaVector(),
+            {
+                targetHoleLength,
+                targetHoleLengthA: poseState?.targetHoleLengthA,
+                solveResult
+            }
+        ));
+    });
+
+    currentFrameIndex = series.clampFrameIndex(previousFrameIndex);
+    if (liveMechanismBundle?.mechanism instanceof Mechanism) {
+        syncLiveMechanismToFrame(currentFrameIndex);
+    }
+}
+
 document.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
 
@@ -1040,8 +1230,102 @@ window.appActions = {
     buildChain,
     hasRenderableChain,
     getMechanismNeedsRegeneration: () => mechanismNeedsRegeneration,
-    findKsMinimizingChainSkeletonDistance: async () => {},
-    rebuildCachedChainPoses: () => {},
+    findKsMinimizingChainSkeletonDistance: async (onProgress) => {
+        if (!window.SpringOptimization || typeof window.SpringOptimization.optimize !== 'function') {
+            console.warn('SpringOptimization is not available.');
+            return null;
+        }
+
+        const bundle = getCurrentMechanismBundle();
+        if (!(bundle.mechanism instanceof Mechanism)) {
+            return null;
+        }
+
+        const jointCount = bundle.mechanism.joints.length;
+        if (jointCount <= 0) return null;
+
+        const intermediateFrames = getIntermediateTargetFrames();
+        if (intermediateFrames.length === 0) {
+            return null;
+        }
+
+        const allFrames = getFramesWithTargets();
+        const snapshot = captureSpringOptimizationSnapshot(allFrames);
+        let progressTick = 0;
+        const reportProgress = (percent, text) => {
+            if (typeof onProgress !== 'function') return;
+            const clamped = Number.isFinite(percent)
+                ? Math.max(0, Math.min(100, percent))
+                : Math.max(0, Math.min(100, 8 + progressTick * 2));
+            onProgress(clamped, text || 'Optimizing spring stiffness...');
+        };
+
+        reportProgress(5, 'Preparing spring optimization...');
+
+        const evaluateError = ({ xByIndex, poseFractions, movementOptions }) => {
+            restoreSpringOptimizationSnapshot(snapshot);
+
+            const kByIndex = {};
+            Object.keys(xByIndex || {}).forEach((key) => {
+                const index = Number.parseInt(key, 10);
+                const x = Number(xByIndex[key]);
+                if (!Number.isInteger(index) || index < 0 || !Number.isFinite(x)) return;
+                const clampedX = Math.max(-1, Math.min(1, x));
+                kByIndex[index] = Math.pow(10, clampedX);
+            });
+
+            const selectedFrames = selectFramesByFractions(intermediateFrames, poseFractions);
+            return evaluatePathErrorForKByIndex(kByIndex, selectedFrames, movementOptions);
+        };
+
+        try {
+            const result = await window.SpringOptimization.optimize({
+                jointCount,
+                initialKByIndex: makeKByIndexRecordFromJointStore(),
+                baseMovementOptions: {
+                    maxBinaryIterations: optimizationMaxBinaryIterations,
+                    maxBracketExpansions: optimizationMaxBracketExpansions
+                },
+                initialSensitivityFractions: [0.5],
+                finalPoseFractions: intermediateFrames.length > 1
+                    ? intermediateFrames.map((_, index) => index / (intermediateFrames.length - 1))
+                    : [0.5],
+                evaluateError,
+                onProgress: (_percent, text) => {
+                    progressTick += 1;
+                    reportProgress(null, text);
+                }
+            });
+
+            restoreSpringOptimizationSnapshot(snapshot);
+
+            if (!result?.converged || !result.kByIndex) {
+                reportProgress(100, 'Spring optimization finished without changes');
+                emitChainStateChange();
+                redrawAll();
+                return result || null;
+            }
+
+            applyKByIndexRecord(result.kByIndex);
+            rebuildCachedChainPosesInternal();
+            persistCurrentFramePose();
+
+            reportProgress(100, 'Spring optimization complete');
+            emitChainStateChange();
+            redrawAll();
+            return result;
+        } catch (error) {
+            restoreSpringOptimizationSnapshot(snapshot);
+            emitChainStateChange();
+            redrawAll();
+            throw error;
+        }
+    },
+    rebuildCachedChainPoses: () => {
+        rebuildCachedChainPosesInternal();
+        emitChainStateChange();
+        redrawAll();
+    },
     exportDXF: () => {
         console.warn('Export DXF is not implemented for the new Mechanism model yet.');
     },

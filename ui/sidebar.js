@@ -116,23 +116,7 @@ const buildButton = createButton('Generate Chain', async () => {
         await new Promise(resolve => setTimeout(resolve, 20));
 
         window.appActions?.buildChain?.();
-
-        if (!manualFillCheckbox.checked) {
-            setProgress(62, 'Fitting k...');
-
-            // Yield again so stage transition is visible.
-            await new Promise(resolve => setTimeout(resolve, 20));
-
-            await window.appActions?.findKsMinimizingChainSkeletonDistance?.((percent, text) => {
-                const fitProgress = 62 + (Math.max(0, Math.min(100, percent)) * 0.36);
-                setProgress(fitProgress, text || 'Fitting k...');
-            });
-
-            setProgress(98, 'Updating frame poses...');
-            window.appActions?.rebuildCachedChainPoses?.();
-        } else {
-            setProgress(78, 'Manual k mode');
-        }
+        setProgress(82, manualFillCheckbox.checked ? 'Manual k mode' : 'Mechanism generated');
 
         setProgress(100, 'Done');
 
@@ -364,6 +348,39 @@ slackInput.addEventListener('input', () => {
 });
 
 slackRow.append(slackLabel, slackInput);
+
+const optimizeSpringKButton = createButton('Optimize spring k', async () => {
+    optimizeSpringKButton.disabled = true;
+    const previousText = optimizeSpringKButton.textContent;
+    optimizeSpringKButton.textContent = 'Optimizing...';
+    optimizeSpringKStatus.textContent = 'Preparing staged optimization...';
+
+    try {
+        const result = await window.appActions?.findKsMinimizingChainSkeletonDistance?.((percent, text) => {
+            const pct = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+            optimizeSpringKStatus.textContent = `${text || 'Optimizing spring stiffness...'} (${pct.toFixed(0)}%)`;
+        });
+
+        if (result?.kByIndex) {
+            renderJointKInputs();
+            updateEnergyAndLengthDisplay();
+            optimizeSpringKStatus.textContent = 'Spring optimization complete';
+        } else {
+            optimizeSpringKStatus.textContent = 'No optimization result';
+        }
+    } catch (error) {
+        console.error('Spring optimization error:', error);
+        optimizeSpringKStatus.textContent = 'Spring optimization failed';
+    } finally {
+        optimizeSpringKButton.disabled = false;
+        optimizeSpringKButton.textContent = previousText;
+    }
+});
+optimizeSpringKButton.classList.add('project-button');
+
+const optimizeSpringKStatus = document.createElement('div');
+optimizeSpringKStatus.className = 'energy-display';
+optimizeSpringKStatus.textContent = 'Optimize spring stiffness using staged fitting';
 
 const jointKContainer = document.createElement('div');
 jointKContainer.className = 'joint-k-container';
@@ -719,6 +736,8 @@ chainOptionsSection.append(
     chainThicknessRow,
     jointMinThicknessRow,
     slackRow,
+    optimizeSpringKButton,
+    optimizeSpringKStatus,
     advancedChainDetails
 );
 
@@ -1021,6 +1040,8 @@ function updateProgressiveVisibility() {
     jointsOptionLabel.style.display = hasMechanism ? '' : 'none';
     mechanism1OptionLabel.style.display = hasMechanism ? '' : 'none';
     mechanism2OptionLabel.style.display = hasMechanism ? '' : 'none';
+    optimizeSpringKButton.style.display = hasMechanism ? '' : 'none';
+    optimizeSpringKStatus.style.display = hasMechanism ? '' : 'none';
 
     skeletonDrawHint.style.display = (hasVideo && !hasSkeleton) ? '' : 'none';
     addPointButton.style.display = hasSkeleton ? '' : 'none';
