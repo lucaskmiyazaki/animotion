@@ -82,6 +82,10 @@ const SpringOptimization = (() => {
         return kByIndex;
     }
 
+    function yieldToUi() {
+        return new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
     async function measureSensitivity(options) {
         const {
             jointIndices,
@@ -113,6 +117,10 @@ const SpringOptimization = (() => {
             }
 
             sensitivityByIndex[index] = Math.abs(errorPlus - errorMinus) / (2 * SENSITIVITY_DELTA_X);
+
+            if ((i + 1) % 2 === 0) {
+                await yieldToUi();
+            }
         }
 
         return sensitivityByIndex;
@@ -143,8 +151,14 @@ const SpringOptimization = (() => {
             stepSize,
             minRelativeImprovement,
             progressPrefix,
-            onProgress
+            onProgress,
+            progressStart,
+            progressEnd
         } = options;
+
+        const startPct = Number.isFinite(progressStart) ? progressStart : 0;
+        const endPct = Number.isFinite(progressEnd) ? progressEnd : 100;
+        const progressSpan = Math.max(0, endPct - startPct);
 
         const stageX = { ...xByIndex, [referenceIndex]: 0 };
         const { grouped, variables } = buildGroupedSets(nonReferenceIndices, activeSet);
@@ -154,6 +168,8 @@ const SpringOptimization = (() => {
             poseFractions,
             movementOptions
         });
+
+        onProgress?.(startPct, `${progressPrefix} ${stageLabel}: starting`);
 
         if (!Number.isFinite(bestError)) {
             return {
@@ -203,12 +219,15 @@ const SpringOptimization = (() => {
                         improvedThisPass = true;
                     }
                 }
+
+                await yieldToUi();
             }
 
             const denominator = Math.max(1e-9, Math.abs(passStartError));
             const relativeImprovement = (passStartError - bestError) / denominator;
 
-            onProgress?.(null, `${progressPrefix} ${stageLabel}: pass ${pass + 1}/${maxPasses}, error ${bestError.toFixed(4)}`);
+            const passProgress = startPct + progressSpan * ((pass + 1) / Math.max(1, maxPasses));
+            onProgress?.(passProgress, `${progressPrefix} ${stageLabel}: pass ${pass + 1}/${maxPasses}, error ${bestError.toFixed(4)}`);
 
             if (!improvedThisPass) {
                 break;
@@ -315,6 +334,8 @@ const SpringOptimization = (() => {
         const initialKByIndex = options.initialKByIndex || {};
         const xByIndex = {};
 
+        onProgress?.(2, 'Initializing spring optimization...');
+
         allJointIndices.forEach((index) => {
             xByIndex[index] = kToX(initialKByIndex[index] ?? 1);
         });
@@ -329,6 +350,8 @@ const SpringOptimization = (() => {
             poseFractions: initialSensitivityFractions,
             movementOptions: mergeMovementOptions(options.baseMovementOptions, initialSensitivityConfig.movementOptions)
         });
+
+        onProgress?.(12, 'Initial sensitivity computed');
 
         const referenceIndex = chooseReferenceIndex(initialSensitivity, allJointIndices);
         if (!Number.isInteger(referenceIndex)) {
@@ -348,6 +371,7 @@ const SpringOptimization = (() => {
         const activeSet = new Set(sensitivityRanking.slice(0, Math.min(2, sensitivityRanking.length)));
         let stageCounter = 0;
         let bestError = Number.POSITIVE_INFINITY;
+        const totalStages = Math.max(1, Math.ceil(nonReferenceIndices.length / 2));
 
         const history = [];
 
@@ -377,7 +401,11 @@ const SpringOptimization = (() => {
                 poseFractions = buildSymmetricFractions(stageCounter + 1);
             }
 
-            onProgress?.(null, `Spring optimization stage ${stageCounter + 1} (${stageType})`);
+            const stageIndex = Math.min(stageCounter, totalStages - 1);
+            const stageStart = 12 + (84 * (stageIndex / totalStages));
+            const stageEnd = 12 + (84 * ((stageIndex + 1) / totalStages));
+
+            onProgress?.(stageStart, `Spring optimization stage ${stageCounter + 1} (${stageType})`);
 
             const stageResult = await optimizeStage({
                 stageLabel: `Stage ${stageCounter + 1}`,
@@ -392,7 +420,9 @@ const SpringOptimization = (() => {
                 stepSize: stageConfig.stepSize,
                 minRelativeImprovement: stageConfig.minRelativeImprovement,
                 progressPrefix: 'Spring optimization',
-                onProgress
+                onProgress,
+                progressStart: stageStart,
+                progressEnd: stageEnd
             });
 
             Object.assign(xByIndex, stageResult.xByIndex);
@@ -420,15 +450,21 @@ const SpringOptimization = (() => {
                 movementOptions: mergeMovementOptions(options.baseMovementOptions, stageConfig.movementOptions)
             });
 
+            onProgress?.(Math.min(96, stageEnd), `Sensitivity refresh after stage ${stageCounter + 1}`);
+
             const refreshedRanking = toSensitivityList(refreshedSensitivity, nonReferenceIndices)
                 .map((entry) => entry.index)
                 .filter((index) => !activeSet.has(index));
 
             refreshedRanking.slice(0, 2).forEach((index) => activeSet.add(index));
             stageCounter += 1;
+
+            await yieldToUi();
         }
 
         const kByIndex = buildKByIndexFromX(xByIndex);
+
+        onProgress?.(100, 'Spring optimization complete');
 
         return {
             converged: true,

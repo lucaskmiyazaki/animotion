@@ -1093,7 +1093,11 @@ function restoreSpringOptimizationSnapshot(snapshot) {
     }
 }
 
-function evaluatePathErrorForKByIndex(kByIndex, frameIndices, movementOptions = {}) {
+function yieldToUi() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function evaluatePathErrorForKByIndex(kByIndex, frameIndices, movementOptions = {}) {
     const selectedFrames = Array.isArray(frameIndices) ? frameIndices.slice() : [];
     if (selectedFrames.length === 0) return Number.POSITIVE_INFINITY;
 
@@ -1102,14 +1106,15 @@ function evaluatePathErrorForKByIndex(kByIndex, frameIndices, movementOptions = 
     let totalDistance = 0;
     let measuredCount = 0;
 
-    selectedFrames.forEach((frameIndex) => {
+    for (let i = 0; i < selectedFrames.length; i += 1) {
+        const frameIndex = selectedFrames[i];
         currentFrameIndex = series.clampFrameIndex(frameIndex);
         const bundle = getCurrentMechanismBundle();
-        if (!(bundle.mechanism instanceof Mechanism)) return;
+        if (!(bundle.mechanism instanceof Mechanism)) continue;
 
         const poseState = getFramePoseState(frameIndex);
         const target = Number(poseState?.targetHoleLength);
-        if (!Number.isFinite(target)) return;
+        if (!Number.isFinite(target)) continue;
 
         const solveResult = solveMechanismBundleForTargetLength(bundle, target, movementOptions);
         setFramePoseState(frameIndex, makeMechanismPoseState(
@@ -1123,11 +1128,15 @@ function evaluatePathErrorForKByIndex(kByIndex, frameIndices, movementOptions = 
 
         const skeleton = series.getFrame(frameIndex);
         const distance = getMechanismSkeletonErrorData(bundle, skeleton).totalDistance;
-        if (!Number.isFinite(distance)) return;
+        if (!Number.isFinite(distance)) continue;
 
         totalDistance += distance;
         measuredCount += 1;
-    });
+
+        if ((i + 1) % 2 === 0) {
+            await yieldToUi();
+        }
+    }
 
     if (measuredCount <= 0) return Number.POSITIVE_INFINITY;
     return totalDistance / measuredCount;
@@ -1251,18 +1260,17 @@ window.appActions = {
 
         const allFrames = getFramesWithTargets();
         const snapshot = captureSpringOptimizationSnapshot(allFrames);
-        let progressTick = 0;
         const reportProgress = (percent, text) => {
             if (typeof onProgress !== 'function') return;
             const clamped = Number.isFinite(percent)
                 ? Math.max(0, Math.min(100, percent))
-                : Math.max(0, Math.min(100, 8 + progressTick * 2));
+                : 0;
             onProgress(clamped, text || 'Optimizing spring stiffness...');
         };
 
         reportProgress(5, 'Preparing spring optimization...');
 
-        const evaluateError = ({ xByIndex, poseFractions, movementOptions }) => {
+        const evaluateError = async ({ xByIndex, poseFractions, movementOptions }) => {
             restoreSpringOptimizationSnapshot(snapshot);
 
             const kByIndex = {};
@@ -1275,7 +1283,7 @@ window.appActions = {
             });
 
             const selectedFrames = selectFramesByFractions(intermediateFrames, poseFractions);
-            return evaluatePathErrorForKByIndex(kByIndex, selectedFrames, movementOptions);
+            return await evaluatePathErrorForKByIndex(kByIndex, selectedFrames, movementOptions);
         };
 
         try {
@@ -1291,9 +1299,8 @@ window.appActions = {
                     ? intermediateFrames.map((_, index) => index / (intermediateFrames.length - 1))
                     : [0.5],
                 evaluateError,
-                onProgress: (_percent, text) => {
-                    progressTick += 1;
-                    reportProgress(null, text);
+                onProgress: (percent, text) => {
+                    reportProgress(percent, text);
                 }
             });
 

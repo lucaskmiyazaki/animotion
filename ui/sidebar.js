@@ -350,14 +350,22 @@ slackInput.addEventListener('input', () => {
 slackRow.append(slackLabel, slackInput);
 
 const optimizeSpringKButton = createButton('Optimize spring k', async () => {
+    const setProgress = (value, text) => {
+        chainBuildProgressWrap.style.display = 'grid';
+        chainBuildProgressBar.style.width = `${Math.max(0, Math.min(100, value))}%`;
+        chainBuildProgressText.textContent = text;
+    };
+
     optimizeSpringKButton.disabled = true;
     const previousText = optimizeSpringKButton.textContent;
     optimizeSpringKButton.textContent = 'Optimizing...';
     optimizeSpringKStatus.textContent = 'Preparing staged optimization...';
+    setProgress(4, 'Preparing spring optimization...');
 
     try {
         const result = await window.appActions?.findKsMinimizingChainSkeletonDistance?.((percent, text) => {
             const pct = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+            setProgress(pct, text || 'Optimizing spring stiffness...');
             optimizeSpringKStatus.textContent = `${text || 'Optimizing spring stiffness...'} (${pct.toFixed(0)}%)`;
         });
 
@@ -365,13 +373,18 @@ const optimizeSpringKButton = createButton('Optimize spring k', async () => {
             renderJointKInputs();
             updateEnergyAndLengthDisplay();
             optimizeSpringKStatus.textContent = 'Spring optimization complete';
+            setProgress(100, 'Spring optimization complete');
         } else {
             optimizeSpringKStatus.textContent = 'No optimization result';
+            setProgress(100, 'No optimization result');
         }
     } catch (error) {
         console.error('Spring optimization error:', error);
         optimizeSpringKStatus.textContent = 'Spring optimization failed';
+        setProgress(100, 'Spring optimization failed');
     } finally {
+        await new Promise(resolve => setTimeout(resolve, 350));
+        chainBuildProgressWrap.style.display = 'none';
         optimizeSpringKButton.disabled = false;
         optimizeSpringKButton.textContent = previousText;
     }
