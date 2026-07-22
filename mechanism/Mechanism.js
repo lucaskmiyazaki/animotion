@@ -9,6 +9,9 @@ class Mechanism {
 
         this.firstPoint = null;
         this.lastPoint = null;
+        this.firstPivot = null;
+        this.lastPivot = null;
+        this.rotation = Number.isFinite(options.rotation) ? Number(options.rotation) : 0;
 
         this._bindJoints();
         this._syncEndpointReferences();
@@ -53,14 +56,74 @@ class Mechanism {
 
         const firstPoint = firstChain ? this._getChainEndpointPoints(firstChain).firstPoint : null;
         const lastPoint = lastChain ? this._getChainEndpointPoints(lastChain).lastPoint : null;
+        const firstPivot = this.joints.length > 0 ? this.joints[0]?.pivotPoint || null : null;
+        const lastPivot = this.joints.length > 0 ? this.joints[this.joints.length - 1]?.pivotPoint || null : null;
 
         this.firstPoint = firstPoint ? { x: Number(firstPoint.x), y: Number(firstPoint.y) } : null;
         this.lastPoint = lastPoint ? { x: Number(lastPoint.x), y: Number(lastPoint.y) } : null;
+        this.firstPivot = firstPivot ? { x: Number(firstPivot.x), y: Number(firstPivot.y) } : null;
+        this.lastPivot = lastPivot ? { x: Number(lastPivot.x), y: Number(lastPivot.y) } : null;
 
         return {
             firstPoint: this.firstPoint,
-            lastPoint: this.lastPoint
+            lastPoint: this.lastPoint,
+            firstPivot: this.firstPivot,
+            lastPivot: this.lastPivot
         };
+    }
+
+    _rotateLinksAroundPivot(pivot, delta) {
+        if (!pivot || !Number.isFinite(pivot.x) || !Number.isFinite(pivot.y) || !Number.isFinite(delta) || Math.abs(delta) < 1e-12) {
+            return false;
+        }
+
+        const c = Math.cos(delta);
+        const s = Math.sin(delta);
+        const movedLinks = new Set();
+
+        this.chains.forEach((chain) => {
+            if (!(chain instanceof Chain) || !Array.isArray(chain.links)) return;
+            chain.links.forEach((link) => {
+                if (!(link instanceof Link) || movedLinks.has(link)) return;
+                if (!link.position || !Number.isFinite(link.position.x) || !Number.isFinite(link.position.y)) return;
+
+                const dx = link.position.x - pivot.x;
+                const dy = link.position.y - pivot.y;
+                link.position.x = pivot.x + (dx * c - dy * s);
+                link.position.y = pivot.y + (dx * s + dy * c);
+                link.theta += delta;
+                movedLinks.add(link);
+            });
+        });
+
+        this.joints.forEach((joint) => {
+            if (!(joint instanceof Joint)) return;
+            joint._syncPivotPointFromNextLinks?.();
+        });
+
+        this.rotation = Link.normalizeAngleSigned(Number(this.rotation) + delta);
+        this._syncEndpointReferences();
+        return true;
+    }
+
+    rotateBy(delta, pivot = null) {
+        const amount = Number(delta);
+        if (!Number.isFinite(amount) || Math.abs(amount) < 1e-12) return this.rotation;
+
+        const rotationPivot = pivot && Number.isFinite(pivot.x) && Number.isFinite(pivot.y)
+            ? { x: Number(pivot.x), y: Number(pivot.y) }
+            : (this.firstPoint ? { x: this.firstPoint.x, y: this.firstPoint.y } : null);
+
+        if (!rotationPivot) return this.rotation;
+        this._rotateLinksAroundPivot(rotationPivot, amount);
+        return this.rotation;
+    }
+
+    setRotation(nextRotation, pivot = null) {
+        const target = Number(nextRotation);
+        if (!Number.isFinite(target)) return this.rotation;
+        const delta = target - Number(this.rotation || 0);
+        return this.rotateBy(delta, pivot);
     }
 
     _rotateTailInChain(chain, startSegment, pivot, delta) {

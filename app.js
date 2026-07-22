@@ -267,6 +267,11 @@ function getFirstPointOfFirstLink(chain) {
     return { x: Number(firstPoint.x), y: Number(firstPoint.y) };
 }
 
+function normalizeSignedAngle(angle) {
+    if (!Number.isFinite(angle)) return 0;
+    return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
 function alignCoincidentStartToSkeletonPoint(frameIndex, bundle) {
     if (!bundle) return;
 
@@ -304,6 +309,22 @@ function alignCoincidentStartToSkeletonPoint(frameIndex, bundle) {
 
     if (bundle.mechanism instanceof Mechanism) {
         bundle.mechanism.translateBy(dx, dy);
+
+        const skeletonSecond = series.getFrame(frameIndex)?.points?.[1] || null;
+        const mechanismFirstPoint = bundle.mechanism.firstPoint || startA;
+        const mechanismFirstPivot = bundle.mechanism.firstPivot || bundle.mechanism.joints?.[0]?.pivotPoint || null;
+        if (!skeletonSecond || !mechanismFirstPoint || !mechanismFirstPivot) return;
+
+        const mechanismVectorAngle = Math.atan2(
+            mechanismFirstPivot.y - mechanismFirstPoint.y,
+            mechanismFirstPivot.x - mechanismFirstPoint.x
+        );
+        const skeletonVectorAngle = Math.atan2(
+            skeletonSecond.y - skeletonStart.y,
+            skeletonSecond.x - skeletonStart.x
+        );
+        const delta = normalizeSignedAngle(skeletonVectorAngle - mechanismVectorAngle);
+        bundle.mechanism.rotateBy(delta, bundle.mechanism.firstPoint || mechanismFirstPoint);
     }
 }
 
