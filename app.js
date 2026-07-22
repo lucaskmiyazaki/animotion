@@ -273,6 +273,10 @@ function alignCoincidentStartToSkeletonPoint(frameIndex, bundle) {
     const skeletonStart = series.getFrame(frameIndex)?.points?.[0] || null;
     if (!skeletonStart) return;
 
+    if (bundle.mechanism instanceof Mechanism) {
+        bundle.mechanism._syncEndpointReferences?.();
+    }
+
     const startA = getFirstPointOfFirstLink(bundle.mechanism1);
     const startB = getFirstPointOfFirstLink(bundle.mechanism2);
     if (!startA || !startB) return;
@@ -708,6 +712,24 @@ function redrawAll() {
             ctx.fill();
             ctx.lineWidth = 2;
             ctx.strokeStyle = 'rgba(220, 38, 38, 0.95)';
+            ctx.stroke();
+            ctx.restore();
+        });
+
+        const endpointMarkers = [
+            { point: bundle.mechanism?.firstPoint, color: 'rgba(59, 130, 246, 0.95)', radius: 6 },
+            { point: bundle.mechanism?.lastPoint, color: 'rgba(168, 85, 247, 0.95)', radius: 6 }
+        ];
+
+        endpointMarkers.forEach(({ point, color, radius }) => {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.fill();
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = color;
             ctx.stroke();
             ctx.restore();
         });

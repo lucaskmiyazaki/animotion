@@ -7,7 +7,11 @@ class Mechanism {
             ? options.joints.filter((joint) => joint instanceof Joint)
             : [];
 
+        this.firstPoint = null;
+        this.lastPoint = null;
+
         this._bindJoints();
+        this._syncEndpointReferences();
     }
 
     _bindJoints() {
@@ -27,6 +31,36 @@ class Mechanism {
             }
         }
         return null;
+    }
+
+    _getChainEndpointPoints(chain) {
+        if (!(chain instanceof Chain) || !Array.isArray(chain.links) || chain.links.length === 0) {
+            return { firstPoint: null, lastPoint: null };
+        }
+
+        const firstLink = chain.links[0];
+        const lastLink = chain.links[chain.links.length - 1];
+        const firstPoint = firstLink?.getWorldPoints?.()?.[0] || null;
+        const lastPoints = lastLink?.getWorldPoints?.() || null;
+        const lastPoint = Array.isArray(lastPoints) && lastPoints.length > 0 ? lastPoints[lastPoints.length - 1] : null;
+
+        return { firstPoint, lastPoint };
+    }
+
+    _syncEndpointReferences() {
+        const firstChain = this.chains.find((chain) => chain instanceof Chain && Array.isArray(chain.links) && chain.links.length > 0) || null;
+        const lastChain = [...this.chains].reverse().find((chain) => chain instanceof Chain && Array.isArray(chain.links) && chain.links.length > 0) || null;
+
+        const firstPoint = firstChain ? this._getChainEndpointPoints(firstChain).firstPoint : null;
+        const lastPoint = lastChain ? this._getChainEndpointPoints(lastChain).lastPoint : null;
+
+        this.firstPoint = firstPoint ? { x: Number(firstPoint.x), y: Number(firstPoint.y) } : null;
+        this.lastPoint = lastPoint ? { x: Number(lastPoint.x), y: Number(lastPoint.y) } : null;
+
+        return {
+            firstPoint: this.firstPoint,
+            lastPoint: this.lastPoint
+        };
     }
 
     _rotateTailInChain(chain, startSegment, pivot, delta) {
@@ -63,6 +97,8 @@ class Mechanism {
             const segB = joint.nextLinkB.metadata?.segmentIndex;
             this._rotateTailInChain(chainB, segB, motion.pivotB, motion.deltaB);
         }
+
+        this._syncEndpointReferences();
     }
 
     addChain(chain) {
@@ -104,6 +140,8 @@ class Mechanism {
                 y: pivot.y + ty
             };
         });
+
+        this._syncEndpointReferences();
 
         return true;
     }
