@@ -722,6 +722,23 @@ chainOptionsSection.append(
     advancedChainDetails
 );
 
+const testsSection = document.createElement('div');
+testsSection.className = 'chain-section';
+
+const testsHeader = createSectionToggle(
+    'Tests',
+    window.appActions?.getMechanismErrorVisible?.() ?? false,
+    (visible) => {
+        window.appActions?.setMechanismErrorVisible?.(visible);
+    }
+);
+
+const errorDistanceDisplay = document.createElement('div');
+errorDistanceDisplay.className = 'energy-display';
+errorDistanceDisplay.textContent = 'Total distance between simulated mechanism and skeleton: 0.00';
+
+testsSection.append(testsHeader.header, errorDistanceDisplay);
+
 // Cleanup for older UI state: remove any legacy energy row that was rendered
 // outside the Advanced details block.
 function removeLegacyMechanismEnergyField() {
@@ -1048,6 +1065,8 @@ window.appActions?.onChainStateChange?.(() => {
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
     const mechanism1Visible = window.appActions?.getMechanism1Visible?.() ?? true;
     const mechanism2Visible = window.appActions?.getMechanism2Visible?.() ?? true;
+    const mechanismErrorVisible = window.appActions?.getMechanismErrorVisible?.() ?? false;
+    const mechanismErrorDistance = Number(window.appActions?.getMechanismSkeletonErrorDistance?.());
 
     skeletonHeader.sync(skeletonVisible);
     skeletonBisectorCheckbox.checked = skeletonBisectorVisible;
@@ -1057,8 +1076,12 @@ window.appActions?.onChainStateChange?.(() => {
     skeletonPivot2Checkbox.disabled = !skeletonBisectorVisible;
     frameHeader.sync(framesVisible);
     chainHeader.sync(chainVisible);
+    testsHeader.sync(mechanismErrorVisible);
     mechanism1Checkbox.checked = mechanism1Visible;
     mechanism2Checkbox.checked = mechanism2Visible;
+    errorDistanceDisplay.textContent = Number.isFinite(mechanismErrorDistance)
+        ? `Total distance between simulated mechanism and skeleton: ${mechanismErrorDistance.toFixed(2)}`
+        : 'Total distance between simulated mechanism and skeleton: -';
 
     setSectionInteractive(skeletonSection, skeletonHeader.input, skeletonVisible);
     setSectionInteractive(frameSection, frameHeader.input, framesVisible);
@@ -1081,6 +1104,13 @@ syncThicknessInputs();
 syncOptimizationIterationInputs();
 renderJointKInputs();
 updateEnergyAndLengthDisplay();
+testsHeader.sync(window.appActions?.getMechanismErrorVisible?.() ?? false);
+{
+    const mechanismErrorDistance = Number(window.appActions?.getMechanismSkeletonErrorDistance?.());
+    errorDistanceDisplay.textContent = Number.isFinite(mechanismErrorDistance)
+        ? `Total distance between simulated mechanism and skeleton: ${mechanismErrorDistance.toFixed(2)}`
+        : 'Total distance between simulated mechanism and skeleton: -';
+}
 setSectionInteractive(
     skeletonSection,
     skeletonHeader.input,
@@ -1183,6 +1213,7 @@ sidebar.append(
     frameSection,
     skeletonSection,
     chainOptionsSection,
+    testsSection,
     sideSpacer,
     bottomActions
 );

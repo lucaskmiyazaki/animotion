@@ -27,6 +27,7 @@ let hasDragged = false;
 let mode = 'move'; // 'create', 'edit', or 'move'
 let holeEnabled = false;
 let jointsEnabled = false;
+let mechanismErrorVisible = false;
 let mechanism1Visible = true;
 let mechanism2Visible = true;
 let skeletonVisible = true;
@@ -692,6 +693,41 @@ canvas.addEventListener('mouseleave', () => {
     redrawAll();
 });
 
+function getMechanismSkeletonErrorData(bundle, skeleton) {
+    const skeletonPoints = Array.isArray(skeleton?.points) ? skeleton.points : [];
+    const lines = [];
+    let totalDistance = 0;
+
+    const maybePush = (from, to) => {
+        if (!from || !to) return;
+        if (!Number.isFinite(from.x) || !Number.isFinite(from.y) || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return;
+        lines.push({ from, to });
+        totalDistance += Math.hypot(to.x - from.x, to.y - from.y);
+    };
+
+    const firstPoint = bundle?.mechanism?.firstPoint || null;
+    const skeletonFirst = skeletonPoints[0] || null;
+    maybePush(firstPoint, skeletonFirst);
+
+    const pivots = Array.isArray(bundle?.mechanism?.joints)
+        ? bundle.mechanism.joints.map((joint) => joint?.pivotPoint || null)
+        : [];
+
+    pivots.forEach((pivot, index) => {
+        const targetSkeletonPoint = skeletonPoints[index + 1] || null;
+        maybePush(pivot, targetSkeletonPoint);
+    });
+
+    const lastPoint = bundle?.mechanism?.lastPoint || null;
+    const skeletonLast = skeletonPoints.length > 0 ? skeletonPoints[skeletonPoints.length - 1] : null;
+    maybePush(lastPoint, skeletonLast);
+
+    return {
+        lines,
+        totalDistance
+    };
+}
+
 function redrawAll() {
     canvasView.clearViewport();
 
@@ -754,6 +790,25 @@ function redrawAll() {
             ctx.stroke();
             ctx.restore();
         });
+
+        if (mechanismErrorVisible) {
+            const skeleton = getCurrentSkeleton();
+            const errorData = getMechanismSkeletonErrorData(bundle, skeleton);
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(220, 38, 38, 0.8)';
+            ctx.lineWidth = 1.75;
+            ctx.setLineDash([6, 4]);
+
+            errorData.lines.forEach(({ from, to }) => {
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.stroke();
+            });
+
+            ctx.restore();
+        }
 
     }
 
@@ -1127,6 +1182,17 @@ window.appActions = {
         redrawAll();
     },
     getJointsEnabled: () => jointsEnabled,
+    setMechanismErrorVisible: (enabled) => {
+        mechanismErrorVisible = Boolean(enabled);
+        emitChainStateChange();
+        redrawAll();
+    },
+    getMechanismErrorVisible: () => mechanismErrorVisible,
+    getMechanismSkeletonErrorDistance: () => {
+        const bundle = getCurrentMechanismBundle();
+        const skeleton = getCurrentSkeleton();
+        return getMechanismSkeletonErrorData(bundle, skeleton).totalDistance;
+    },
     setChainThickness: (value) => {
         const parsed = Number.parseFloat(value);
         if (!Number.isFinite(parsed) || parsed <= 0) return;
