@@ -78,6 +78,36 @@ class Mechanism {
         return this.joints[index].setTheta(theta);
     }
 
+    translateBy(dx, dy) {
+        const tx = Number(dx);
+        const ty = Number(dy);
+        if (!Number.isFinite(tx) || !Number.isFinite(ty)) return false;
+
+        const movedLinks = new Set();
+        this.chains.forEach((chain) => {
+            if (!(chain instanceof Chain) || !Array.isArray(chain.links)) return;
+            chain.links.forEach((link) => {
+                if (!(link instanceof Link) || movedLinks.has(link)) return;
+                if (!link.position || !Number.isFinite(link.position.x) || !Number.isFinite(link.position.y)) return;
+                link.position.x += tx;
+                link.position.y += ty;
+                movedLinks.add(link);
+            });
+        });
+
+        this.joints.forEach((joint) => {
+            if (!(joint instanceof Joint)) return;
+            const pivot = joint.pivotPoint;
+            if (!pivot || !Number.isFinite(pivot.x) || !Number.isFinite(pivot.y)) return;
+            joint.pivotPoint = {
+                x: pivot.x + tx,
+                y: pivot.y + ty
+            };
+        });
+
+        return true;
+    }
+
     _capturePoseState() {
         return window.MechanismOptimization.capturePoseState(this);
     }

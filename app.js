@@ -15,6 +15,7 @@ window.appSeries = series;
 const frameChainBuilt = {};
 const chainStateListeners = new Set();
 const modeChangeListeners = new Set();
+const startPointMismatchLoggedFrames = new Set();
 let currentFrameIndex = 0;
 
 let drawingFinished = false;
@@ -184,6 +185,7 @@ function markCurrentFrameChainDirty() {
     series.clearAllMechanisms();
     Object.keys(frameChains).forEach((key) => delete frameChains[key]);
     Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
+    startPointMismatchLoggedFrames.clear();
     liveMechanismBundle = null;
     liveMechanismBaseState = null;
     mechanismNeedsRegeneration = true;
@@ -258,6 +260,49 @@ function getFramePoseState(frameIndex) {
     return null;
 }
 
+function getFirstPointOfFirstLink(chain) {
+    const firstLink = chain?.links?.[0] || null;
+    const firstPoint = firstLink?.getWorldPoints?.()?.[0] || null;
+    if (!firstPoint) return null;
+    return { x: Number(firstPoint.x), y: Number(firstPoint.y) };
+}
+
+function alignCoincidentStartToSkeletonPoint(frameIndex, bundle) {
+    if (!bundle) return;
+
+    const skeletonStart = series.getFrame(frameIndex)?.points?.[0] || null;
+    if (!skeletonStart) return;
+
+    const startA = getFirstPointOfFirstLink(bundle.mechanism1);
+    const startB = getFirstPointOfFirstLink(bundle.mechanism2);
+    if (!startA || !startB) return;
+
+    const distanceAB = Math.hypot(startA.x - startB.x, startA.y - startB.y);
+    const tolerance = 0.5;
+
+    if (distanceAB > tolerance) {
+        if (!startPointMismatchLoggedFrames.has(frameIndex)) {
+            startPointMismatchLoggedFrames.add(frameIndex);
+            console.error(
+                `[Start Point Mismatch][frame ${frameIndex}] Chain A/B first-link first points do not coincide: `
+                + `distance=${distanceAB.toFixed(4)} A=(${startA.x.toFixed(2)}, ${startA.y.toFixed(2)}) `
+                + `B=(${startB.x.toFixed(2)}, ${startB.y.toFixed(2)})`
+            );
+        }
+        return;
+    }
+
+    startPointMismatchLoggedFrames.delete(frameIndex);
+
+    const dx = Number(skeletonStart.x) - startA.x;
+    const dy = Number(skeletonStart.y) - startA.y;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+
+    if (bundle.mechanism instanceof Mechanism) {
+        bundle.mechanism.translateBy(dx, dy);
+    }
+}
+
 function syncLiveMechanismToFrame(frameIndex) {
     if (!(liveMechanismBundle?.mechanism instanceof Mechanism) || !liveMechanismBaseState) {
         return null;
@@ -274,6 +319,8 @@ function syncLiveMechanismToFrame(frameIndex) {
         ? Number(poseState.targetHoleLengthA)
         : null;
     liveMechanismBundle.solveResult = poseState?.solveResult || null;
+
+    alignCoincidentStartToSkeletonPoint(frameIndex, liveMechanismBundle);
 
     return liveMechanismBundle;
 }
@@ -347,6 +394,7 @@ function solveMechanismBundleForTargetLength(bundle, targetLength, options = {})
 function buildChain() {
     Object.keys(frameChains).forEach((key) => delete frameChains[key]);
     Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
+    startPointMismatchLoggedFrames.clear();
     liveMechanismBundle = null;
     liveMechanismBaseState = null;
 
@@ -624,8 +672,9 @@ function redrawAll() {
 
     if (chainVisible && hasRenderableChain()) {
         const bundle = getCurrentMechanismBundle();
+        const ctx = canvasView.getContext();
         if (mechanism1Visible) {
-            bundle.mechanism1?.drawWhole?.(canvasView.getContext(), {
+            bundle.mechanism1?.drawWhole?.(ctx, {
                 strokeStyle: 'rgba(34, 197, 94, 0.95)',
                 fillStyle: 'rgba(34, 197, 94, 0.14)',
                 lineWidth: 2,
@@ -635,7 +684,7 @@ function redrawAll() {
             });
         }
         if (mechanism2Visible) {
-            bundle.mechanism2?.drawWhole?.(canvasView.getContext(), {
+            bundle.mechanism2?.drawWhole?.(ctx, {
                 strokeStyle: 'rgba(34, 197, 94, 0.95)',
                 fillStyle: 'rgba(34, 197, 94, 0.14)',
                 lineWidth: 2,
@@ -644,6 +693,25 @@ function redrawAll() {
                 holeLineWidth: 2
             });
         }
+
+        const pivots = Array.isArray(bundle.mechanism?.joints)
+            ? bundle.mechanism.joints
+                .map((joint) => joint?.pivotPoint || null)
+                .filter((pivot) => pivot && Number.isFinite(pivot.x) && Number.isFinite(pivot.y))
+            : [];
+
+        pivots.forEach((pivot) => {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(pivot.x, pivot.y, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(220, 38, 38, 0.95)';
+            ctx.stroke();
+            ctx.restore();
+        });
+
     }
 
     if (skeletonVisible) {
