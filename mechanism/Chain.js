@@ -462,6 +462,7 @@ class Chain {
         const mergedStrokeStyle = options.mergedStrokeStyle || 'rgba(132, 204, 22, 0.92)';
         const mergedFillStyle = options.mergedFillStyle || 'rgba(132, 204, 22, 0.16)';
         const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 2;
+        const slack = Number.isFinite(options.slack) ? Number(options.slack) : null;
 
         this.links.forEach((link) => {
             if (!(link instanceof Link)) return;
@@ -479,7 +480,8 @@ class Chain {
             link.drawPolygonFromPoints(ctx, combined, {
                 strokeStyle: mergedStrokeStyle,
                 fillStyle: mergedFillStyle,
-                lineWidth
+                lineWidth,
+                slack
             });
         });
     }

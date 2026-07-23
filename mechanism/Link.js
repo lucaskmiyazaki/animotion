@@ -105,6 +105,46 @@ class Link {
         });
     }
 
+    static _collectUniquePivotPoints(points, tolerance = 1e-6) {
+        if (!Array.isArray(points) || points.length === 0) return [];
+
+        const uniquePivots = [];
+
+        points.forEach((point) => {
+            if (!point?.isPivot) return;
+
+            const x = Number(point.x);
+            const y = Number(point.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+            const exists = uniquePivots.some((existing) => Math.hypot(existing.x - x, existing.y - y) <= tolerance);
+            if (!exists) {
+                uniquePivots.push({ x, y, isPivot: true });
+            }
+        });
+
+        return uniquePivots;
+    }
+
+    static _closestOtherPivot(point, pivotPoints) {
+        let closest = null;
+        let bestDistanceSq = Number.POSITIVE_INFINITY;
+
+        pivotPoints.forEach((candidate) => {
+            if (candidate === point) return;
+
+            const dx = candidate.x - point.x;
+            const dy = candidate.y - point.y;
+            const distanceSq = dx * dx + dy * dy;
+            if (distanceSq < bestDistanceSq) {
+                bestDistanceSq = distanceSq;
+                closest = candidate;
+            }
+        });
+
+        return closest;
+    }
+
     getWorldPoints() {
         const c = Math.cos(this.theta);
         const s = Math.sin(this.theta);
@@ -125,6 +165,14 @@ class Link {
         const strokeStyle = options.strokeStyle || 'rgba(57, 166, 255, 0.95)';
         const fillStyle = options.fillStyle || 'rgba(57, 166, 255, 0.14)';
         const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 2;
+        const pivotSlack = Number.isFinite(options.slack) ? Number(options.slack) : null;
+        const pivotHighlightRadius = Number.isFinite(options.pivotHighlightRadius)
+            ? Number(options.pivotHighlightRadius)
+            : 4.5;
+        const pivotHighlightStrokeStyle = options.pivotHighlightStrokeStyle || 'rgba(255, 215, 90, 0.98)';
+        const pivotHighlightFillStyle = options.pivotHighlightFillStyle || 'rgba(255, 245, 180, 0.98)';
+        const pivotHighlightInnerFillStyle = options.pivotHighlightInnerFillStyle || 'rgba(255, 255, 255, 0.98)';
+        const uniquePivots = Link._collectUniquePivotPoints(ordered);
 
         ctx.save();
         ctx.strokeStyle = strokeStyle;
@@ -139,6 +187,42 @@ class Link {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+
+        if (Number.isFinite(pivotSlack) && uniquePivots.length >= 2) {
+            const highlightPoints = [];
+
+            uniquePivots.forEach((pivot) => {
+                const otherPivot = Link._closestOtherPivot(pivot, uniquePivots);
+                if (!otherPivot) return;
+
+                const dx = otherPivot.x - pivot.x;
+                const dy = otherPivot.y - pivot.y;
+                const magnitude = Math.hypot(dx, dy);
+                if (magnitude < 1e-8) return;
+
+                const unitX = dx / magnitude;
+                const unitY = dy / magnitude;
+                highlightPoints.push({
+                    x: pivot.x + unitX * pivotSlack,
+                    y: pivot.y + unitY * pivotSlack
+                });
+            });
+
+            ctx.lineWidth = Math.max(1, lineWidth * 0.75);
+            highlightPoints.forEach((point) => {
+                ctx.beginPath();
+                ctx.fillStyle = pivotHighlightFillStyle;
+                ctx.strokeStyle = pivotHighlightStrokeStyle;
+                ctx.arc(point.x, point.y, pivotHighlightRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.fillStyle = pivotHighlightInnerFillStyle;
+                ctx.arc(point.x, point.y, Math.max(1.25, pivotHighlightRadius * 0.42), 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
 
         ctx.restore();
     }

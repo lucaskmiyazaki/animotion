@@ -746,7 +746,8 @@ function redrawAll() {
                 baseFillStyle: 'rgba(132, 204, 22, 0.18)',
                 mergedStrokeStyle: 'rgba(132, 204, 22, 0.92)',
                 mergedFillStyle: 'rgba(132, 204, 22, 0.10)',
-                lineWidth: 2
+                lineWidth: 2,
+                slack: companionSlack
             });
         }
 
@@ -756,7 +757,8 @@ function redrawAll() {
                 baseFillStyle: 'rgba(132, 204, 22, 0.00)',
                 mergedStrokeStyle: 'rgba(132, 204, 22, 0.24)',
                 mergedFillStyle: 'rgba(132, 204, 22, 0.00)',
-                lineWidth: 2
+                lineWidth: 2,
+                slack: companionSlack
             });
         }
 
