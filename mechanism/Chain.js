@@ -87,6 +87,20 @@ class Chain {
         return Number.POSITIVE_INFINITY;
     }
 
+    static _withIsPivot(point, isPivot) {
+        const x = Number(point?.x);
+        const y = Number(point?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return null;
+        }
+
+        return {
+            x,
+            y,
+            isPivot: Boolean(isPivot)
+        };
+    }
+
     static _computeTerminalFourthPoint(anchorPoint, skeletonPoint, refPoint) {
         const axis = Chain._normalize({
             x: skeletonPoint.x - anchorPoint.x,
@@ -184,28 +198,36 @@ class Chain {
 
         // Initial link: sk[0], sk[1], ref[1], derived 4th point.
         if (points.length >= 3 && refByIndex[1]) {
-            const anchor = points[0];
-            const second = points[1];
-            const refPoint = refByIndex[1];
-            const fourth = Chain._computeTerminalFourthPoint(anchor, second, refPoint);
-            if (fourth) {
-                const ordered = Chain._orderQuadWithoutIntersection([anchor, second, refPoint, fourth], anchor);
-                this.addLinkFromWorldPoints(ordered, {
-                    role: 'initial',
-                    anchorPointIndex: 0,
-                    segmentIndex: 0,
-                    refKind
-                });
+            const anchor = Chain._withIsPivot(points[0], true);
+            const second = Chain._withIsPivot(points[1], true);
+            const refPoint = Chain._withIsPivot(refByIndex[1], false);
+            if (anchor && second && refPoint) {
+                const fourth = Chain._computeTerminalFourthPoint(anchor, second, refPoint);
+                if (fourth) {
+                    const ordered = Chain._orderQuadWithoutIntersection([
+                        anchor,
+                        second,
+                        refPoint,
+                        Chain._withIsPivot(fourth, false)
+                    ], anchor);
+                    this.addLinkFromWorldPoints(ordered, {
+                        role: 'initial',
+                        anchorPointIndex: 0,
+                        segmentIndex: 0,
+                        refKind
+                    });
+                }
             }
         }
 
         // Middle links: sk[i], ref[i], sk[i+1], ref[i+1], ordered to avoid intersections.
         for (let i = 1; i <= lastIndex - 2; i++) {
-            const pA = points[i];
-            const pB = points[i + 1];
-            const refA = refByIndex[i];
-            const refB = refByIndex[i + 1];
+            const pA = Chain._withIsPivot(points[i], true);
+            const pB = Chain._withIsPivot(points[i + 1], true);
+            const refA = Chain._withIsPivot(refByIndex[i], false);
+            const refB = Chain._withIsPivot(refByIndex[i + 1], false);
             if (!refA || !refB) continue;
+            if (!pA || !pB) continue;
 
             const ordered = Chain._orderQuadWithoutIntersection([pA, refA, pB, refB], pA);
             this.addLinkFromWorldPoints(ordered, {
@@ -219,19 +241,26 @@ class Chain {
         // Final link keeps the same geometry but re-anchors to the
         // second-last skeleton point so the tail joint uses that ref point.
         if (points.length >= 3 && refByIndex[lastIndex - 1]) {
-            const anchor = points[lastIndex];
-            const second = points[lastIndex - 1];
-            const refPoint = refByIndex[lastIndex - 1];
-            const fourth = Chain._computeTerminalFourthPoint(anchor, second, refPoint);
-            if (fourth) {
-                const ordered = Chain._orderQuadWithoutIntersection([anchor, second, refPoint, fourth], anchor);
-                const reanchored = Chain._rotateStart(ordered, second);
-                this.addLinkFromWorldPoints(reanchored, {
-                    role: 'final',
-                    anchorPointIndex: lastIndex - 1,
-                    segmentIndex: lastIndex - 1,
-                    refKind
-                });
+            const anchor = Chain._withIsPivot(points[lastIndex], true);
+            const second = Chain._withIsPivot(points[lastIndex - 1], true);
+            const refPoint = Chain._withIsPivot(refByIndex[lastIndex - 1], false);
+            if (anchor && second && refPoint) {
+                const fourth = Chain._computeTerminalFourthPoint(anchor, second, refPoint);
+                if (fourth) {
+                    const ordered = Chain._orderQuadWithoutIntersection([
+                        anchor,
+                        second,
+                        refPoint,
+                        Chain._withIsPivot(fourth, false)
+                    ], anchor);
+                    const reanchored = Chain._rotateStart(ordered, second);
+                    this.addLinkFromWorldPoints(reanchored, {
+                        role: 'final',
+                        anchorPointIndex: lastIndex - 1,
+                        segmentIndex: lastIndex - 1,
+                        refKind
+                    });
+                }
             }
         }
 

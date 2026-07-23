@@ -28,11 +28,16 @@ class Link {
         // Store shape in local coordinates with p0 fixed at origin.
         this.localPoints = worldPoints.map((point, index) => {
             if (index === 0) {
-                return { x: 0, y: 0 };
+                return {
+                    x: 0,
+                    y: 0,
+                    isPivot: Boolean(point?.isPivot)
+                };
             }
             return {
                 x: (Number(point.x) || 0) - this.position.x,
-                y: (Number(point.y) || 0) - this.position.y
+                y: (Number(point.y) || 0) - this.position.y,
+                isPivot: Boolean(point?.isPivot)
             };
         });
     }
@@ -42,7 +47,11 @@ class Link {
         clone.position = { x: this.position.x, y: this.position.y };
         clone._theta = this._theta;
         clone.kind = this.kind;
-        clone.localPoints = this.localPoints.map((p) => ({ x: p.x, y: p.y }));
+        clone.localPoints = this.localPoints.map((p) => ({
+            x: p.x,
+            y: p.y,
+            isPivot: Boolean(p?.isPivot)
+        }));
         clone.metadata = { ...(this.metadata || {}) };
         clone.twin = null;
         return clone;
@@ -66,7 +75,8 @@ class Link {
 
         return this.localPoints.map((local) => ({
             x: this.position.x + local.x * c - local.y * s,
-            y: this.position.y + local.x * s + local.y * c
+            y: this.position.y + local.x * s + local.y * c,
+            isPivot: Boolean(local?.isPivot)
         }));
     }
 
@@ -138,7 +148,6 @@ class Link {
         const labelFont = options.pointLabelFont || '10px sans-serif';
         const labelOffsetX = Number.isFinite(options.pointLabelOffsetX) ? options.pointLabelOffsetX : 7;
         const labelOffsetY = Number.isFinite(options.pointLabelOffsetY) ? options.pointLabelOffsetY : -7;
-        const labeledPoints = [2];
 
         ctx.save();
         ctx.strokeStyle = strokeStyle;
@@ -160,7 +169,7 @@ class Link {
             const isAnchorPoint = index === 0;
             const radius = isAnchorPoint ? anchorPointRadius : pointRadius;
             const labelNumber = index + 1;
-            const shouldHighlight = labeledPoints.includes(labelNumber);
+            const shouldHighlight = Boolean(point?.isPivot);
 
             if (!shouldHighlight) {
                 return;
