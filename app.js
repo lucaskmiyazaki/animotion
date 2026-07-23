@@ -32,8 +32,8 @@ let mechanism1Visible = true;
 let mechanism2Visible = true;
 let skeletonVisible = true;
 let skeletonBisectorVisible = false;
-let skeletonPivot1Visible = false;
-let skeletonPivot2Visible = false;
+let skeletonRef1Visible = false;
+let skeletonRef2Visible = false;
 let chainVisible = true;
 let mechanismNeedsRegeneration = false;
 const jointKByIndex = {};
@@ -799,10 +799,10 @@ function redrawAll() {
                 pointRadius,
                 hoverRadius,
                 showBisector: skeletonBisectorVisible,
-                showPivot1: skeletonPivot1Visible,
-                showPivot2: skeletonPivot2Visible,
-                pivotRadius: chainThickness,
-                pivotDirectionByPoint: angleComparison.pointDirections
+                showRef1: skeletonRef1Visible,
+                showRef2: skeletonRef2Visible,
+                refRadius: chainThickness,
+                refDirectionByPoint: angleComparison.pointDirections
             });
         }
     }
@@ -814,7 +814,7 @@ function redrawAll() {
     });
 }
 
-function logPivotClosingDirections() {
+function logRefClosingDirections() {
     const comparison = series.compareInitialToLastFrameAngles();
     const rows = Object.entries(comparison.pointDirections || {}).map(([pointIndex, info]) => ({
         pointIndex: Number.parseInt(pointIndex, 10),
@@ -826,12 +826,12 @@ function logPivotClosingDirections() {
     }));
 
     if (rows.length === 0) {
-        console.log('Pivot direction analysis: no comparable points between initial and last skeleton frame.');
+        console.log('Ref direction analysis: no comparable points between initial and last skeleton frame.');
         return;
     }
 
     console.groupCollapsed(
-        `Pivot direction analysis (frames ${comparison.startFrameIndex} -> ${comparison.endFrameIndex})`
+        `Ref direction analysis (frames ${comparison.startFrameIndex} -> ${comparison.endFrameIndex})`
     );
     console.table(rows);
     console.groupEnd();
@@ -1384,52 +1384,32 @@ window.appActions = {
     setSkeletonBisectorVisible: (visible) => {
         skeletonBisectorVisible = Boolean(visible);
         if (!skeletonBisectorVisible) {
-            skeletonPivot1Visible = false;
-            skeletonPivot2Visible = false;
+            skeletonRef1Visible = false;
+            skeletonRef2Visible = false;
         }
         emitChainStateChange();
         redrawAll();
     },
     getSkeletonBisectorVisible: () => skeletonBisectorVisible,
-    setSkeletonPivot1Visible: (visible) => {
-        skeletonPivot1Visible = Boolean(visible) && skeletonBisectorVisible;
-        if (skeletonPivot1Visible) {
-            logPivotClosingDirections();
-        }
-        emitChainStateChange();
-        redrawAll();
-    },
-    getSkeletonPivot1Visible: () => skeletonPivot1Visible,
     setSkeletonRef1Visible: (visible) => {
-        // Swapped naming: ref1 maps to previous pivot2 behavior.
-        skeletonPivot2Visible = Boolean(visible) && skeletonBisectorVisible;
-        if (skeletonPivot2Visible) {
-            logPivotClosingDirections();
+        skeletonRef1Visible = Boolean(visible) && skeletonBisectorVisible;
+        if (skeletonRef1Visible) {
+            logRefClosingDirections();
         }
         emitChainStateChange();
         redrawAll();
     },
-    getSkeletonRef1Visible: () => skeletonPivot2Visible,
-    setSkeletonPivot2Visible: (visible) => {
-        skeletonPivot2Visible = Boolean(visible) && skeletonBisectorVisible;
-        if (skeletonPivot2Visible) {
-            logPivotClosingDirections();
-        }
-        emitChainStateChange();
-        redrawAll();
-    },
-    getSkeletonPivot2Visible: () => skeletonPivot2Visible,
+    getSkeletonRef1Visible: () => skeletonRef1Visible,
     setSkeletonRef2Visible: (visible) => {
-        // Swapped naming: ref2 maps to previous pivot1 behavior.
-        skeletonPivot1Visible = Boolean(visible) && skeletonBisectorVisible;
-        if (skeletonPivot1Visible) {
-            logPivotClosingDirections();
+        skeletonRef2Visible = Boolean(visible) && skeletonBisectorVisible;
+        if (skeletonRef2Visible) {
+            logRefClosingDirections();
         }
         emitChainStateChange();
         redrawAll();
     },
-    getSkeletonRef2Visible: () => skeletonPivot1Visible,
-    logPivotClosingDirections,
+    getSkeletonRef2Visible: () => skeletonRef2Visible,
+    logRefClosingDirections,
     setChainVisible: (visible) => {
         chainVisible = Boolean(visible);
         emitChainStateChange();

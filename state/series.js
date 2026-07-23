@@ -494,7 +494,7 @@ class Series {
     createMechanisms(options = {}) {
         const ChainCtor = options.ChainCtor || window.Chain || null;
         const MechanismCtor = options.MechanismCtor || window.Mechanism || null;
-        const pivotRadius = Number.isFinite(options.chainThickness) ? options.chainThickness : 50;
+        const refRadius = Number.isFinite(options.chainThickness) ? options.chainThickness : 50;
         const solveOptions = options.solveOptions && typeof options.solveOptions === 'object'
             ? options.solveOptions
             : {};
@@ -530,22 +530,22 @@ class Series {
         const mechanism1Initial = new ChainCtor();
         mechanism1Initial.generateFromSeries(this, {
             frameIndex: startFrameIndex,
-            pivotKind: 'ref1',
-            pivotRadius
+            refKind: 'ref1',
+            refRadius
         });
 
         const mechanism2EndReference = new ChainCtor();
         mechanism2EndReference.generateFromSeries(this, {
             frameIndex: endFrameIndex,
-            pivotKind: 'ref2',
-            pivotRadius
+            refKind: 'ref2',
+            refRadius
         });
 
         const mechanism2Initial = new ChainCtor();
         mechanism2Initial.generateFromSeries(this, {
             frameIndex: endFrameIndex,
-            pivotKind: 'ref2',
-            pivotRadius
+            refKind: 'ref2',
+            refRadius
         });
         if (startSkeleton && endSkeleton && mechanism2Initial.links.length > 0) {
             mechanism2Initial.poseToSkeleton(endSkeleton, startSkeleton);
@@ -565,8 +565,8 @@ class Series {
             const mechanism1Last = new ChainCtor();
             mechanism1Last.generateFromSeries(this, {
                 frameIndex: startFrameIndex,
-                pivotKind: 'ref1',
-                pivotRadius
+                refKind: 'ref1',
+                refRadius
             });
             if (startSkeleton && endSkeleton && mechanism1Last.links.length > 0) {
                 mechanism1Last.poseToSkeleton(startSkeleton, endSkeleton);

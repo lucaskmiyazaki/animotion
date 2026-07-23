@@ -912,45 +912,45 @@ skeletonBisectorOptionText.textContent = 'Bisector';
 
 skeletonBisectorOptionLabel.append(skeletonBisectorCheckbox, skeletonBisectorOptionText);
 
-const skeletonPivot1OptionLabel = document.createElement('label');
-skeletonPivot1OptionLabel.className = 'checkbox-option';
+const skeletonRef1OptionLabel = document.createElement('label');
+skeletonRef1OptionLabel.className = 'checkbox-option';
 
-const skeletonPivot1Checkbox = document.createElement('input');
-skeletonPivot1Checkbox.type = 'checkbox';
-skeletonPivot1Checkbox.checked = window.appActions?.getSkeletonRef1Visible?.() ?? false;
-skeletonPivot1Checkbox.disabled = !skeletonBisectorCheckbox.checked;
-skeletonPivot1Checkbox.addEventListener('change', () => {
-    window.appActions?.setSkeletonRef1Visible?.(skeletonPivot1Checkbox.checked);
+const skeletonRef1Checkbox = document.createElement('input');
+skeletonRef1Checkbox.type = 'checkbox';
+skeletonRef1Checkbox.checked = window.appActions?.getSkeletonRef1Visible?.() ?? false;
+skeletonRef1Checkbox.disabled = !skeletonBisectorCheckbox.checked;
+skeletonRef1Checkbox.addEventListener('change', () => {
+    window.appActions?.setSkeletonRef1Visible?.(skeletonRef1Checkbox.checked);
 });
 
-const skeletonPivot1OptionText = document.createElement('span');
-skeletonPivot1OptionText.textContent = 'Ref 1';
+const skeletonRef1OptionText = document.createElement('span');
+skeletonRef1OptionText.textContent = 'Ref 1';
 
-skeletonPivot1OptionLabel.append(skeletonPivot1Checkbox, skeletonPivot1OptionText);
+skeletonRef1OptionLabel.append(skeletonRef1Checkbox, skeletonRef1OptionText);
 
-const skeletonPivot2OptionLabel = document.createElement('label');
-skeletonPivot2OptionLabel.className = 'checkbox-option';
+const skeletonRef2OptionLabel = document.createElement('label');
+skeletonRef2OptionLabel.className = 'checkbox-option';
 
-const skeletonPivot2Checkbox = document.createElement('input');
-skeletonPivot2Checkbox.type = 'checkbox';
-skeletonPivot2Checkbox.checked = window.appActions?.getSkeletonRef2Visible?.() ?? false;
-skeletonPivot2Checkbox.disabled = !skeletonBisectorCheckbox.checked;
-skeletonPivot2Checkbox.addEventListener('change', () => {
-    window.appActions?.setSkeletonRef2Visible?.(skeletonPivot2Checkbox.checked);
+const skeletonRef2Checkbox = document.createElement('input');
+skeletonRef2Checkbox.type = 'checkbox';
+skeletonRef2Checkbox.checked = window.appActions?.getSkeletonRef2Visible?.() ?? false;
+skeletonRef2Checkbox.disabled = !skeletonBisectorCheckbox.checked;
+skeletonRef2Checkbox.addEventListener('change', () => {
+    window.appActions?.setSkeletonRef2Visible?.(skeletonRef2Checkbox.checked);
 });
 
-const skeletonPivot2OptionText = document.createElement('span');
-skeletonPivot2OptionText.textContent = 'Ref 2';
+const skeletonRef2OptionText = document.createElement('span');
+skeletonRef2OptionText.textContent = 'Ref 2';
 
-skeletonPivot2OptionLabel.append(skeletonPivot2Checkbox, skeletonPivot2OptionText);
+skeletonRef2OptionLabel.append(skeletonRef2Checkbox, skeletonRef2OptionText);
 
 skeletonBisectorCheckbox.addEventListener('change', () => {
     const enabled = skeletonBisectorCheckbox.checked;
-    skeletonPivot1Checkbox.disabled = !enabled;
-    skeletonPivot2Checkbox.disabled = !enabled;
+    skeletonRef1Checkbox.disabled = !enabled;
+    skeletonRef2Checkbox.disabled = !enabled;
     if (!enabled) {
-        skeletonPivot1Checkbox.checked = false;
-        skeletonPivot2Checkbox.checked = false;
+        skeletonRef1Checkbox.checked = false;
+        skeletonRef2Checkbox.checked = false;
         window.appActions?.setSkeletonRef1Visible?.(false);
         window.appActions?.setSkeletonRef2Visible?.(false);
     }
@@ -959,8 +959,8 @@ skeletonBisectorCheckbox.addEventListener('change', () => {
 skeletonAdvancedContent.append(
     skeletonPointCountRow,
     skeletonBisectorOptionLabel,
-    skeletonPivot1OptionLabel,
-    skeletonPivot2OptionLabel
+    skeletonRef1OptionLabel,
+    skeletonRef2OptionLabel
 );
 
 skeletonAdvancedDetails.append(skeletonAdvancedSummary, skeletonAdvancedContent);
@@ -1093,8 +1093,8 @@ window.appActions?.onChainStateChange?.(() => {
     skeletonPointCountInput.value = String(Math.max(2, window.appActions?.getCurrentSkeletonPointCount?.() ?? 2));
     const skeletonVisible = window.appActions?.getSkeletonVisible?.() ?? true;
     const skeletonBisectorVisible = window.appActions?.getSkeletonBisectorVisible?.() ?? false;
-    const skeletonPivot1Visible = window.appActions?.getSkeletonRef1Visible?.() ?? false;
-    const skeletonPivot2Visible = window.appActions?.getSkeletonRef2Visible?.() ?? false;
+    const skeletonRef1Visible = window.appActions?.getSkeletonRef1Visible?.() ?? false;
+    const skeletonRef2Visible = window.appActions?.getSkeletonRef2Visible?.() ?? false;
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
     const mechanism1Visible = window.appActions?.getMechanism1Visible?.() ?? true;
@@ -1104,10 +1104,10 @@ window.appActions?.onChainStateChange?.(() => {
 
     skeletonHeader.sync(skeletonVisible);
     skeletonBisectorCheckbox.checked = skeletonBisectorVisible;
-    skeletonPivot1Checkbox.checked = skeletonPivot1Visible;
-    skeletonPivot2Checkbox.checked = skeletonPivot2Visible;
-    skeletonPivot1Checkbox.disabled = !skeletonBisectorVisible;
-    skeletonPivot2Checkbox.disabled = !skeletonBisectorVisible;
+    skeletonRef1Checkbox.checked = skeletonRef1Visible;
+    skeletonRef2Checkbox.checked = skeletonRef2Visible;
+    skeletonRef1Checkbox.disabled = !skeletonBisectorVisible;
+    skeletonRef2Checkbox.disabled = !skeletonBisectorVisible;
     frameHeader.sync(framesVisible);
     chainHeader.sync(chainVisible);
     testsHeader.sync(mechanismErrorVisible);

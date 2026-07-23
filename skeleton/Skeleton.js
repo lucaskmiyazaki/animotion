@@ -274,12 +274,12 @@ class Skeleton {
         return drawnCount;
     }
 
-    drawPivot(ctx, rotation_radius, options = {}) {
+    drawReferencePoints(ctx, referenceRadius, options = {}) {
         if (!ctx || !Array.isArray(this.points) || this.points.length < 3) {
             return 0;
         }
 
-        const radius = Number(rotation_radius);
+        const radius = Number(referenceRadius);
         if (!Number.isFinite(radius) || radius <= 0) {
             return 0;
         }
@@ -295,12 +295,12 @@ class Skeleton {
             const point = this.points[i];
             const prev = this.points[i - 1];
             const next = this.points[i + 1];
-            const pivot = point.findPivot(prev, next, radius);
-            if (!pivot) {
+            const referencePoints = point.findReferencePoints(prev, next, radius);
+            if (!referencePoints) {
                 continue;
             }
 
-            [pivot.positive, pivot.negative].forEach((p) => {
+            [referencePoints.positive, referencePoints.negative].forEach((p) => {
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, pointRadius, 0, Math.PI * 2);
                 ctx.fill();
@@ -312,21 +312,21 @@ class Skeleton {
         return drawnCount;
     }
 
-    drawPivotByDirection(ctx, rotation_radius, options = {}) {
+    drawReferencePointsByDirection(ctx, referenceRadius, options = {}) {
         if (!ctx || !Array.isArray(this.points) || this.points.length < 3) {
             return 0;
         }
 
-        const radius = Number(rotation_radius);
+        const radius = Number(referenceRadius);
         if (!Number.isFinite(radius) || radius <= 0) {
             return 0;
         }
 
         const pointRadius = Number.isFinite(options.pointRadius) ? options.pointRadius : 4;
-        const fillStylePivot1 = options.fillStylePivot1 || 'rgba(255, 120, 0, 0.9)';
-        const fillStylePivot2 = options.fillStylePivot2 || 'rgba(255, 205, 110, 0.95)';
-        const showPivot1 = Boolean(options.showPivot1);
-        const showPivot2 = Boolean(options.showPivot2);
+        const fillStyleRef1 = options.fillStyleRef1 || 'rgba(255, 120, 0, 0.9)';
+        const fillStyleRef2 = options.fillStyleRef2 || 'rgba(255, 205, 110, 0.95)';
+        const showRef1 = Boolean(options.showRef1);
+        const showRef2 = Boolean(options.showRef2);
         const directionByPoint = options.directionByPoint || {};
 
         const getDirectedAngleDeg = (fromVec, toVec, direction) => {
@@ -338,7 +338,7 @@ class Skeleton {
             return Number.POSITIVE_INFINITY;
         };
 
-        const chooseClosingSide = (currentPoint, prevPoint, pivotCandidates, direction) => {
+        const chooseClosingSide = (currentPoint, prevPoint, refCandidates, direction) => {
             if (direction !== 'clockwise' && direction !== 'counterclockwise') {
                 return null;
             }
@@ -349,12 +349,12 @@ class Skeleton {
             };
 
             const toPositive = {
-                x: pivotCandidates.positive.x - currentPoint.x,
-                y: pivotCandidates.positive.y - currentPoint.y
+                x: refCandidates.positive.x - currentPoint.x,
+                y: refCandidates.positive.y - currentPoint.y
             };
             const toNegative = {
-                x: pivotCandidates.negative.x - currentPoint.x,
-                y: pivotCandidates.negative.y - currentPoint.y
+                x: refCandidates.negative.x - currentPoint.x,
+                y: refCandidates.negative.y - currentPoint.y
             };
 
             const positiveAngle = getDirectedAngleDeg(toPrev, toPositive, direction);
@@ -374,17 +374,17 @@ class Skeleton {
             const point = this.points[i];
             const prev = this.points[i - 1];
             const next = this.points[i + 1];
-            const pivot = point.findPivot(prev, next, radius);
-            if (!pivot) continue;
+            const referencePoints = point.findReferencePoints(prev, next, radius);
+            if (!referencePoints) continue;
 
             const analysis = directionByPoint[i];
-            const closingSide = chooseClosingSide(point, prev, pivot, analysis?.closingDirection);
+            const closingSide = chooseClosingSide(point, prev, referencePoints, analysis?.closingDirection);
             const oppositeSide = getOppositeSide(closingSide);
 
-            if (showPivot1 && closingSide && pivot[closingSide]) {
-                const p = pivot[closingSide];
+            if (showRef1 && closingSide && referencePoints[closingSide]) {
+                const p = referencePoints[closingSide];
                 ctx.save();
-                ctx.fillStyle = fillStylePivot1;
+                ctx.fillStyle = fillStyleRef1;
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, pointRadius, 0, Math.PI * 2);
                 ctx.fill();
@@ -392,10 +392,10 @@ class Skeleton {
                 drawnCount += 1;
             }
 
-            if (showPivot2 && oppositeSide && pivot[oppositeSide]) {
-                const p = pivot[oppositeSide];
+            if (showRef2 && oppositeSide && referencePoints[oppositeSide]) {
+                const p = referencePoints[oppositeSide];
                 ctx.save();
-                ctx.fillStyle = fillStylePivot2;
+                ctx.fillStyle = fillStyleRef2;
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, pointRadius, 0, Math.PI * 2);
                 ctx.fill();

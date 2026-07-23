@@ -87,7 +87,7 @@ class Chain {
         return Number.POSITIVE_INFINITY;
     }
 
-    static _computeTerminalFourthPoint(anchorPoint, skeletonPoint, pivotPoint) {
+    static _computeTerminalFourthPoint(anchorPoint, skeletonPoint, refPoint) {
         const axis = Chain._normalize({
             x: skeletonPoint.x - anchorPoint.x,
             y: skeletonPoint.y - anchorPoint.y
@@ -95,20 +95,20 @@ class Chain {
         if (!axis) return null;
 
         // Intersect:
-        // 1) line through pivot, parallel to anchor->skeleton axis
+        // 1) line through ref, parallel to anchor->skeleton axis
         // 2) line through anchor point, perpendicular to axis
         // This enforces:
         // - (anchor->skeleton) dot (anchor->new) = 0
-        // - (anchor->skeleton) parallel (pivot->new)
-        const t = (anchorPoint.x - pivotPoint.x) * axis.x + (anchorPoint.y - pivotPoint.y) * axis.y;
+        // - (anchor->skeleton) parallel (ref->new)
+        const t = (anchorPoint.x - refPoint.x) * axis.x + (anchorPoint.y - refPoint.y) * axis.y;
         return {
-            x: pivotPoint.x + axis.x * t,
-            y: pivotPoint.y + axis.y * t
+            x: refPoint.x + axis.x * t,
+            y: refPoint.y + axis.y * t
         };
     }
 
-    _selectPivotCandidate(point, prevPoint, pivotCandidates, closingDirection, refKind = 'ref1') {
-        if (!pivotCandidates || (closingDirection !== 'clockwise' && closingDirection !== 'counterclockwise')) {
+    _selectRefCandidate(point, prevPoint, refCandidates, closingDirection, refKind = 'ref1') {
+        if (!refCandidates || (closingDirection !== 'clockwise' && closingDirection !== 'counterclockwise')) {
             return null;
         }
 
@@ -118,45 +118,39 @@ class Chain {
         };
 
         const toPositive = {
-            x: pivotCandidates.positive.x - point.x,
-            y: pivotCandidates.positive.y - point.y
+            x: refCandidates.positive.x - point.x,
+            y: refCandidates.positive.y - point.y
         };
 
         const toNegative = {
-            x: pivotCandidates.negative.x - point.x,
-            y: pivotCandidates.negative.y - point.y
+            x: refCandidates.negative.x - point.x,
+            y: refCandidates.negative.y - point.y
         };
 
         const anglePositive = Chain._directedAngleDeg(toPrev, toPositive, closingDirection);
         const angleNegative = Chain._directedAngleDeg(toPrev, toNegative, closingDirection);
 
-        // Historical pivot mapping:
-        // - pivot1: smaller directed angle on closing direction
-        // - pivot2: opposite candidate
-        // Swapped naming requested:
-        // - ref1 maps to pivot2
-        // - ref2 maps to pivot1
-        const pivot1 = anglePositive <= angleNegative ? pivotCandidates.positive : pivotCandidates.negative;
-        const pivot2 = anglePositive <= angleNegative ? pivotCandidates.negative : pivotCandidates.positive;
-        if (refKind === 'ref2' || refKind === 'pivot1') return pivot1;
-        return pivot2;
+        const refPrimary = anglePositive <= angleNegative ? refCandidates.positive : refCandidates.negative;
+        const refSecondary = anglePositive <= angleNegative ? refCandidates.negative : refCandidates.positive;
+        if (refKind === 'ref2') return refPrimary;
+        return refSecondary;
     }
 
-    _collectPivotByPointIndex(skeleton, directionByPoint, pivotRadius, refKind = 'ref1') {
+    _collectRefByPointIndex(skeleton, directionByPoint, refRadius, refKind = 'ref1') {
         const map = {};
 
         for (let i = 1; i < skeleton.points.length - 1; i++) {
             const point = skeleton.points[i];
             const prev = skeleton.points[i - 1];
             const next = skeleton.points[i + 1];
-            const pivot = point.findPivot(prev, next, pivotRadius);
-            if (!pivot) continue;
+            const refCandidates = point.findReferencePoints(prev, next, refRadius);
+            if (!refCandidates) continue;
 
             const closingDirection = directionByPoint?.[i]?.closingDirection;
-            const chosenPivot = this._selectPivotCandidate(point, prev, pivot, closingDirection, refKind);
-            if (!chosenPivot) continue;
+            const chosenRef = this._selectRefCandidate(point, prev, refCandidates, closingDirection, refKind);
+            if (!chosenRef) continue;
 
-            map[i] = { x: chosenPivot.x, y: chosenPivot.y };
+            map[i] = { x: chosenRef.x, y: chosenRef.y };
         }
 
         return map;
@@ -165,8 +159,8 @@ class Chain {
     generateFromSeries(series, options = {}) {
         this.clear();
 
-        const pivotRadius = Number.isFinite(options.pivotRadius) ? options.pivotRadius : 50;
-        const refKind = options.pivotKind === 'ref2' || options.pivotKind === 'pivot1' ? 'ref2' : 'ref1';
+        const refRadius = Number.isFinite(options.refRadius) ? Number(options.refRadius) : 50;
+        const refKind = options.refKind === 'ref2' ? 'ref2' : 'ref1';
         const initialFrameIndex = Number.isInteger(options.frameIndex)
             ? options.frameIndex
             : 0;
@@ -183,19 +177,19 @@ class Chain {
 
         const comparison = series?.compareInitialToLastFrameAngles?.() || { pointDirections: {} };
         const directionByPoint = comparison.pointDirections || {};
-        const pivotByIndex = this._collectPivotByPointIndex(skeleton, directionByPoint, pivotRadius, refKind);
+        const refByIndex = this._collectRefByPointIndex(skeleton, directionByPoint, refRadius, refKind);
 
         const points = skeleton.points;
         const lastIndex = points.length - 1;
 
-        // Initial link: sk[0], sk[1], pivot[1], derived 4th point.
-        if (points.length >= 3 && pivotByIndex[1]) {
+        // Initial link: sk[0], sk[1], ref[1], derived 4th point.
+        if (points.length >= 3 && refByIndex[1]) {
             const anchor = points[0];
             const second = points[1];
-            const pivotPoint = pivotByIndex[1];
-            const fourth = Chain._computeTerminalFourthPoint(anchor, second, pivotPoint);
+            const refPoint = refByIndex[1];
+            const fourth = Chain._computeTerminalFourthPoint(anchor, second, refPoint);
             if (fourth) {
-                const ordered = Chain._orderQuadWithoutIntersection([anchor, second, pivotPoint, fourth], anchor);
+                const ordered = Chain._orderQuadWithoutIntersection([anchor, second, refPoint, fourth], anchor);
                 this.addLinkFromWorldPoints(ordered, {
                     role: 'initial',
                     anchorPointIndex: 0,
@@ -205,15 +199,15 @@ class Chain {
             }
         }
 
-        // Middle links: sk[i], pivot[i], sk[i+1], pivot[i+1], ordered to avoid intersections.
+        // Middle links: sk[i], ref[i], sk[i+1], ref[i+1], ordered to avoid intersections.
         for (let i = 1; i <= lastIndex - 2; i++) {
             const pA = points[i];
             const pB = points[i + 1];
-            const pivotA = pivotByIndex[i];
-            const pivotB = pivotByIndex[i + 1];
-            if (!pivotA || !pivotB) continue;
+            const refA = refByIndex[i];
+            const refB = refByIndex[i + 1];
+            if (!refA || !refB) continue;
 
-            const ordered = Chain._orderQuadWithoutIntersection([pA, pivotA, pB, pivotB], pA);
+            const ordered = Chain._orderQuadWithoutIntersection([pA, refA, pB, refB], pA);
             this.addLinkFromWorldPoints(ordered, {
                 role: 'middle',
                 anchorPointIndex: i,
@@ -223,14 +217,14 @@ class Chain {
         }
 
         // Final link keeps the same geometry but re-anchors to the
-        // second-last skeleton point so the tail joint uses that pivot.
-        if (points.length >= 3 && pivotByIndex[lastIndex - 1]) {
+        // second-last skeleton point so the tail joint uses that ref point.
+        if (points.length >= 3 && refByIndex[lastIndex - 1]) {
             const anchor = points[lastIndex];
             const second = points[lastIndex - 1];
-            const pivotPoint = pivotByIndex[lastIndex - 1];
-            const fourth = Chain._computeTerminalFourthPoint(anchor, second, pivotPoint);
+            const refPoint = refByIndex[lastIndex - 1];
+            const fourth = Chain._computeTerminalFourthPoint(anchor, second, refPoint);
             if (fourth) {
-                const ordered = Chain._orderQuadWithoutIntersection([anchor, second, pivotPoint, fourth], anchor);
+                const ordered = Chain._orderQuadWithoutIntersection([anchor, second, refPoint, fourth], anchor);
                 const reanchored = Chain._rotateStart(ordered, second);
                 this.addLinkFromWorldPoints(reanchored, {
                     role: 'final',

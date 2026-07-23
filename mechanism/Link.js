@@ -126,6 +126,19 @@ class Link {
         const strokeStyle = options.strokeStyle || 'rgba(57, 166, 255, 0.95)';
         const fillStyle = options.fillStyle || 'rgba(57, 166, 255, 0.14)';
         const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 2;
+        const pointRadius = Number.isFinite(options.pointRadius) ? options.pointRadius : 3.5;
+        const anchorPointRadius = Number.isFinite(options.anchorPointRadius)
+            ? options.anchorPointRadius
+            : pointRadius + 1.5;
+        const pointStrokeStyle = options.pointStrokeStyle || strokeStyle;
+        const pointFillStyle = options.pointFillStyle || 'rgba(255, 255, 255, 0.92)';
+        const anchorPointStrokeStyle = options.anchorPointStrokeStyle || strokeStyle;
+        const anchorPointFillStyle = options.anchorPointFillStyle || 'rgba(255, 255, 255, 1)';
+        const labelFillStyle = options.pointLabelFillStyle || 'rgba(17, 24, 39, 0.92)';
+        const labelFont = options.pointLabelFont || '10px sans-serif';
+        const labelOffsetX = Number.isFinite(options.pointLabelOffsetX) ? options.pointLabelOffsetX : 7;
+        const labelOffsetY = Number.isFinite(options.pointLabelOffsetY) ? options.pointLabelOffsetY : -7;
+        const labeledPoints = [2];
 
         ctx.save();
         ctx.strokeStyle = strokeStyle;
@@ -140,6 +153,32 @@ class Link {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+
+        ctx.lineWidth = Math.max(1, lineWidth * 0.75);
+
+        points.forEach((point, index) => {
+            const isAnchorPoint = index === 0;
+            const radius = isAnchorPoint ? anchorPointRadius : pointRadius;
+            const labelNumber = index + 1;
+            const shouldHighlight = labeledPoints.includes(labelNumber);
+
+            if (!shouldHighlight) {
+                return;
+            }
+
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = isAnchorPoint ? anchorPointFillStyle : pointFillStyle;
+            ctx.strokeStyle = isAnchorPoint ? anchorPointStrokeStyle : pointStrokeStyle;
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = labelFillStyle;
+            ctx.font = labelFont;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(labelNumber), point.x + labelOffsetX, point.y + labelOffsetY);
+        });
 
         ctx.restore();
     }

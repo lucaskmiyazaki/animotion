@@ -62,8 +62,8 @@ class Point {
         return normalize(sum);
     }
 
-    findPivot(prevPoint, nextPoint, rotation_radius) {
-        const radius = Number(rotation_radius);
+    findReferencePoints(prevPoint, nextPoint, referenceRadius) {
+        const radius = Number(referenceRadius);
 
         if (!prevPoint || !nextPoint || !Number.isFinite(radius) || radius <= 0) {
             return null;

@@ -123,11 +123,11 @@ class Canvas {
             pointRadius = 5,
             hoverRadius = 9,
             showBisector = false,
-            showPivot = false,
-            showPivot1 = false,
-            showPivot2 = false,
-            pivotRadius = 50,
-            pivotDirectionByPoint = null
+            showRef = false,
+            showRef1 = false,
+            showRef2 = false,
+            refRadius = 50,
+            refDirectionByPoint = null
         } = options;
 
         this.ctx.strokeStyle = 'blue';
@@ -147,17 +147,17 @@ class Canvas {
                 lineWidth: 3
             });
 
-            if ((showPivot1 || showPivot2) && typeof skeleton.drawPivotByDirection === 'function') {
-                skeleton.drawPivotByDirection(this.ctx, pivotRadius, {
+            if ((showRef1 || showRef2) && typeof skeleton.drawReferencePointsByDirection === 'function') {
+                skeleton.drawReferencePointsByDirection(this.ctx, refRadius, {
                     pointRadius: 4,
-                    fillStylePivot1: 'rgba(255, 120, 0, 0.9)',
-                    fillStylePivot2: 'rgba(255, 205, 110, 0.95)',
-                    showPivot1,
-                    showPivot2,
-                    directionByPoint: pivotDirectionByPoint || {}
+                    fillStyleRef1: 'rgba(255, 120, 0, 0.9)',
+                    fillStyleRef2: 'rgba(255, 205, 110, 0.95)',
+                    showRef1,
+                    showRef2,
+                    directionByPoint: refDirectionByPoint || {}
                 });
-            } else if (showPivot && typeof skeleton.drawPivot === 'function') {
-                skeleton.drawPivot(this.ctx, pivotRadius, {
+            } else if (showRef && typeof skeleton.drawReferencePoints === 'function') {
+                skeleton.drawReferencePoints(this.ctx, refRadius, {
                     pointRadius: 4,
                     fillStyle: 'rgba(255, 120, 0, 0.9)'
                 });
