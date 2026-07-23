@@ -422,6 +422,68 @@ class Chain {
         }
     }
 
+    static _isSamePoint(a, b, tolerance = 1e-5) {
+        if (!a || !b) return false;
+        return Math.hypot(Number(a.x) - Number(b.x), Number(a.y) - Number(b.y)) <= tolerance;
+    }
+
+    static _collectTwinCombinedPoints(link, tolerance = 1e-5) {
+        const ownPoints = Array.isArray(link?.getWorldPoints?.()) ? link.getWorldPoints() : [];
+        const twinPoints = Array.isArray(link?.twin?.getWorldPoints?.()) ? link.twin.getWorldPoints() : [];
+
+        const combined = ownPoints.map((point) => ({
+            x: Number(point.x),
+            y: Number(point.y),
+            isPivot: Boolean(point?.isPivot)
+        }));
+
+        twinPoints.forEach((point) => {
+            const pointCopy = {
+                x: Number(point.x),
+                y: Number(point.y),
+                isPivot: Boolean(point?.isPivot)
+            };
+            if (!Number.isFinite(pointCopy.x) || !Number.isFinite(pointCopy.y)) return;
+
+            const duplicate = combined.some((existing) => Chain._isSamePoint(existing, pointCopy, tolerance));
+            if (!duplicate) {
+                combined.push(pointCopy);
+            }
+        });
+
+        return combined;
+    }
+
+    drawTwinCombined(ctx, options = {}) {
+        if (!ctx) return;
+
+        const baseStrokeStyle = options.baseStrokeStyle || 'rgba(132, 204, 22, 0.95)';
+        const baseFillStyle = options.baseFillStyle || 'rgba(132, 204, 22, 0.20)';
+        const mergedStrokeStyle = options.mergedStrokeStyle || 'rgba(132, 204, 22, 0.92)';
+        const mergedFillStyle = options.mergedFillStyle || 'rgba(132, 204, 22, 0.16)';
+        const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 2;
+
+        this.links.forEach((link) => {
+            if (!(link instanceof Link)) return;
+
+            // Keep existing link visualization as the highlighted base.
+            link.draw(ctx, {
+                strokeStyle: baseStrokeStyle,
+                fillStyle: baseFillStyle,
+                lineWidth,
+                pointStrokeStyle: baseStrokeStyle,
+                anchorPointStrokeStyle: baseStrokeStyle
+            });
+
+            const combined = Chain._collectTwinCombinedPoints(link);
+            link.drawPolygonFromPoints(ctx, combined, {
+                strokeStyle: mergedStrokeStyle,
+                fillStyle: mergedFillStyle,
+                lineWidth
+            });
+        });
+    }
+
     draw(ctx, options = {}) {
         if (!ctx) return;
 

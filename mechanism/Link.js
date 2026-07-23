@@ -69,6 +69,42 @@ class Link {
         this.twin = link instanceof Link ? link : null;
     }
 
+    static _orderPointsNoCross(points) {
+        if (!Array.isArray(points) || points.length < 3) return [];
+
+        const unique = [];
+        const eps = 1e-6;
+        points.forEach((point) => {
+            const x = Number(point?.x);
+            const y = Number(point?.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+            const exists = unique.some((item) => Math.hypot(item.x - x, item.y - y) <= eps);
+            if (!exists) {
+                unique.push({
+                    x,
+                    y,
+                    isPivot: Boolean(point?.isPivot)
+                });
+            }
+        });
+
+        if (unique.length < 3) return [];
+
+        const centroid = unique.reduce(
+            (acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }),
+            { x: 0, y: 0 }
+        );
+        centroid.x /= unique.length;
+        centroid.y /= unique.length;
+
+        return unique.sort((a, b) => {
+            const aa = Math.atan2(a.y - centroid.y, a.x - centroid.x);
+            const ab = Math.atan2(b.y - centroid.y, b.x - centroid.x);
+            return aa - ab;
+        });
+    }
+
     getWorldPoints() {
         const c = Math.cos(this.theta);
         const s = Math.sin(this.theta);
@@ -78,6 +114,33 @@ class Link {
             y: this.position.y + local.x * s + local.y * c,
             isPivot: Boolean(local?.isPivot)
         }));
+    }
+
+    drawPolygonFromPoints(ctx, points, options = {}) {
+        if (!ctx) return;
+
+        const ordered = Link._orderPointsNoCross(points);
+        if (ordered.length < 3) return;
+
+        const strokeStyle = options.strokeStyle || 'rgba(57, 166, 255, 0.95)';
+        const fillStyle = options.fillStyle || 'rgba(57, 166, 255, 0.14)';
+        const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 2;
+
+        ctx.save();
+        ctx.strokeStyle = strokeStyle;
+        ctx.fillStyle = fillStyle;
+        ctx.lineWidth = lineWidth;
+
+        ctx.beginPath();
+        ctx.moveTo(ordered[0].x, ordered[0].y);
+        for (let i = 1; i < ordered.length; i++) {
+            ctx.lineTo(ordered[i].x, ordered[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore();
     }
 
     getHoleCenterLine() {
@@ -144,10 +207,6 @@ class Link {
         const pointFillStyle = options.pointFillStyle || 'rgba(255, 255, 255, 0.92)';
         const anchorPointStrokeStyle = options.anchorPointStrokeStyle || strokeStyle;
         const anchorPointFillStyle = options.anchorPointFillStyle || 'rgba(255, 255, 255, 1)';
-        const labelFillStyle = options.pointLabelFillStyle || 'rgba(17, 24, 39, 0.92)';
-        const labelFont = options.pointLabelFont || '10px sans-serif';
-        const labelOffsetX = Number.isFinite(options.pointLabelOffsetX) ? options.pointLabelOffsetX : 7;
-        const labelOffsetY = Number.isFinite(options.pointLabelOffsetY) ? options.pointLabelOffsetY : -7;
 
         ctx.save();
         ctx.strokeStyle = strokeStyle;
@@ -164,30 +223,6 @@ class Link {
         ctx.stroke();
 
         ctx.lineWidth = Math.max(1, lineWidth * 0.75);
-
-        points.forEach((point, index) => {
-            const isAnchorPoint = index === 0;
-            const radius = isAnchorPoint ? anchorPointRadius : pointRadius;
-            const labelNumber = index + 1;
-            const shouldHighlight = Boolean(point?.isPivot);
-
-            if (!shouldHighlight) {
-                return;
-            }
-
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-            ctx.fillStyle = isAnchorPoint ? anchorPointFillStyle : pointFillStyle;
-            ctx.strokeStyle = isAnchorPoint ? anchorPointStrokeStyle : pointStrokeStyle;
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.fillStyle = labelFillStyle;
-            ctx.font = labelFont;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(String(labelNumber), point.x + labelOffsetX, point.y + labelOffsetY);
-        });
 
         ctx.restore();
     }

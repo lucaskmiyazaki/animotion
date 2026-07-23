@@ -233,35 +233,48 @@ jointsOptionText.textContent = 'Joints';
 
 jointsOptionLabel.append(jointsCheckbox, jointsOptionText);
 
-const mechanism1OptionLabel = document.createElement('label');
-mechanism1OptionLabel.className = 'checkbox-option';
+const mechanismRenderRow = document.createElement('div');
+mechanismRenderRow.className = 'joint-k-row';
 
-const mechanism1Checkbox = document.createElement('input');
-mechanism1Checkbox.type = 'checkbox';
-mechanism1Checkbox.checked = window.appActions?.getMechanism1Visible?.() ?? true;
-mechanism1Checkbox.addEventListener('change', () => {
-    window.appActions?.setMechanism1Visible?.(mechanism1Checkbox.checked);
+const mechanismRenderLabel = document.createElement('label');
+mechanismRenderLabel.className = 'joint-k-label';
+mechanismRenderLabel.textContent = 'Render chain';
+
+const mechanismRenderToggle = document.createElement('div');
+mechanismRenderToggle.className = 'toggle-row';
+
+const mechanismRenderAOption = document.createElement('label');
+mechanismRenderAOption.className = 'checkbox-option';
+const mechanismRenderAInput = document.createElement('input');
+mechanismRenderAInput.type = 'radio';
+mechanismRenderAInput.name = 'mechanism-render-chain';
+mechanismRenderAInput.checked = (window.appActions?.getMechanismRenderChain?.() ?? 'A') === 'A';
+mechanismRenderAInput.addEventListener('change', () => {
+    if (mechanismRenderAInput.checked) {
+        window.appActions?.setMechanismRenderChain?.('A');
+    }
 });
+const mechanismRenderAText = document.createElement('span');
+mechanismRenderAText.textContent = 'A';
+mechanismRenderAOption.append(mechanismRenderAInput, mechanismRenderAText);
 
-const mechanism1OptionText = document.createElement('span');
-mechanism1OptionText.textContent = 'Chain A';
-
-mechanism1OptionLabel.append(mechanism1Checkbox, mechanism1OptionText);
-
-const mechanism2OptionLabel = document.createElement('label');
-mechanism2OptionLabel.className = 'checkbox-option';
-
-const mechanism2Checkbox = document.createElement('input');
-mechanism2Checkbox.type = 'checkbox';
-mechanism2Checkbox.checked = window.appActions?.getMechanism2Visible?.() ?? true;
-mechanism2Checkbox.addEventListener('change', () => {
-    window.appActions?.setMechanism2Visible?.(mechanism2Checkbox.checked);
+const mechanismRenderBOption = document.createElement('label');
+mechanismRenderBOption.className = 'checkbox-option';
+const mechanismRenderBInput = document.createElement('input');
+mechanismRenderBInput.type = 'radio';
+mechanismRenderBInput.name = 'mechanism-render-chain';
+mechanismRenderBInput.checked = (window.appActions?.getMechanismRenderChain?.() ?? 'A') === 'B';
+mechanismRenderBInput.addEventListener('change', () => {
+    if (mechanismRenderBInput.checked) {
+        window.appActions?.setMechanismRenderChain?.('B');
+    }
 });
+const mechanismRenderBText = document.createElement('span');
+mechanismRenderBText.textContent = 'B';
+mechanismRenderBOption.append(mechanismRenderBInput, mechanismRenderBText);
 
-const mechanism2OptionText = document.createElement('span');
-mechanism2OptionText.textContent = 'Chain B';
-
-mechanism2OptionLabel.append(mechanism2Checkbox, mechanism2OptionText);
+mechanismRenderToggle.append(mechanismRenderAOption, mechanismRenderBOption);
+mechanismRenderRow.append(mechanismRenderLabel, mechanismRenderToggle);
 
 const chainThicknessRow = document.createElement('div');
 chainThicknessRow.className = 'joint-k-row';
@@ -744,8 +757,7 @@ chainOptionsSection.append(
     chainHeader.header,
     holeOptionLabel,
     jointsOptionLabel,
-    mechanism1OptionLabel,
-    mechanism2OptionLabel,
+    mechanismRenderRow,
     chainThicknessRow,
     jointMinThicknessRow,
     slackRow,
@@ -1051,8 +1063,7 @@ function updateProgressiveVisibility() {
     chainHeader.header.style.display = hasMechanism ? '' : 'none';
     holeOptionLabel.style.display = hasMechanism ? '' : 'none';
     jointsOptionLabel.style.display = hasMechanism ? '' : 'none';
-    mechanism1OptionLabel.style.display = hasMechanism ? '' : 'none';
-    mechanism2OptionLabel.style.display = hasMechanism ? '' : 'none';
+    mechanismRenderRow.style.display = hasMechanism ? '' : 'grid';
     optimizeSpringKButton.style.display = hasMechanism ? '' : 'none';
     optimizeSpringKStatus.style.display = hasMechanism ? '' : 'none';
 
@@ -1097,8 +1108,7 @@ window.appActions?.onChainStateChange?.(() => {
     const skeletonRef2Visible = window.appActions?.getSkeletonRef2Visible?.() ?? false;
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
-    const mechanism1Visible = window.appActions?.getMechanism1Visible?.() ?? true;
-    const mechanism2Visible = window.appActions?.getMechanism2Visible?.() ?? true;
+    const mechanismRenderChain = window.appActions?.getMechanismRenderChain?.() ?? 'A';
     const mechanismErrorVisible = window.appActions?.getMechanismErrorVisible?.() ?? false;
     const mechanismErrorDistance = Number(window.appActions?.getMechanismSkeletonErrorDistance?.());
 
@@ -1111,8 +1121,8 @@ window.appActions?.onChainStateChange?.(() => {
     frameHeader.sync(framesVisible);
     chainHeader.sync(chainVisible);
     testsHeader.sync(mechanismErrorVisible);
-    mechanism1Checkbox.checked = mechanism1Visible;
-    mechanism2Checkbox.checked = mechanism2Visible;
+    mechanismRenderAInput.checked = mechanismRenderChain === 'A';
+    mechanismRenderBInput.checked = mechanismRenderChain === 'B';
     errorDistanceDisplay.textContent = Number.isFinite(mechanismErrorDistance)
         ? `Total distance between simulated mechanism and skeleton: ${mechanismErrorDistance.toFixed(2)}`
         : 'Total distance between simulated mechanism and skeleton: -';

@@ -30,6 +30,7 @@ let jointsEnabled = false;
 let mechanismErrorVisible = false;
 let mechanism1Visible = true;
 let mechanism2Visible = true;
+let mechanismRenderChain = 'A';
 let skeletonVisible = true;
 let skeletonBisectorVisible = false;
 let skeletonRef1Visible = false;
@@ -734,33 +735,55 @@ function redrawAll() {
     if (chainVisible && hasRenderableChain()) {
         const bundle = getCurrentMechanismBundle();
         const ctx = canvasView.getContext();
-        if (mechanism1Visible) {
-            bundle.mechanism1?.drawWhole?.(ctx, {
-                strokeStyle: 'rgba(34, 197, 94, 0.95)',
-                fillStyle: 'rgba(34, 197, 94, 0.14)',
-                lineWidth: 2,
-                showHoles: holeEnabled,
-                holeStrokeStyle: 'rgba(255, 80, 170, 0.95)',
-                holeLineWidth: 2
+        const selectedKey = mechanismRenderChain === 'B' ? 'B' : 'A';
+        const selectedChain = selectedKey === 'B' ? bundle.mechanism2 : bundle.mechanism1;
+        const otherChain = selectedKey === 'B' ? bundle.mechanism1 : bundle.mechanism2;
+        const showBothChains = holeEnabled || jointsEnabled;
+
+        if (selectedChain) {
+            selectedChain.drawTwinCombined?.(ctx, {
+                baseStrokeStyle: 'rgba(132, 204, 22, 0.95)',
+                baseFillStyle: 'rgba(132, 204, 22, 0.18)',
+                mergedStrokeStyle: 'rgba(132, 204, 22, 0.92)',
+                mergedFillStyle: 'rgba(132, 204, 22, 0.10)',
+                lineWidth: 2
             });
         }
-        if (mechanism2Visible) {
-            bundle.mechanism2?.drawWhole?.(ctx, {
-                strokeStyle: 'rgba(34, 197, 94, 0.95)',
-                fillStyle: 'rgba(34, 197, 94, 0.14)',
-                lineWidth: 2,
-                showHoles: holeEnabled,
-                holeStrokeStyle: 'rgba(245, 130, 32, 0.95)',
+
+        if (showBothChains && otherChain) {
+            otherChain.drawTwinCombined?.(ctx, {
+                baseStrokeStyle: 'rgba(132, 204, 22, 0.32)',
+                baseFillStyle: 'rgba(132, 204, 22, 0.00)',
+                mergedStrokeStyle: 'rgba(132, 204, 22, 0.24)',
+                mergedFillStyle: 'rgba(132, 204, 22, 0.00)',
+                lineWidth: 2
+            });
+        }
+
+        if (holeEnabled) {
+            selectedChain?.drawHoles?.(ctx, {
+                holeStrokeStyle: selectedKey === 'A'
+                    ? 'rgba(255, 80, 170, 0.95)'
+                    : 'rgba(245, 130, 32, 0.95)',
                 holeLineWidth: 2
             });
+
+            if (showBothChains) {
+                otherChain?.drawHoles?.(ctx, {
+                    holeStrokeStyle: selectedKey === 'A'
+                        ? 'rgba(245, 130, 32, 0.42)'
+                        : 'rgba(255, 80, 170, 0.42)',
+                    holeLineWidth: 2
+                });
+            }
         }
 
         if (jointsEnabled && bundle.mechanism instanceof Mechanism) {
             bundle.mechanism.drawJoints(ctx, {
                 minimumThickness: jointMinimumThickness,
                 lineWidth: 1.5,
-                showChainA: mechanism1Visible,
-                showChainB: mechanism2Visible,
+                showChainA: showBothChains || selectedKey === 'A',
+                showChainB: showBothChains || selectedKey === 'B',
                 fillStyleA: 'rgba(255, 255, 255, 0.82)',
                 fillStyleB: 'rgba(255, 255, 255, 0.65)',
                 strokeStyleA: 'rgba(255, 80, 170, 0.95)',
@@ -925,6 +948,7 @@ function exposeStateForSerialization() {
         frameChainBuilt,
         companionRigidModel,
         companionEnabled: mechanism2Visible,
+        mechanismRenderChain,
         mechanismNeedsRegeneration,
         chainThickness,
         jointMinimumThickness,
@@ -1635,6 +1659,12 @@ window.appActions = {
         redrawAll();
     },
     getCompanionEnabled: () => mechanism2Visible,
+    setMechanismRenderChain: (chainKey) => {
+        mechanismRenderChain = chainKey === 'B' ? 'B' : 'A';
+        emitChainStateChange();
+        redrawAll();
+    },
+    getMechanismRenderChain: () => mechanismRenderChain,
     setMechanism1Visible: (enabled) => {
         mechanism1Visible = Boolean(enabled);
         emitChainStateChange();
