@@ -441,7 +441,8 @@ class Chain {
             const pointCopy = {
                 x: Number(point.x),
                 y: Number(point.y),
-                isPivot: Boolean(point?.isPivot)
+                isPivot: Boolean(point?.isPivot),
+                isTwin: true
             };
             if (!Number.isFinite(pointCopy.x) || !Number.isFinite(pointCopy.y)) return;
 
@@ -467,14 +468,15 @@ class Chain {
         this.links.forEach((link) => {
             if (!(link instanceof Link)) return;
 
-            // Keep existing link visualization as the highlighted base.
-            link.draw(ctx, {
-                strokeStyle: baseStrokeStyle,
-                fillStyle: baseFillStyle,
-                lineWidth,
-                pointStrokeStyle: baseStrokeStyle,
-                anchorPointStrokeStyle: baseStrokeStyle
-            });
+            // Base-chain drawing is intentionally disabled here so only the merged
+            // twin combined polygon is rendered.
+            // link.draw(ctx, {
+            //     strokeStyle: baseStrokeStyle,
+            //     fillStyle: baseFillStyle,
+            //     lineWidth,
+            //     pointStrokeStyle: baseStrokeStyle,
+            //     anchorPointStrokeStyle: baseStrokeStyle
+            // });
 
             const combined = Chain._collectTwinCombinedPoints(link);
             link.drawPolygonFromPoints(ctx, combined, {

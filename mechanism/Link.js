@@ -84,7 +84,9 @@ class Link {
                 unique.push({
                     x,
                     y,
-                    isPivot: Boolean(point?.isPivot)
+                    isPivot: Boolean(point?.isPivot),
+                    isTwin: Boolean(point?.isTwin),
+                    isHighlight: Boolean(point?.isHighlight)
                 });
             }
         });
@@ -174,23 +176,9 @@ class Link {
         const pivotHighlightInnerFillStyle = options.pivotHighlightInnerFillStyle || 'rgba(255, 255, 255, 0.98)';
         const uniquePivots = Link._collectUniquePivotPoints(ordered);
 
-        ctx.save();
-        ctx.strokeStyle = strokeStyle;
-        ctx.fillStyle = fillStyle;
-        ctx.lineWidth = lineWidth;
-
-        ctx.beginPath();
-        ctx.moveTo(ordered[0].x, ordered[0].y);
-        for (let i = 1; i < ordered.length; i++) {
-            ctx.lineTo(ordered[i].x, ordered[i].y);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
+        // Compute highlight points before drawing so they can be included in the polygon.
+        const highlightPoints = [];
         if (Number.isFinite(pivotSlack) && uniquePivots.length >= 2) {
-            const highlightPoints = [];
-
             uniquePivots.forEach((pivot) => {
                 const otherPivot = Link._closestOtherPivot(pivot, uniquePivots);
                 if (!otherPivot) return;
@@ -207,7 +195,46 @@ class Link {
                     y: pivot.y + unitY * pivotSlack
                 });
             });
+        }
 
+        // Merge highlight points into the polygon vertex set and re-sort.
+        // Then enforce the adjacency rule: highlight points may only sit next to
+        // pivot points or twin-link vertices — never next to own non-pivot vertices.
+        const isOwnNonPivot = (p) => !p.isPivot && !p.isTwin && !p.isHighlight;
+
+        let polygonPoints;
+        if (highlightPoints.length > 0) {
+            const candidates = Link._orderPointsNoCross([
+                ...ordered,
+                ...highlightPoints.map((p) => ({ ...p, isHighlight: true }))
+            ]);
+            const cn = candidates.length;
+            polygonPoints = candidates.filter((point, i) => {
+                if (!point.isHighlight) return true;
+                const prev = candidates[(i - 1 + cn) % cn];
+                const next = candidates[(i + 1) % cn];
+                return !isOwnNonPivot(prev) && !isOwnNonPivot(next);
+            });
+            if (polygonPoints.length < 3) polygonPoints = ordered;
+        } else {
+            polygonPoints = ordered;
+        }
+
+        ctx.save();
+        ctx.strokeStyle = strokeStyle;
+        ctx.fillStyle = fillStyle;
+        ctx.lineWidth = lineWidth;
+
+        ctx.beginPath();
+        ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+        for (let i = 1; i < polygonPoints.length; i++) {
+            ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        if (highlightPoints.length > 0) {
             ctx.lineWidth = Math.max(1, lineWidth * 0.75);
             highlightPoints.forEach((point) => {
                 ctx.beginPath();
