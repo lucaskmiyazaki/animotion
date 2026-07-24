@@ -464,8 +464,9 @@ class Chain {
         const mergedFillStyle = options.mergedFillStyle || 'rgba(132, 204, 22, 0.16)';
         const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 2;
         const slack = Number.isFinite(options.slack) ? Number(options.slack) : null;
+        const frameIndex = Number.isInteger(options.frameIndex) ? options.frameIndex : null;
 
-        this.links.forEach((link) => {
+        this.links.forEach((link, linkIndex) => {
             if (!(link instanceof Link)) return;
 
             // Base-chain drawing is intentionally disabled here so only the merged
@@ -479,11 +480,14 @@ class Chain {
             // });
 
             const combined = Chain._collectTwinCombinedPoints(link);
-            link.drawPolygonFromPoints(ctx, combined, {
+            window.PolygonRenderer.drawPolygonFromPoints(ctx, combined, {
                 strokeStyle: mergedStrokeStyle,
                 fillStyle: mergedFillStyle,
                 lineWidth,
-                slack
+                slack,
+                frameIndex,
+                linkIndex,
+                logViolations: true
             });
         });
     }

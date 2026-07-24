@@ -747,7 +747,8 @@ function redrawAll() {
                 mergedStrokeStyle: 'rgba(132, 204, 22, 0.92)',
                 mergedFillStyle: 'rgba(132, 204, 22, 0.10)',
                 lineWidth: 2,
-                slack: companionSlack
+                slack: companionSlack,
+                frameIndex: currentFrameIndex
             });
         }
 
