@@ -278,8 +278,8 @@ class Mechanism {
         const showChainB = options.showChainB === true;
         const fillStyleA = options.fillStyleA || 'rgba(255, 255, 255, 0.82)';
         const fillStyleB = options.fillStyleB || 'rgba(255, 255, 255, 0.6)';
-        const strokeStyleA = options.strokeStyleA || 'rgba(255, 80, 170, 0.95)';
-        const strokeStyleB = options.strokeStyleB || 'rgba(245, 130, 32, 0.95)';
+        const strokeStyleA = options.strokeStyleA || 'rgba(76, 175, 80, 0.95)';
+        const strokeStyleB = options.strokeStyleB || 'rgba(76, 175, 80, 0.95)';
 
         const thicknessesA = this.getNormalizedJointThicknesses(minimumThickness, 'A');
         const thicknessesB = this.getNormalizedJointThicknesses(minimumThickness, 'B');

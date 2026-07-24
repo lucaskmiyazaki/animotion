@@ -789,8 +789,8 @@ function redrawAll() {
                 showChainB: showBothChains || selectedKey === 'B',
                 fillStyleA: 'rgba(255, 255, 255, 0.82)',
                 fillStyleB: 'rgba(255, 255, 255, 0.65)',
-                strokeStyleA: 'rgba(255, 80, 170, 0.95)',
-                strokeStyleB: 'rgba(245, 130, 32, 0.95)'
+                strokeStyleA: 'rgba(76, 175, 80, 0.95)',
+                strokeStyleB: 'rgba(76, 175, 80, 0.95)'
             });
         }
 
