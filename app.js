@@ -27,12 +27,15 @@ let hasDragged = false;
 let mode = 'move'; // 'create', 'edit', or 'move'
 let holeEnabled = false;
 let jointsEnabled = false;
+let attachmentEnabled = false;
 let mechanismErrorVisible = false;
 let mechanism1Visible = true;
 let mechanism2Visible = true;
 let mechanismRenderChain = 'A';
 let holeLinePositionA = 0;
 let holeLinePositionB = 0;
+let attachmentHoleLength = 10;
+let attachmentWallThickness = 2;
 let skeletonVisible = true;
 let skeletonBisectorVisible = false;
 let skeletonRef1Visible = false;
@@ -800,6 +803,16 @@ function redrawAll() {
             });
         }
 
+        if (attachmentEnabled && selectedChain && bundle.mechanism instanceof Mechanism) {
+            bundle.mechanism.drawAttachments(ctx, {
+                holeLength: attachmentHoleLength,
+                wallThickness: attachmentWallThickness,
+                lineWidth: 1.6,
+                outerStrokeStyle: 'rgba(255, 255, 255, 0.92)',
+                innerStrokeStyle: 'rgba(255, 255, 255, 0.72)'
+            });
+        }
+
         if (mechanismErrorVisible) {
             const skeleton = getCurrentSkeleton();
             const errorData = getMechanismSkeletonErrorData(bundle, skeleton);
@@ -960,6 +973,9 @@ function exposeStateForSerialization() {
         mechanismRenderChain,
         holeLinePositionA,
         holeLinePositionB,
+        attachmentEnabled,
+        attachmentHoleLength,
+        attachmentWallThickness,
         mechanismNeedsRegeneration,
         chainThickness,
         jointMinimumThickness,
@@ -1458,6 +1474,28 @@ window.appActions = {
         redrawAll();
     },
     getHoleEnabled: () => holeEnabled,
+    setAttachmentEnabled: (enabled) => {
+        attachmentEnabled = Boolean(enabled);
+        emitChainStateChange();
+        redrawAll();
+    },
+    getAttachmentEnabled: () => attachmentEnabled,
+    setAttachmentHoleLength: (value) => {
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed) || parsed <= 0) return;
+        attachmentHoleLength = parsed;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getAttachmentHoleLength: () => attachmentHoleLength,
+    setAttachmentWallThickness: (value) => {
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return;
+        attachmentWallThickness = parsed;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getAttachmentWallThickness: () => attachmentWallThickness,
     setJointsEnabled: (enabled) => {
         jointsEnabled = Boolean(enabled);
         mechanismNeedsRegeneration = true;

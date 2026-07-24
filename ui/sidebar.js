@@ -264,6 +264,65 @@ holePositionBInput.addEventListener('input', () => {
 
 holePositionBRow.append(holePositionBLabel, holePositionBInput);
 
+const attachmentOptionLabel = document.createElement('label');
+attachmentOptionLabel.className = 'checkbox-option';
+
+const attachmentCheckbox = document.createElement('input');
+attachmentCheckbox.type = 'checkbox';
+attachmentCheckbox.checked = window.appActions?.getAttachmentEnabled?.() ?? false;
+attachmentCheckbox.addEventListener('change', () => {
+    window.appActions?.setAttachmentEnabled?.(attachmentCheckbox.checked);
+});
+
+const attachmentOptionText = document.createElement('span');
+attachmentOptionText.textContent = 'Attachment';
+
+attachmentOptionLabel.append(attachmentCheckbox, attachmentOptionText);
+
+const attachmentHoleLengthRow = document.createElement('div');
+attachmentHoleLengthRow.className = 'joint-k-row';
+
+const attachmentHoleLengthLabel = document.createElement('label');
+attachmentHoleLengthLabel.className = 'joint-k-label';
+attachmentHoleLengthLabel.textContent = 'Hole length';
+
+const attachmentHoleLengthInput = document.createElement('input');
+attachmentHoleLengthInput.className = 'joint-k-input';
+attachmentHoleLengthInput.type = 'number';
+attachmentHoleLengthInput.min = '0.1';
+attachmentHoleLengthInput.step = '0.1';
+attachmentHoleLengthInput.value = String(window.appActions?.getAttachmentHoleLength?.() ?? 10);
+attachmentHoleLengthInput.addEventListener('input', () => {
+    const parsed = Number.parseFloat(attachmentHoleLengthInput.value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+        window.appActions?.setAttachmentHoleLength?.(parsed);
+    }
+});
+
+attachmentHoleLengthRow.append(attachmentHoleLengthLabel, attachmentHoleLengthInput);
+
+const attachmentWallThicknessRow = document.createElement('div');
+attachmentWallThicknessRow.className = 'joint-k-row';
+
+const attachmentWallThicknessLabel = document.createElement('label');
+attachmentWallThicknessLabel.className = 'joint-k-label';
+attachmentWallThicknessLabel.textContent = 'Wall thickness';
+
+const attachmentWallThicknessInput = document.createElement('input');
+attachmentWallThicknessInput.className = 'joint-k-input';
+attachmentWallThicknessInput.type = 'number';
+attachmentWallThicknessInput.min = '0';
+attachmentWallThicknessInput.step = '0.1';
+attachmentWallThicknessInput.value = String(window.appActions?.getAttachmentWallThickness?.() ?? 2);
+attachmentWallThicknessInput.addEventListener('input', () => {
+    const parsed = Number.parseFloat(attachmentWallThicknessInput.value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+        window.appActions?.setAttachmentWallThickness?.(parsed);
+    }
+});
+
+attachmentWallThicknessRow.append(attachmentWallThicknessLabel, attachmentWallThicknessInput);
+
 const jointsOptionLabel = document.createElement('label');
 jointsOptionLabel.className = 'checkbox-option';
 
@@ -356,6 +415,16 @@ function syncThicknessInputs() {
     const liveHolePositionB = Number(window.appActions?.getHoleLinePositionB?.());
     if (Number.isFinite(liveHolePositionB)) {
         holePositionBInput.value = String(liveHolePositionB);
+    }
+
+    const liveAttachmentHoleLength = Number(window.appActions?.getAttachmentHoleLength?.());
+    if (Number.isFinite(liveAttachmentHoleLength)) {
+        attachmentHoleLengthInput.value = String(liveAttachmentHoleLength);
+    }
+
+    const liveAttachmentWallThickness = Number(window.appActions?.getAttachmentWallThickness?.());
+    if (Number.isFinite(liveAttachmentWallThickness)) {
+        attachmentWallThicknessInput.value = String(liveAttachmentWallThickness);
     }
 
     const liveJointMinThickness = window.appActions?.getJointMinimumThickness?.();
@@ -814,6 +883,9 @@ chainOptionsSection.append(
     holeOptionLabel,
     holePositionARow,
     holePositionBRow,
+    attachmentOptionLabel,
+    attachmentHoleLengthRow,
+    attachmentWallThicknessRow,
     jointsOptionLabel,
     mechanismRenderRow,
     chainThicknessRow,
@@ -1122,6 +1194,9 @@ function updateProgressiveVisibility() {
     holeOptionLabel.style.display = hasMechanism ? '' : 'none';
     holePositionARow.style.display = hasMechanism ? 'grid' : 'none';
     holePositionBRow.style.display = hasMechanism ? 'grid' : 'none';
+    attachmentOptionLabel.style.display = hasMechanism ? '' : 'none';
+    attachmentHoleLengthRow.style.display = hasMechanism ? 'grid' : 'none';
+    attachmentWallThicknessRow.style.display = hasMechanism ? 'grid' : 'none';
     jointsOptionLabel.style.display = hasMechanism ? '' : 'none';
     mechanismRenderRow.style.display = hasMechanism ? '' : 'grid';
     optimizeSpringKButton.style.display = hasMechanism ? '' : 'none';
@@ -1169,6 +1244,7 @@ window.appActions?.onChainStateChange?.(() => {
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
     const holeEnabled = window.appActions?.getHoleEnabled?.() ?? false;
+    const attachmentEnabled = window.appActions?.getAttachmentEnabled?.() ?? false;
     const jointsEnabled = window.appActions?.getJointsEnabled?.() ?? false;
     const mechanismRenderChain = window.appActions?.getMechanismRenderChain?.() ?? 'A';
     const mechanismErrorVisible = window.appActions?.getMechanismErrorVisible?.() ?? false;
@@ -1183,6 +1259,7 @@ window.appActions?.onChainStateChange?.(() => {
     frameHeader.sync(framesVisible);
     chainHeader.sync(chainVisible);
     holeCheckbox.checked = holeEnabled;
+    attachmentCheckbox.checked = attachmentEnabled;
     jointsCheckbox.checked = jointsEnabled;
     testsHeader.sync(mechanismErrorVisible);
     mechanismRenderAInput.checked = mechanismRenderChain === 'A';

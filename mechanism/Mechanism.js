@@ -269,6 +269,98 @@ class Mechanism {
         });
     }
 
+    static _isSamePoint(a, b, tolerance = 1e-5) {
+        if (!a || !b) return false;
+        return Math.hypot(Number(a.x) - Number(b.x), Number(a.y) - Number(b.y)) <= tolerance;
+    }
+
+    getUniquePivotPoints(tolerance = 1e-5) {
+        if (!Array.isArray(this.joints) || this.joints.length === 0) return [];
+
+        const uniquePivots = [];
+        this.joints.forEach((joint) => {
+            const pivot = joint?.pivotPoint;
+            const x = Number(pivot?.x);
+            const y = Number(pivot?.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+            const point = { x, y };
+            const duplicate = uniquePivots.some((existing) => Mechanism._isSamePoint(existing, point, tolerance));
+            if (!duplicate) {
+                uniquePivots.push(point);
+            }
+        });
+
+        return uniquePivots;
+    }
+
+    createAttachments(options = {}) {
+        const createAttachment = window.MechanismAttachment?.createAttachment;
+        if (typeof createAttachment !== 'function') return [];
+
+        const holeLength = Number(options.holeLength);
+        const wallThickness = Number(options.wallThickness);
+        if (!Number.isFinite(holeLength) || holeLength <= 0) return [];
+        if (!Number.isFinite(wallThickness) || wallThickness < 0) return [];
+
+        const pivots = this.getUniquePivotPoints(Number(options.tolerance) || 1e-5);
+        if (pivots.length < 2) return [];
+
+        const attachments = [];
+        for (let i = 0; i < pivots.length - 1; i++) {
+            const startPivot = pivots[i];
+            const endPivot = pivots[i + 1];
+            const orientation = {
+                x: endPivot.x - startPivot.x,
+                y: endPivot.y - startPivot.y
+            };
+            if (Math.hypot(orientation.x, orientation.y) < 1e-8) continue;
+
+            const midpoint = {
+                x: (startPivot.x + endPivot.x) / 2,
+                y: (startPivot.y + endPivot.y) / 2
+            };
+            const attachment = createAttachment(midpoint, orientation, holeLength, wallThickness);
+            if (attachment) {
+                attachments.push(attachment);
+            }
+        }
+
+        return attachments;
+    }
+
+    drawAttachments(ctx, options = {}) {
+        if (!ctx) return;
+        const attachments = this.createAttachments(options);
+        if (attachments.length === 0) return;
+
+        const outerStrokeStyle = options.outerStrokeStyle || 'rgba(99, 102, 241, 0.95)';
+        const innerStrokeStyle = options.innerStrokeStyle || 'rgba(99, 102, 241, 0.72)';
+        const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 1.6;
+
+        const strokeLoop = (points, strokeStyle) => {
+            if (!Array.isArray(points) || points.length < 3) return;
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = strokeStyle;
+            ctx.stroke();
+        };
+
+        ctx.save();
+        ctx.lineWidth = lineWidth;
+
+        attachments.forEach((attachment) => {
+            strokeLoop(attachment.outer, outerStrokeStyle);
+            strokeLoop(attachment.inner, innerStrokeStyle);
+        });
+
+        ctx.restore();
+    }
+
     drawJoints(ctx, options = {}) {
         if (!ctx || !Array.isArray(this.joints) || this.joints.length === 0) return;
 

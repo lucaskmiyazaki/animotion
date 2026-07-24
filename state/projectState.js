@@ -140,6 +140,8 @@ async function getProjectStateSnapshot(stateRefs) {
         companionSlack,
         holeLinePositionA,
         holeLinePositionB,
+        attachmentHoleLength,
+        attachmentWallThickness,
         rulerState,
         currentFrameIndex,
         mode,
@@ -155,6 +157,7 @@ async function getProjectStateSnapshot(stateRefs) {
             currentFrameIndex,
             mode,
             holeEnabled: window.appActions?.getHoleEnabled?.() ?? false,
+            attachmentEnabled: window.appActions?.getAttachmentEnabled?.() ?? false,
             jointsEnabled: window.appActions?.getJointsEnabled?.() ?? false,
             companionEnabled: Boolean(companionEnabled),
             chainVisible: window.appActions?.getChainVisible?.() ?? true,
@@ -172,7 +175,9 @@ async function getProjectStateSnapshot(stateRefs) {
             jointMinimumThickness: Number(jointMinimumThickness) || 5,
             companionSlack: Number(companionSlack) || 0,
             holeLinePositionA: Number(holeLinePositionA) || 0,
-            holeLinePositionB: Number(holeLinePositionB) || 0
+            holeLinePositionB: Number(holeLinePositionB) || 0,
+            attachmentHoleLength: Number(attachmentHoleLength) || 10,
+            attachmentWallThickness: Number(attachmentWallThickness) || 2
         },
         video: videoState ?? {
             currentFrameIndex: 0,
@@ -449,6 +454,9 @@ function restoreUIState(uiSnapshot) {
         if (uiSnapshot.holeEnabled !== undefined) {
             window.appActions?.setHoleEnabled?.(uiSnapshot.holeEnabled);
         }
+        if (uiSnapshot.attachmentEnabled !== undefined) {
+            window.appActions?.setAttachmentEnabled?.(uiSnapshot.attachmentEnabled);
+        }
         if (uiSnapshot.jointsEnabled !== undefined) {
             window.appActions?.setJointsEnabled?.(uiSnapshot.jointsEnabled);
         }
@@ -509,6 +517,12 @@ async function restoreProjectSnapshot(snapshot) {
         }
         if (snapshot?.mechanism?.holeLinePositionB !== undefined) {
             window.appActions?.setHoleLinePositionB?.(snapshot.mechanism.holeLinePositionB);
+        }
+        if (snapshot?.mechanism?.attachmentHoleLength !== undefined) {
+            window.appActions?.setAttachmentHoleLength?.(snapshot.mechanism.attachmentHoleLength);
+        }
+        if (snapshot?.mechanism?.attachmentWallThickness !== undefined) {
+            window.appActions?.setAttachmentWallThickness?.(snapshot.mechanism.attachmentWallThickness);
         }
 
         if (snapshot?.companion?.model !== undefined) {
