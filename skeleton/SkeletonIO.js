@@ -4,6 +4,9 @@ class SkeletonIO {
 
         const data = {
             points: skeleton.points.map((p, index) => ({ id: index, x: p.x, y: p.y })),
+            originalPoints: Array.isArray(skeleton.originalPoints)
+                ? skeleton.originalPoints.map((point, index) => ({ id: index, x: point.x, y: point.y }))
+                : skeleton.points.map((point, index) => ({ id: index, x: point.x, y: point.y })),
             lines: skeleton.lines.map((line) => ({
                 start: skeleton.points.indexOf(line.start),
                 end: skeleton.points.indexOf(line.end)
@@ -36,6 +39,11 @@ class SkeletonIO {
                     const skeleton = new Skeleton();
                     const pointObjs = parsed.points.map((point) => skeleton.addPoint(point.x, point.y));
                     parsed.lines.forEach((line) => skeleton.addLine(pointObjs[line.start], pointObjs[line.end]));
+                    if (Array.isArray(parsed.originalPoints) && parsed.originalPoints.length > 0) {
+                        skeleton.setOriginalPoints(parsed.originalPoints);
+                    } else {
+                        skeleton.setOriginalPoints(parsed.points);
+                    }
                     skeleton.updateAllGeometry();
                     if (typeof onLoaded === 'function') {
                         onLoaded(skeleton);

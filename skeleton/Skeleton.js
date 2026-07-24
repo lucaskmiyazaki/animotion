@@ -2,11 +2,116 @@ class Skeleton {
     constructor() {
         this.points = [];
         this.lines = [];
+        this.originalPoints = [];
     }
 
-    addPoint(x, y) {
+    static _clamp01(t) {
+        const value = Number(t);
+        if (!Number.isFinite(value)) return 0;
+        return Math.max(0, Math.min(1, value));
+    }
+
+    static _lerpPoint(pointA, pointB, t) {
+        const value = Skeleton._clamp01(t);
+        return {
+            x: pointA.x + (pointB.x - pointA.x) * value,
+            y: pointA.y + (pointB.y - pointA.y) * value
+        };
+    }
+
+    static _catmullRomPoint(point0, point1, point2, point3, t) {
+        const value = Skeleton._clamp01(t);
+        const valueSquared = value * value;
+        const valueCubed = valueSquared * value;
+
+        return {
+            x: 0.5 * (
+                (2 * point1.x) +
+                (-point0.x + point2.x) * value +
+                (2 * point0.x - 5 * point1.x + 4 * point2.x - point3.x) * valueSquared +
+                (-point0.x + 3 * point1.x - 3 * point2.x + point3.x) * valueCubed
+            ),
+            y: 0.5 * (
+                (2 * point1.y) +
+                (-point0.y + point2.y) * value +
+                (2 * point0.y - 5 * point1.y + 4 * point2.y - point3.y) * valueSquared +
+                (-point0.y + 3 * point1.y - 3 * point2.y + point3.y) * valueCubed
+            )
+        };
+    }
+
+    static _distanceBetweenPoints(pointA, pointB) {
+        return Math.hypot(pointB.x - pointA.x, pointB.y - pointA.y);
+    }
+
+    static _pointAtDistanceAlongPolyline(points, cumulativeDistances, targetDistance) {
+        if (!Array.isArray(points) || !Array.isArray(cumulativeDistances) || points.length < 2) {
+            return null;
+        }
+
+        const totalLength = cumulativeDistances[cumulativeDistances.length - 1];
+        if (!Number.isFinite(totalLength) || totalLength < 0) {
+            return null;
+        }
+
+        const target = Math.max(0, Math.min(totalLength, Number(targetDistance)));
+        if (!Number.isFinite(target)) return null;
+
+        for (let index = 1; index < cumulativeDistances.length; index++) {
+            const segmentStart = cumulativeDistances[index - 1];
+            const segmentEnd = cumulativeDistances[index];
+            if (target > segmentEnd && index < cumulativeDistances.length - 1) {
+                continue;
+            }
+
+            const span = segmentEnd - segmentStart;
+            const t = span <= 1e-8 ? 0 : (target - segmentStart) / span;
+            return Skeleton._lerpPoint(points[index - 1], points[index], t);
+        }
+
+        return points[points.length - 1] ? { ...points[points.length - 1] } : null;
+    }
+
+    static _buildSplinePolyline(sourcePoints, samplesPerSegment = 24) {
+        if (!Array.isArray(sourcePoints) || sourcePoints.length < 2) {
+            return [];
+        }
+
+        const sampleCount = Math.max(2, Math.round(Number(samplesPerSegment) || 24));
+        const smoothPoints = [];
+
+        if (sourcePoints.length === 2) {
+            for (let index = 0; index <= sampleCount; index++) {
+                smoothPoints.push(Skeleton._lerpPoint(sourcePoints[0], sourcePoints[1], index / sampleCount));
+            }
+            return smoothPoints;
+        }
+
+        const controlPoints = [sourcePoints[0], ...sourcePoints, sourcePoints[sourcePoints.length - 1]];
+
+        for (let segmentIndex = 0; segmentIndex < sourcePoints.length - 1; segmentIndex++) {
+            const point0 = controlPoints[segmentIndex];
+            const point1 = controlPoints[segmentIndex + 1];
+            const point2 = controlPoints[segmentIndex + 2];
+            const point3 = controlPoints[segmentIndex + 3];
+
+            for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+                const t = sampleIndex / sampleCount;
+                smoothPoints.push(Skeleton._catmullRomPoint(point0, point1, point2, point3, t));
+            }
+        }
+
+        const lastPoint = sourcePoints[sourcePoints.length - 1];
+        smoothPoints.push({ x: lastPoint.x, y: lastPoint.y });
+        return smoothPoints;
+    }
+
+    addPoint(x, y, trackOriginal = true) {
         const p = new Point(x, y);
         this.points.push(p);
+        if (trackOriginal) {
+            this.originalPoints.push({ x: p.x, y: p.y });
+        }
         return p;
     }
 
@@ -47,6 +152,99 @@ class Skeleton {
     updateAllGeometry() {
         this.lines.forEach(line => line.updateAngle());
         this.points.forEach(point => point.updateAngle());
+    }
+
+    setOriginalPoints(points) {
+        const sourcePoints = Array.isArray(points) ? points : [];
+        this.originalPoints = sourcePoints
+            .map((point) => ({ x: Number(point?.x), y: Number(point?.y) }))
+            .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+        return this.originalPoints;
+    }
+
+    getOriginalPoints() {
+        return this.originalPoints.map((point) => ({ x: point.x, y: point.y }));
+    }
+
+    _getTraceSourcePoints() {
+        if (Array.isArray(this.originalPoints) && this.originalPoints.length >= 2) {
+            return this.getOriginalPoints();
+        }
+
+        return Array.isArray(this.points)
+            ? this.points.map((point) => ({ x: point.x, y: point.y }))
+            : [];
+    }
+
+    getSplinePoints(samplesPerSegment = 24) {
+        return Skeleton._buildSplinePolyline(this._getTraceSourcePoints(), samplesPerSegment);
+    }
+
+    resampleByLinkLength(linkLength, options = {}) {
+        const stepLength = Number(linkLength);
+        if (!Number.isFinite(stepLength) || stepLength <= 0) {
+            return null;
+        }
+
+        const sourcePoints = this._getTraceSourcePoints();
+        if (sourcePoints.length < 2) {
+            return null;
+        }
+
+        const splinePoints = this.getSplinePoints(options.samplesPerSegment ?? 24);
+        if (!Array.isArray(splinePoints) || splinePoints.length < 2) {
+            return null;
+        }
+
+        const cumulativeDistances = [0];
+        let totalLength = 0;
+
+        for (let index = 1; index < splinePoints.length; index++) {
+            totalLength += Skeleton._distanceBetweenPoints(splinePoints[index - 1], splinePoints[index]);
+            cumulativeDistances.push(totalLength);
+        }
+
+        if (!Number.isFinite(totalLength) || totalLength <= 1e-8 || totalLength < stepLength) {
+            return null;
+        }
+
+        const resampledPoints = [];
+        const tolerance = 1e-6;
+
+        for (let distance = 0; distance <= totalLength + tolerance; distance += stepLength) {
+            if (distance > totalLength + tolerance) {
+                break;
+            }
+
+            const point = Skeleton._pointAtDistanceAlongPolyline(splinePoints, cumulativeDistances, distance);
+            if (!point) {
+                break;
+            }
+
+            const previousPoint = resampledPoints[resampledPoints.length - 1] || null;
+            if (previousPoint && Skeleton._distanceBetweenPoints(previousPoint, point) < 1e-8) {
+                continue;
+            }
+
+            resampledPoints.push(point);
+        }
+
+        if (resampledPoints.length < 2) {
+            return null;
+        }
+
+        const newSkeleton = new Skeleton();
+        newSkeleton.setOriginalPoints(sourcePoints);
+        resampledPoints.forEach((point) => {
+            newSkeleton.addPoint(point.x, point.y, false);
+        });
+
+        for (let index = 1; index < newSkeleton.points.length; index++) {
+            newSkeleton.addLine(newSkeleton.points[index - 1], newSkeleton.points[index]);
+        }
+
+        newSkeleton.updateAllGeometry();
+        return newSkeleton;
     }
 
     computeDirectedAnglesAtPoint(pointIndex) {
@@ -148,7 +346,7 @@ class Skeleton {
         const pointMap = new Map();
 
         this.points.forEach((oldPoint) => {
-            const newPoint = newSkeleton.addPoint(oldPoint.x, oldPoint.y);
+            const newPoint = newSkeleton.addPoint(oldPoint.x, oldPoint.y, false);
             pointMap.set(oldPoint, newPoint);
         });
 
@@ -159,6 +357,12 @@ class Skeleton {
                 newSkeleton.addLine(newStart, newEnd);
             }
         });
+
+        if (Array.isArray(this.originalPoints) && this.originalPoints.length > 0) {
+            newSkeleton.setOriginalPoints(this.originalPoints);
+        } else {
+            newSkeleton.setOriginalPoints(this.points.map((point) => ({ x: point.x, y: point.y })));
+        }
 
         newSkeleton.updateAllGeometry();
         return newSkeleton;
@@ -216,7 +420,7 @@ class Skeleton {
 
         const newSkeleton = new Skeleton();
         sampledPoints.forEach((point) => {
-            newSkeleton.addPoint(point.x, point.y);
+            newSkeleton.addPoint(point.x, point.y, false);
         });
         for (let i = 1; i < newSkeleton.points.length; i++) {
             newSkeleton.addLine(newSkeleton.points[i - 1], newSkeleton.points[i]);
@@ -410,6 +614,7 @@ class Skeleton {
     deletePoint(point) {
         const connectedLines = [...point.lines];
         const neighbors = connectedLines.map(l => l.getOtherPoint(point));
+        const pointIndex = this.points.indexOf(point);
 
         // Remove connected lines from skeleton and from neighbor point refs
         connectedLines.forEach(line => {
@@ -420,6 +625,9 @@ class Skeleton {
 
         // Remove the point
         this.points = this.points.filter(p => p !== point);
+        if (pointIndex >= 0 && pointIndex < this.originalPoints.length) {
+            this.originalPoints.splice(pointIndex, 1);
+        }
 
         // If it had exactly 2 neighbors, connect them
         if (neighbors.length === 2) {

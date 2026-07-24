@@ -1007,6 +1007,22 @@ function resampleCurrentSkeleton(targetPointCount) {
     return true;
 }
 
+function resampleCurrentSkeletonByLinkLength(linkLength) {
+    if (!isSkeletonEditable()) return false;
+
+    const skeleton = getCurrentSkeleton();
+    const newSkeleton = skeleton?.resampleByLinkLength?.(linkLength);
+    if (!newSkeleton) return false;
+
+    series.setFrame(currentFrameIndex, newSkeleton);
+    hoveredPoint = null;
+    draggedPoint = null;
+    selectedPoint = null;
+    markCurrentFrameChainDirty();
+    redrawAll();
+    return true;
+}
+
 function copyPreviousFrameSkeleton() {
     if (!isSkeletonEditable()) return;
     if (currentFrameIndex <= 0) return;
@@ -1783,6 +1799,7 @@ window.appActions = {
     getRulerScaleMmPerPixel: () => ruler.getScaleMmPerPixel(),
     getCurrentSkeletonPointCount: () => series.getFrame(currentFrameIndex)?.points?.length ?? 0,
     resampleCurrentSkeleton: (pointCount) => resampleCurrentSkeleton(pointCount),
+    resampleCurrentSkeletonByLinkLength: (linkLength) => resampleCurrentSkeletonByLinkLength(linkLength),
     calculateCurrentSkeletonLength: () => {
         const skeleton = series.getFrame(currentFrameIndex);
         return skeleton ? skeleton.getLength() : 0;

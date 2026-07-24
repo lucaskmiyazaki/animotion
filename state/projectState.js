@@ -16,6 +16,14 @@ function serializeSkeleton(skeleton) {
         y: point.y
     }));
 
+    const originalPoints = Array.isArray(skeleton.originalPoints)
+        ? skeleton.originalPoints.map((point, index) => ({
+            id: index,
+            x: point.x,
+            y: point.y
+        }))
+        : points.map((point) => ({ ...point }));
+
     const lines = skeleton.lines.map(line => ({
         start: skeleton.points.indexOf(line.start),
         end: skeleton.points.indexOf(line.end),
@@ -25,6 +33,7 @@ function serializeSkeleton(skeleton) {
     return {
         points,
         lines,
+        originalPoints,
         initialPoint: points[0] ? { x: points[0].x, y: points[0].y } : null
     };
 }
@@ -364,8 +373,14 @@ function restoreSkeletonState(skeletonSnapshot) {
 
             // Add all points first
             skeleton.points.forEach((point) => {
-                newSkeleton.addPoint(point.x, point.y);
+                newSkeleton.addPoint(point.x, point.y, false);
             });
+
+            if (Array.isArray(skeleton.originalPoints) && skeleton.originalPoints.length > 0) {
+                newSkeleton.setOriginalPoints(skeleton.originalPoints);
+            } else {
+                newSkeleton.setOriginalPoints(skeleton.points);
+            }
 
             // Add all lines
             skeleton.lines.forEach(({ start, end, angle }) => {

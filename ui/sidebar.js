@@ -1055,6 +1055,39 @@ skeletonAdvancedSummary.textContent = 'Advanced';
 const skeletonAdvancedContent = document.createElement('div');
 skeletonAdvancedContent.className = 'advanced-content';
 
+const skeletonLinkLengthRow = document.createElement('div');
+skeletonLinkLengthRow.className = 'point-count-row';
+
+const skeletonLinkLengthLabel = document.createElement('label');
+skeletonLinkLengthLabel.className = 'joint-k-label';
+skeletonLinkLengthLabel.classList.add('point-count-label');
+skeletonLinkLengthLabel.textContent = 'Link length (mm)';
+
+const skeletonLinkLengthInput = document.createElement('input');
+skeletonLinkLengthInput.className = 'joint-k-input';
+skeletonLinkLengthInput.classList.add('point-count-input');
+skeletonLinkLengthInput.type = 'number';
+skeletonLinkLengthInput.min = '0.1';
+skeletonLinkLengthInput.step = '0.1';
+skeletonLinkLengthInput.value = '40';
+
+const skeletonLinkLengthButton = createButton('Change', () => {
+    const parsedMm = Number.parseFloat(skeletonLinkLengthInput.value);
+    if (!Number.isFinite(parsedMm) || parsedMm <= 0) {
+        alert('Link length must be greater than 0');
+        return;
+    }
+
+    const ok = window.appActions?.resampleCurrentSkeletonByLinkLength?.(mmToPx(parsedMm));
+    if (!ok) {
+        alert('Could not regenerate skeleton. Draw at least 2 points first.');
+        return;
+    }
+});
+skeletonLinkLengthButton.classList.add('point-count-button');
+
+skeletonLinkLengthRow.append(skeletonLinkLengthLabel, skeletonLinkLengthInput, skeletonLinkLengthButton);
+
 const skeletonBisectorOptionLabel = document.createElement('label');
 skeletonBisectorOptionLabel.className = 'checkbox-option';
 
@@ -1115,7 +1148,7 @@ skeletonBisectorCheckbox.addEventListener('change', () => {
 });
 
 skeletonAdvancedContent.append(
-    skeletonPointCountRow,
+    skeletonLinkLengthRow,
     skeletonBisectorOptionLabel,
     skeletonRef1OptionLabel,
     skeletonRef2OptionLabel
@@ -1403,7 +1436,7 @@ updateRulerButtonState();
 
 updateProgressiveVisibility();
 
-skeletonSection.append(skeletonHeader.header, skeletonDrawHint, addPointButton, skeletonAdvancedDetails);
+skeletonSection.append(skeletonHeader.header, skeletonAdvancedDetails, skeletonDrawHint, addPointButton, skeletonPointCountRow);
 frameSection.append(frameHeader.header, iconActionsRow, frameControl);
 
 // Add controls to sidebar
