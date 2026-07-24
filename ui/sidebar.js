@@ -57,6 +57,22 @@ function setSectionInteractive(sectionEl, toggleInput, enabled) {
     }
 }
 
+function pxToMm(pxValue) {
+    const scale = Number(window.appActions?.getRulerScaleMmPerPixel?.());
+    const value = Number(pxValue);
+    if (!Number.isFinite(value)) return Number.NaN;
+    if (!Number.isFinite(scale) || scale <= 0) return value;
+    return value * scale;
+}
+
+function mmToPx(mmValue) {
+    const scale = Number(window.appActions?.getRulerScaleMmPerPixel?.());
+    const value = Number(mmValue);
+    if (!Number.isFinite(value)) return Number.NaN;
+    if (!Number.isFinite(scale) || scale <= 0) return value;
+    return value / scale;
+}
+
 // Helper to create buttons
 function createButton(label, onClick) {
     const btn = document.createElement('button');
@@ -223,18 +239,18 @@ holePositionARow.className = 'joint-k-row';
 
 const holePositionALabel = document.createElement('label');
 holePositionALabel.className = 'joint-k-label';
-holePositionALabel.textContent = 'Hole position A';
+holePositionALabel.textContent = 'Hole position A (mm)';
 
 const holePositionAInput = document.createElement('input');
 holePositionAInput.className = 'joint-k-input';
 holePositionAInput.type = 'number';
 holePositionAInput.min = '0';
 holePositionAInput.step = '0.1';
-holePositionAInput.value = String(window.appActions?.getHoleLinePositionA?.() ?? 10);
+holePositionAInput.value = String(pxToMm(window.appActions?.getHoleLinePositionA?.() ?? 10));
 holePositionAInput.addEventListener('input', () => {
-    const parsed = Number.parseFloat(holePositionAInput.value);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-        window.appActions?.setHoleLinePositionA?.(parsed);
+    const parsedMm = Number.parseFloat(holePositionAInput.value);
+    if (Number.isFinite(parsedMm) && parsedMm >= 0) {
+        window.appActions?.setHoleLinePositionA?.(mmToPx(parsedMm));
         updateEnergyAndLengthDisplay();
     }
 });
@@ -246,18 +262,18 @@ holePositionBRow.className = 'joint-k-row';
 
 const holePositionBLabel = document.createElement('label');
 holePositionBLabel.className = 'joint-k-label';
-holePositionBLabel.textContent = 'Hole position B';
+holePositionBLabel.textContent = 'Hole position B (mm)';
 
 const holePositionBInput = document.createElement('input');
 holePositionBInput.className = 'joint-k-input';
 holePositionBInput.type = 'number';
 holePositionBInput.min = '0';
 holePositionBInput.step = '0.1';
-holePositionBInput.value = String(window.appActions?.getHoleLinePositionB?.() ?? 10);
+holePositionBInput.value = String(pxToMm(window.appActions?.getHoleLinePositionB?.() ?? 10));
 holePositionBInput.addEventListener('input', () => {
-    const parsed = Number.parseFloat(holePositionBInput.value);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-        window.appActions?.setHoleLinePositionB?.(parsed);
+    const parsedMm = Number.parseFloat(holePositionBInput.value);
+    if (Number.isFinite(parsedMm) && parsedMm >= 0) {
+        window.appActions?.setHoleLinePositionB?.(mmToPx(parsedMm));
         updateEnergyAndLengthDisplay();
     }
 });
@@ -284,18 +300,18 @@ attachmentHoleLengthRow.className = 'joint-k-row';
 
 const attachmentHoleLengthLabel = document.createElement('label');
 attachmentHoleLengthLabel.className = 'joint-k-label';
-attachmentHoleLengthLabel.textContent = 'Hole length';
+attachmentHoleLengthLabel.textContent = 'Hole length (mm)';
 
 const attachmentHoleLengthInput = document.createElement('input');
 attachmentHoleLengthInput.className = 'joint-k-input';
 attachmentHoleLengthInput.type = 'number';
 attachmentHoleLengthInput.min = '0.1';
 attachmentHoleLengthInput.step = '0.1';
-attachmentHoleLengthInput.value = String(window.appActions?.getAttachmentHoleLength?.() ?? 5);
+attachmentHoleLengthInput.value = String(pxToMm(window.appActions?.getAttachmentHoleLength?.() ?? 5));
 attachmentHoleLengthInput.addEventListener('input', () => {
-    const parsed = Number.parseFloat(attachmentHoleLengthInput.value);
-    if (Number.isFinite(parsed) && parsed > 0) {
-        window.appActions?.setAttachmentHoleLength?.(parsed);
+    const parsedMm = Number.parseFloat(attachmentHoleLengthInput.value);
+    if (Number.isFinite(parsedMm) && parsedMm > 0) {
+        window.appActions?.setAttachmentHoleLength?.(mmToPx(parsedMm));
     }
 });
 
@@ -306,18 +322,18 @@ attachmentWallThicknessRow.className = 'joint-k-row';
 
 const attachmentWallThicknessLabel = document.createElement('label');
 attachmentWallThicknessLabel.className = 'joint-k-label';
-attachmentWallThicknessLabel.textContent = 'Wall thickness';
+attachmentWallThicknessLabel.textContent = 'Wall thickness (mm)';
 
 const attachmentWallThicknessInput = document.createElement('input');
 attachmentWallThicknessInput.className = 'joint-k-input';
 attachmentWallThicknessInput.type = 'number';
 attachmentWallThicknessInput.min = '0';
 attachmentWallThicknessInput.step = '0.1';
-attachmentWallThicknessInput.value = String(window.appActions?.getAttachmentWallThickness?.() ?? 2);
+attachmentWallThicknessInput.value = String(pxToMm(window.appActions?.getAttachmentWallThickness?.() ?? 2));
 attachmentWallThicknessInput.addEventListener('input', () => {
-    const parsed = Number.parseFloat(attachmentWallThicknessInput.value);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-        window.appActions?.setAttachmentWallThickness?.(parsed);
+    const parsedMm = Number.parseFloat(attachmentWallThicknessInput.value);
+    if (Number.isFinite(parsedMm) && parsedMm >= 0) {
+        window.appActions?.setAttachmentWallThickness?.(mmToPx(parsedMm));
     }
 });
 
@@ -386,55 +402,55 @@ chainThicknessRow.className = 'joint-k-row';
 
 const chainThicknessLabel = document.createElement('label');
 chainThicknessLabel.className = 'joint-k-label';
-chainThicknessLabel.textContent = 'Chain thickness';
+chainThicknessLabel.textContent = 'Chain thickness (mm)';
 
 const chainThicknessInput = document.createElement('input');
 chainThicknessInput.className = 'joint-k-input';
 chainThicknessInput.type = 'number';
 chainThicknessInput.min = '0.1';
 chainThicknessInput.step = '0.1';
-chainThicknessInput.value = String(window.appActions?.getChainThickness?.() ?? 20);
+chainThicknessInput.value = String(pxToMm(window.appActions?.getChainThickness?.() ?? 20));
 chainThicknessInput.addEventListener('input', () => {
-    const parsed = Number.parseFloat(chainThicknessInput.value);
-    if (Number.isFinite(parsed) && parsed > 0) {
-        window.appActions?.setChainThickness?.(parsed);
+    const parsedMm = Number.parseFloat(chainThicknessInput.value);
+    if (Number.isFinite(parsedMm) && parsedMm > 0) {
+        window.appActions?.setChainThickness?.(mmToPx(parsedMm));
     }
 });
 
 function syncThicknessInputs() {
     const liveChainThickness = window.appActions?.getChainThickness?.();
     if (Number.isFinite(liveChainThickness)) {
-        chainThicknessInput.value = String(liveChainThickness);
+        chainThicknessInput.value = String(pxToMm(liveChainThickness));
     }
 
     const liveHolePositionA = Number(window.appActions?.getHoleLinePositionA?.());
     if (Number.isFinite(liveHolePositionA)) {
-        holePositionAInput.value = String(liveHolePositionA);
+        holePositionAInput.value = String(pxToMm(liveHolePositionA));
     }
 
     const liveHolePositionB = Number(window.appActions?.getHoleLinePositionB?.());
     if (Number.isFinite(liveHolePositionB)) {
-        holePositionBInput.value = String(liveHolePositionB);
+        holePositionBInput.value = String(pxToMm(liveHolePositionB));
     }
 
     const liveAttachmentHoleLength = Number(window.appActions?.getAttachmentHoleLength?.());
     if (Number.isFinite(liveAttachmentHoleLength)) {
-        attachmentHoleLengthInput.value = String(liveAttachmentHoleLength);
+        attachmentHoleLengthInput.value = String(pxToMm(liveAttachmentHoleLength));
     }
 
     const liveAttachmentWallThickness = Number(window.appActions?.getAttachmentWallThickness?.());
     if (Number.isFinite(liveAttachmentWallThickness)) {
-        attachmentWallThicknessInput.value = String(liveAttachmentWallThickness);
+        attachmentWallThicknessInput.value = String(pxToMm(liveAttachmentWallThickness));
     }
 
     const liveJointMinThickness = window.appActions?.getJointMinimumThickness?.();
     if (Number.isFinite(liveJointMinThickness)) {
-        jointMinThicknessInput.value = String(liveJointMinThickness);
+        jointMinThicknessInput.value = String(pxToMm(liveJointMinThickness));
     }
 
     const liveSlack = window.appActions?.getCompanionSlack?.();
     if (Number.isFinite(liveSlack)) {
-        slackInput.value = String(liveSlack);
+        slackInput.value = String(pxToMm(liveSlack));
     }
 }
 
@@ -445,18 +461,18 @@ jointMinThicknessRow.className = 'joint-k-row';
 
 const jointMinThicknessLabel = document.createElement('label');
 jointMinThicknessLabel.className = 'joint-k-label';
-jointMinThicknessLabel.textContent = 'Joint min thickness';
+jointMinThicknessLabel.textContent = 'Joint min thickness (mm)';
 
 const jointMinThicknessInput = document.createElement('input');
 jointMinThicknessInput.className = 'joint-k-input';
 jointMinThicknessInput.type = 'number';
 jointMinThicknessInput.min = '0.1';
 jointMinThicknessInput.step = '0.1';
-jointMinThicknessInput.value = String(window.appActions?.getJointMinimumThickness?.() ?? 2);
+jointMinThicknessInput.value = String(pxToMm(window.appActions?.getJointMinimumThickness?.() ?? 2));
 jointMinThicknessInput.addEventListener('input', () => {
-    const parsed = Number.parseFloat(jointMinThicknessInput.value);
-    if (Number.isFinite(parsed) && parsed > 0) {
-        window.appActions?.setJointMinimumThickness?.(parsed);
+    const parsedMm = Number.parseFloat(jointMinThicknessInput.value);
+    if (Number.isFinite(parsedMm) && parsedMm > 0) {
+        window.appActions?.setJointMinimumThickness?.(mmToPx(parsedMm));
         renderJointKInputs();
         updateEnergyAndLengthDisplay();
     }
@@ -469,18 +485,18 @@ slackRow.className = 'joint-k-row';
 
 const slackLabel = document.createElement('label');
 slackLabel.className = 'joint-k-label';
-slackLabel.textContent = 'Slack';
+slackLabel.textContent = 'Slack (mm)';
 
 const slackInput = document.createElement('input');
 slackInput.className = 'joint-k-input';
 slackInput.type = 'number';
 slackInput.min = '0';
 slackInput.step = '0.1';
-slackInput.value = String(window.appActions?.getCompanionSlack?.() ?? 2);
+slackInput.value = String(pxToMm(window.appActions?.getCompanionSlack?.() ?? 2));
 slackInput.addEventListener('input', () => {
-    const parsed = Number.parseFloat(slackInput.value);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-        window.appActions?.setCompanionSlack?.(parsed);
+    const parsedMm = Number.parseFloat(slackInput.value);
+    if (Number.isFinite(parsedMm) && parsedMm >= 0) {
+        window.appActions?.setCompanionSlack?.(mmToPx(parsedMm));
         updateEnergyAndLengthDisplay();
     }
 });
@@ -722,7 +738,7 @@ targetLengthBRow.style.gap = '8px';
 
 const targetLengthBLabel = document.createElement('label');
 targetLengthBLabel.className = 'joint-k-label';
-targetLengthBLabel.textContent = 'Target length B';
+targetLengthBLabel.textContent = 'Target length B (mm)';
 targetLengthBLabel.style.alignSelf = 'start';
 
 const targetLengthBControls = document.createElement('div');
@@ -748,9 +764,9 @@ findTargetLengthBButton.style.flex = '0 0 auto';
 findTargetLengthBButton.style.minWidth = '64px';
 findTargetLengthBButton.style.padding = '10px 14px';
 findTargetLengthBButton.addEventListener('click', () => {
-    const target = Number.parseFloat(targetLengthBInput.value);
-    if (!Number.isFinite(target)) return;
-    window.appActions?.optimizeCurrentMechanismForStringLength?.(target);
+    const targetMm = Number.parseFloat(targetLengthBInput.value);
+    if (!Number.isFinite(targetMm)) return;
+    window.appActions?.optimizeCurrentMechanismForStringLength?.(mmToPx(targetMm));
     updateEnergyAndLengthDisplay();
 });
 
@@ -837,22 +853,22 @@ advancedChainContent.className = 'advanced-content';
 function updateEnergyAndLengthDisplay() {
     const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
     const holeLengths = window.appActions?.calculateHoleLineLengths?.() ?? { orangeLength: 0, pinkLength: 0 };
-    const chainALength = Number.isFinite(holeLengths.orangeLength) ? holeLengths.orangeLength : 0;
-    const chainBLengthDisplay = Number.isFinite(holeLengths.pinkLength) ? holeLengths.pinkLength : 0;
+    const chainALength = Number.isFinite(holeLengths.orangeLength) ? pxToMm(holeLengths.orangeLength) : 0;
+    const chainBLengthDisplay = Number.isFinite(holeLengths.pinkLength) ? pxToMm(holeLengths.pinkLength) : 0;
     const targetChainA = Number(window.appActions?.getCurrentTargetHoleLengthA?.());
     const targetChainB = Number(window.appActions?.getCurrentTargetHoleLength?.());
     const companionJointWarning = window.appActions?.getCompanionJointWarning?.() ?? '';
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
-    lineLengthDisplay.textContent = `Chain A centerline: ${chainALength.toFixed(2)}`;
-    companionLineLengthDisplay.textContent = `Chain B centerline: ${chainBLengthDisplay.toFixed(2)}`;
+    lineLengthDisplay.textContent = `Chain A centerline: ${chainALength.toFixed(2)} mm`;
+    companionLineLengthDisplay.textContent = `Chain B centerline: ${chainBLengthDisplay.toFixed(2)} mm`;
     targetLineLengthADisplay.textContent = Number.isFinite(targetChainA)
-        ? `Target Chain A centerline: ${targetChainA.toFixed(2)}`
+        ? `Target Chain A centerline: ${pxToMm(targetChainA).toFixed(2)} mm`
         : 'Target Chain A centerline: -';
     targetLineLengthBDisplay.textContent = Number.isFinite(targetChainB)
-        ? `Target Chain B centerline: ${targetChainB.toFixed(2)}`
+        ? `Target Chain B centerline: ${pxToMm(targetChainB).toFixed(2)} mm`
         : 'Target Chain B centerline: -';
     targetLengthBInput.value = Number.isFinite(targetChainB)
-        ? targetChainB.toFixed(2)
+        ? pxToMm(targetChainB).toFixed(2)
         : '';
     companionJointWarningDisplay.textContent = companionJointWarning ? `Companion Joint Warning: ${companionJointWarning}` : '';
     companionJointWarningDisplay.style.display = companionJointWarning ? '' : 'none';
