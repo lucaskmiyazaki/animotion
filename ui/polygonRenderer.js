@@ -122,7 +122,7 @@ function drawPolygonFromPoints(ctx, points, options = {}) {
 
     // 6. Draw the valid polygon.
     drawPolygonShape(ctx, polygonPoints, config);
-    drawShapeModifiers(ctx, shapeModifiers, config);
+    //drawShapeModifiers(ctx, shapeModifiers, config);
 
     // Optional debugging labels.
     // drawPolygonPointLabels(ctx, polygonPoints, config);
@@ -402,26 +402,6 @@ function pointsAreEqual(
     ) <= tolerance;
 }
 
-function modifierBelongsToPivot(
-    modifier,
-    pivot,
-    tolerance = 1e-6
-) {
-    if (modifier.sourcePivot) {
-        return pointsAreEqual(
-            modifier.sourcePivot,
-            pivot,
-            tolerance
-        );
-    }
-
-    /*
-     * Fallback for modifiers without source metadata:
-     * assume the closest pivot generated the modifier.
-     */
-    return true;
-}
-
 function reconnectPolygonPoints({
     originalPoints,
     pivotPoints,
@@ -536,78 +516,6 @@ function reconnectPolygonPoints({
     );
 
     return [];
-}
-
-/**
- * Construct one candidate cycle.
- *
- * For two pivots and four references, it creates:
- *
- * pivotA
- * → modifierA
- * → reference0
- * → reference1
- * → pivotB
- * → modifierB
- * → reference2
- * → reference3
- */
-function buildCandidateCycle(
-    pivotModifierPairs,
-    references,
-    tolerance
-) {
-    if (pivotModifierPairs.length !== 2) {
-        return [];
-    }
-
-    if (references.length !== 4) {
-        return [];
-    }
-
-    const [pairA, pairB] = pivotModifierPairs;
-
-    const [
-        reference0,
-        reference1,
-        reference2,
-        reference3
-    ] = references;
-
-    /*
-     * The reference beside each modifier must be a twin.
-     */
-    if (!isTwinReferencePoint(reference0)) {
-        return [];
-    }
-
-    if (!isTwinReferencePoint(reference2)) {
-        return [];
-    }
-
-    const cycle = [
-        pairA.pivot,
-        pairA.modifier,
-        reference0,
-        reference1,
-        pairB.pivot,
-        pairB.modifier,
-        reference2,
-        reference3
-    ];
-
-    /*
-     * Reject zero-length edges immediately.
-     */
-    for (let i = 0; i < cycle.length; i++) {
-        const next = cycle[(i + 1) % cycle.length];
-
-        if (pointsAreEqual(cycle[i], next, tolerance)) {
-            return [];
-        }
-    }
-
-    return cycle;
 }
 
 /**
@@ -792,62 +700,6 @@ function validatePointInclusion({
 }
 
 /**
- * PLACEHOLDER
- *
- * Later, this will detect different cycle entries that occupy
- * the same position.
- */
-function validateNoDuplicateCyclePoints(
-    cycle,
-    tolerance,
-    violations
-) {
-    // TODO: Implement duplicate-point validation.
-}
-
-/**
- * PLACEHOLDER
- *
- * Later, this will verify that every modifier connects to:
- * - exactly one pivot;
- * - exactly one twin reference;
- * - the pivot that generated the modifier.
- */
-function validateModifierNeighbors(
-    cycle,
-    tolerance,
-    violations
-) {
-    // TODO: Implement modifier-neighbor validation.
-}
-
-/**
- * PLACEHOLDER
- *
- * Later, this will verify that every reference point has
- * exactly one reference-point neighbor.
- */
-function validateReferenceNeighbors(
-    cycle,
-    violations
-) {
-    // TODO: Implement reference-neighbor validation.
-}
-
-/**
- * PLACEHOLDER
- *
- * Later, this will detect zero-length polygon edges.
- */
-function validateDegenerateEdges(
-    cycle,
-    tolerance,
-    violations
-) {
-    // TODO: Implement degenerate-edge validation.
-}
-
-/**
  * Detect intersections between non-adjacent polygon edges.
  */
 function validatePolygonIntersections(
@@ -1004,42 +856,8 @@ function validatePolygonCycle({
         violations
     });
 
-    // Rule 3: Two cycle entries cannot occupy the same position.
-    validateNoDuplicateCyclePoints(
-        cycle,
-        resolvedTolerance,
-        violations
-    );
-
     // Neighbor and edge validation requires a polygon-sized cycle.
     if (cycle.length >= 3) {
-        // Rule 4:
-        // Every modifier must connect to exactly:
-        // - one pivot;
-        // - one twin reference.
-        //
-        // The pivot must be the pivot that generated the modifier.
-        validateModifierNeighbors(
-            cycle,
-            resolvedTolerance,
-            violations
-        );
-
-        // Rule 5:
-        // Every reference point must have exactly one
-        // reference-point neighbor.
-        validateReferenceNeighbors(
-            cycle,
-            violations
-        );
-
-        // Rule 6:
-        // Consecutive points cannot create zero-length edges.
-        validateDegenerateEdges(
-            cycle,
-            resolvedTolerance,
-            violations
-        );
 
         // Rule 7:
         // Non-adjacent polygon edges cannot intersect.
@@ -1051,16 +869,6 @@ function validatePolygonCycle({
     }
 
     return violations;
-}
-
-/**
- * Check whether the polygon has enough valid data to be rendered.
- *
- * This is only a basic rendering guard.
- * Full correctness is handled by validatePolygonCycle().
- */
-function isDrawablePolygon(cycle) {
-    return Array.isArray(cycle) && cycle.length >= 3;
 }
 
 /**
@@ -1147,40 +955,6 @@ function drawShapeModifiers(ctx, shapeModifiers, config) {
 }
 
 /**
- * Draw the cycle index of every polygon point.
- *
- * This is useful for debugging the reconstructed order.
- */
-function drawPolygonPointLabels(ctx, polygonPoints) {
-    ctx.save();
-
-    ctx.font = 'bold 12px Arial';
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.lineWidth = 3;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    polygonPoints.forEach((point, index) => {
-        const label = String(index);
-
-        ctx.strokeText(
-            label,
-            point.x,
-            point.y
-        );
-
-        ctx.fillText(
-            label,
-            point.x,
-            point.y
-        );
-    });
-
-    ctx.restore();
-}
-
-/**
  * Log all polygon validation violations with frame and link context.
  */
 function logPolygonViolations(violations, config) {
@@ -1245,6 +1019,4 @@ window.PolygonRenderer = {
 
     // Rendering
     drawPolygonShape,
-    drawShapeModifiers,
-    drawPolygonPointLabels
 };
