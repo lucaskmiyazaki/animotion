@@ -131,6 +131,84 @@ class Link {
         };
     }
 
+    getHoleLine(distance = 0) {
+        const points = this.getWorldPoints();
+        if (!Array.isArray(points) || points.length !== 4) {
+            return null;
+        }
+
+        const clampedDistance = Math.max(0, Number(distance) || 0);
+
+        const p0 = points[0];
+        const p1 = points[1];
+        const p2 = points[2];
+        const p3 = points[3];
+
+        const v01 = { x: p1.x - p0.x, y: p1.y - p0.y };
+        const v12 = { x: p2.x - p1.x, y: p2.y - p1.y };
+        const v23 = { x: p3.x - p2.x, y: p3.y - p2.y };
+        const v30 = { x: p0.x - p3.x, y: p0.y - p3.y };
+
+        const normalize = (v) => {
+            const mag = Math.hypot(v.x, v.y);
+            if (mag < 1e-8) return null;
+            return { x: v.x / mag, y: v.y / mag };
+        };
+
+        const crossAbs = (a, b) => {
+            const na = normalize(a);
+            const nb = normalize(b);
+            if (!na || !nb) return Number.POSITIVE_INFINITY;
+            return Math.abs(na.x * nb.y - na.y * nb.x);
+        };
+
+        const pointAlongSegmentAwayFromPivot = (segmentStart, segmentEnd) => {
+            const startIsPivot = Boolean(segmentStart?.isPivot);
+            const endIsPivot = Boolean(segmentEnd?.isPivot);
+
+            if (startIsPivot === endIsPivot) {
+                return null;
+            }
+
+            const pivot = startIsPivot ? segmentStart : segmentEnd;
+            const other = startIsPivot ? segmentEnd : segmentStart;
+            const dx = other.x - pivot.x;
+            const dy = other.y - pivot.y;
+            const len = Math.hypot(dx, dy);
+
+            if (len < 1e-8) {
+                return null;
+            }
+
+            const t = Math.min(clampedDistance, len);
+            return {
+                x: pivot.x + (dx / len) * t,
+                y: pivot.y + (dy / len) * t
+            };
+        };
+
+        const scorePair01_23 = crossAbs(v01, v23);
+        const scorePair12_30 = crossAbs(v12, v30);
+
+        // Use the opposite edge pair that is less parallel as the support edges.
+        const supportSegments = scorePair01_23 <= scorePair12_30
+            ? [
+                [p1, p2],
+                [p3, p0]
+            ]
+            : [
+                [p0, p1],
+                [p2, p3]
+            ];
+
+        const start = pointAlongSegmentAwayFromPivot(supportSegments[0][0], supportSegments[0][1]);
+        const end = pointAlongSegmentAwayFromPivot(supportSegments[1][0], supportSegments[1][1]);
+
+        if (!start || !end) return null;
+
+        return { start, end };
+    }
+
     draw(ctx, options = {}) {
         if (!ctx) return;
 

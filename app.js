@@ -31,6 +31,8 @@ let mechanismErrorVisible = false;
 let mechanism1Visible = true;
 let mechanism2Visible = true;
 let mechanismRenderChain = 'A';
+let holeLinePositionA = 0;
+let holeLinePositionB = 0;
 let skeletonVisible = true;
 let skeletonBisectorVisible = false;
 let skeletonRef1Visible = false;
@@ -764,11 +766,14 @@ function redrawAll() {
         }
 
         if (holeEnabled) {
+            const selectedHolePosition = selectedKey === 'A' ? holeLinePositionA : holeLinePositionB;
+            const otherHolePosition = selectedKey === 'A' ? holeLinePositionB : holeLinePositionA;
             selectedChain?.drawHoles?.(ctx, {
                 holeStrokeStyle: selectedKey === 'A'
                     ? 'rgba(255, 80, 170, 0.95)'
                     : 'rgba(245, 130, 32, 0.95)',
-                holeLineWidth: 2
+                holeLineWidth: 2,
+                holePosition: selectedHolePosition
             });
 
             if (showBothChains) {
@@ -776,7 +781,8 @@ function redrawAll() {
                     holeStrokeStyle: selectedKey === 'A'
                         ? 'rgba(245, 130, 32, 0.42)'
                         : 'rgba(255, 80, 170, 0.42)',
-                    holeLineWidth: 2
+                    holeLineWidth: 2,
+                    holePosition: otherHolePosition
                 });
             }
         }
@@ -952,6 +958,8 @@ function exposeStateForSerialization() {
         companionRigidModel,
         companionEnabled: mechanism2Visible,
         mechanismRenderChain,
+        holeLinePositionA,
+        holeLinePositionB,
         mechanismNeedsRegeneration,
         chainThickness,
         jointMinimumThickness,
@@ -1668,6 +1676,22 @@ window.appActions = {
         redrawAll();
     },
     getMechanismRenderChain: () => mechanismRenderChain,
+    setHoleLinePositionA: (value) => {
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return;
+        holeLinePositionA = parsed;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getHoleLinePositionA: () => holeLinePositionA,
+    setHoleLinePositionB: (value) => {
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return;
+        holeLinePositionB = parsed;
+        emitChainStateChange();
+        redrawAll();
+    },
+    getHoleLinePositionB: () => holeLinePositionB,
     setMechanism1Visible: (enabled) => {
         mechanism1Visible = Boolean(enabled);
         emitChainStateChange();
@@ -1726,10 +1750,10 @@ window.appActions = {
     calculateHoleLineLengths: () => {
         const bundle = getCurrentMechanismBundle();
         const orangeLength = Number.isFinite(bundle.mechanism1?.getHoleLineLength?.())
-            ? bundle.mechanism1.getHoleLineLength()
+            ? bundle.mechanism1.getHoleLineLength(holeLinePositionA)
             : 0;
         const pinkLength = Number.isFinite(bundle.mechanism2?.getHoleLineLength?.())
-            ? bundle.mechanism2.getHoleLineLength()
+            ? bundle.mechanism2.getHoleLineLength(holeLinePositionB)
             : 0;
         return { orangeLength, pinkLength };
     },

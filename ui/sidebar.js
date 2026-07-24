@@ -218,6 +218,52 @@ holeOptionText.textContent = 'Hole';
 
 holeOptionLabel.append(holeCheckbox, holeOptionText);
 
+const holePositionARow = document.createElement('div');
+holePositionARow.className = 'joint-k-row';
+
+const holePositionALabel = document.createElement('label');
+holePositionALabel.className = 'joint-k-label';
+holePositionALabel.textContent = 'Hole position A';
+
+const holePositionAInput = document.createElement('input');
+holePositionAInput.className = 'joint-k-input';
+holePositionAInput.type = 'number';
+holePositionAInput.min = '0';
+holePositionAInput.step = '0.1';
+holePositionAInput.value = String(window.appActions?.getHoleLinePositionA?.() ?? 0);
+holePositionAInput.addEventListener('input', () => {
+    const parsed = Number.parseFloat(holePositionAInput.value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+        window.appActions?.setHoleLinePositionA?.(parsed);
+        updateEnergyAndLengthDisplay();
+    }
+});
+
+holePositionARow.append(holePositionALabel, holePositionAInput);
+
+const holePositionBRow = document.createElement('div');
+holePositionBRow.className = 'joint-k-row';
+
+const holePositionBLabel = document.createElement('label');
+holePositionBLabel.className = 'joint-k-label';
+holePositionBLabel.textContent = 'Hole position B';
+
+const holePositionBInput = document.createElement('input');
+holePositionBInput.className = 'joint-k-input';
+holePositionBInput.type = 'number';
+holePositionBInput.min = '0';
+holePositionBInput.step = '0.1';
+holePositionBInput.value = String(window.appActions?.getHoleLinePositionB?.() ?? 0);
+holePositionBInput.addEventListener('input', () => {
+    const parsed = Number.parseFloat(holePositionBInput.value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+        window.appActions?.setHoleLinePositionB?.(parsed);
+        updateEnergyAndLengthDisplay();
+    }
+});
+
+holePositionBRow.append(holePositionBLabel, holePositionBInput);
+
 const jointsOptionLabel = document.createElement('label');
 jointsOptionLabel.className = 'checkbox-option';
 
@@ -300,6 +346,16 @@ function syncThicknessInputs() {
     const liveChainThickness = window.appActions?.getChainThickness?.();
     if (Number.isFinite(liveChainThickness)) {
         chainThicknessInput.value = String(liveChainThickness);
+    }
+
+    const liveHolePositionA = Number(window.appActions?.getHoleLinePositionA?.());
+    if (Number.isFinite(liveHolePositionA)) {
+        holePositionAInput.value = String(liveHolePositionA);
+    }
+
+    const liveHolePositionB = Number(window.appActions?.getHoleLinePositionB?.());
+    if (Number.isFinite(liveHolePositionB)) {
+        holePositionBInput.value = String(liveHolePositionB);
     }
 
     const liveJointMinThickness = window.appActions?.getJointMinimumThickness?.();
@@ -756,6 +812,8 @@ advancedChainDetails.append(advancedChainSummary, advancedChainContent);
 chainOptionsSection.append(
     chainHeader.header,
     holeOptionLabel,
+    holePositionARow,
+    holePositionBRow,
     jointsOptionLabel,
     mechanismRenderRow,
     chainThicknessRow,
@@ -1062,6 +1120,8 @@ function updateProgressiveVisibility() {
 
     chainHeader.header.style.display = hasMechanism ? '' : 'none';
     holeOptionLabel.style.display = hasMechanism ? '' : 'none';
+    holePositionARow.style.display = hasMechanism ? 'grid' : 'none';
+    holePositionBRow.style.display = hasMechanism ? 'grid' : 'none';
     jointsOptionLabel.style.display = hasMechanism ? '' : 'none';
     mechanismRenderRow.style.display = hasMechanism ? '' : 'grid';
     optimizeSpringKButton.style.display = hasMechanism ? '' : 'none';
@@ -1108,6 +1168,8 @@ window.appActions?.onChainStateChange?.(() => {
     const skeletonRef2Visible = window.appActions?.getSkeletonRef2Visible?.() ?? false;
     const framesVisible = window.appActions?.getFramesVisible?.() ?? true;
     const chainVisible = window.appActions?.getChainVisible?.() ?? true;
+    const holeEnabled = window.appActions?.getHoleEnabled?.() ?? false;
+    const jointsEnabled = window.appActions?.getJointsEnabled?.() ?? false;
     const mechanismRenderChain = window.appActions?.getMechanismRenderChain?.() ?? 'A';
     const mechanismErrorVisible = window.appActions?.getMechanismErrorVisible?.() ?? false;
     const mechanismErrorDistance = Number(window.appActions?.getMechanismSkeletonErrorDistance?.());
@@ -1120,6 +1182,8 @@ window.appActions?.onChainStateChange?.(() => {
     skeletonRef2Checkbox.disabled = !skeletonBisectorVisible;
     frameHeader.sync(framesVisible);
     chainHeader.sync(chainVisible);
+    holeCheckbox.checked = holeEnabled;
+    jointsCheckbox.checked = jointsEnabled;
     testsHeader.sync(mechanismErrorVisible);
     mechanismRenderAInput.checked = mechanismRenderChain === 'A';
     mechanismRenderBInput.checked = mechanismRenderChain === 'B';

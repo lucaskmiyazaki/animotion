@@ -138,6 +138,8 @@ async function getProjectStateSnapshot(stateRefs) {
         chainThickness,
         jointMinimumThickness,
         companionSlack,
+        holeLinePositionA,
+        holeLinePositionB,
         rulerState,
         currentFrameIndex,
         mode,
@@ -168,7 +170,9 @@ async function getProjectStateSnapshot(stateRefs) {
         mechanism: {
             chainThickness: Number(chainThickness) || 50,
             jointMinimumThickness: Number(jointMinimumThickness) || 5,
-            companionSlack: Number(companionSlack) || 0
+            companionSlack: Number(companionSlack) || 0,
+            holeLinePositionA: Number(holeLinePositionA) || 0,
+            holeLinePositionB: Number(holeLinePositionB) || 0
         },
         video: videoState ?? {
             currentFrameIndex: 0,
@@ -499,6 +503,12 @@ async function restoreProjectSnapshot(snapshot) {
         }
         if (snapshot?.mechanism?.companionSlack !== undefined) {
             window.appActions?.setCompanionSlack?.(snapshot.mechanism.companionSlack);
+        }
+        if (snapshot?.mechanism?.holeLinePositionA !== undefined) {
+            window.appActions?.setHoleLinePositionA?.(snapshot.mechanism.holeLinePositionA);
+        }
+        if (snapshot?.mechanism?.holeLinePositionB !== undefined) {
+            window.appActions?.setHoleLinePositionB?.(snapshot.mechanism.holeLinePositionB);
         }
 
         if (snapshot?.companion?.model !== undefined) {

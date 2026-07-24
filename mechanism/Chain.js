@@ -326,6 +326,11 @@ class Chain {
         return link.getHoleCenterLine();
     }
 
+    _computeHoleLineForLink(link, distance = 0) {
+        if (!(link instanceof Link) || typeof link.getHoleLine !== 'function') return null;
+        return link.getHoleLine(distance);
+    }
+
     _getHoleCenterLines() {
         if (!Array.isArray(this.links) || this.links.length === 0) {
             return [];
@@ -333,6 +338,16 @@ class Chain {
 
         return this.links
             .map((link) => this._computeCenterLineForLink(link))
+            .filter(Boolean);
+    }
+
+    _getHoleLines(distance = 0) {
+        if (!Array.isArray(this.links) || this.links.length === 0) {
+            return [];
+        }
+
+        return this.links
+            .map((link) => this._computeHoleLineForLink(link, distance))
             .filter(Boolean);
     }
 
@@ -385,26 +400,27 @@ class Chain {
 
         const strokeStyle = options.holeStrokeStyle || 'rgba(255, 80, 170, 0.95)';
         const lineWidth = Number.isFinite(options.holeLineWidth) ? options.holeLineWidth : 2;
+        const holePosition = Number.isFinite(options.holePosition) ? options.holePosition : 0;
 
-        const centerLines = this._getHoleCenterLines();
+        const lines = this._getHoleLines(holePosition);
 
-        if (centerLines.length === 0) return;
+        if (lines.length === 0) return;
 
         ctx.save();
         ctx.strokeStyle = strokeStyle;
         ctx.lineWidth = lineWidth;
 
-        // Draw one center line per link.
-        centerLines.forEach((line) => {
+        // Draw one hole line per link.
+        lines.forEach((line) => {
             ctx.beginPath();
             ctx.moveTo(line.start.x, line.start.y);
             ctx.lineTo(line.end.x, line.end.y);
             ctx.stroke();
         });
 
-        // Draw lines connecting consecutive center lines.
-        for (let i = 0; i < centerLines.length - 1; i++) {
-            const pair = Chain._nearestEndpointsBetweenLines(centerLines[i], centerLines[i + 1]);
+        // Draw lines connecting consecutive hole lines.
+        for (let i = 0; i < lines.length - 1; i++) {
+            const pair = Chain._nearestEndpointsBetweenLines(lines[i], lines[i + 1]);
             ctx.beginPath();
             ctx.moveTo(pair.a.x, pair.a.y);
             ctx.lineTo(pair.b.x, pair.b.y);
