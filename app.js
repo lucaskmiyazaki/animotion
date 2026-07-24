@@ -25,6 +25,8 @@ let draggedPoint = null;
 let selectedPoint = null;
 let hasDragged = false;
 let mode = 'move'; // 'create', 'edit', or 'move'
+const DEFAULT_CHAIN_THICKNESS = 20;
+const DEFAULT_HOLE_POSITION = DEFAULT_CHAIN_THICKNESS / 2;
 let holeEnabled = false;
 let jointsEnabled = false;
 let attachmentEnabled = false;
@@ -32,9 +34,9 @@ let mechanismErrorVisible = false;
 let mechanism1Visible = true;
 let mechanism2Visible = true;
 let mechanismRenderChain = 'A';
-let holeLinePositionA = 0;
-let holeLinePositionB = 0;
-let attachmentHoleLength = 10;
+let holeLinePositionA = DEFAULT_HOLE_POSITION;
+let holeLinePositionB = DEFAULT_HOLE_POSITION;
+let attachmentHoleLength = 5;
 let attachmentWallThickness = 2;
 let skeletonVisible = true;
 let skeletonBisectorVisible = false;
@@ -46,9 +48,9 @@ const jointKByIndex = {};
 let companionJointWarning = '';
 
 // Default trapezoid thickness
-let chainThickness = 50;
-let jointMinimumThickness = 5;
-let companionSlack = 10;
+let chainThickness = DEFAULT_CHAIN_THICKNESS;
+let jointMinimumThickness = 2;
+let companionSlack = 2;
 let optimizationMaxBinaryIterations = 24;
 let optimizationMaxBracketExpansions = 14;
 let companionRigidModel = null;
@@ -808,8 +810,8 @@ function redrawAll() {
                 holeLength: attachmentHoleLength,
                 wallThickness: attachmentWallThickness,
                 lineWidth: 1.6,
-                outerStrokeStyle: 'rgba(255, 255, 255, 0.92)',
-                innerStrokeStyle: 'rgba(255, 255, 255, 0.72)'
+                outerStrokeStyle: 'rgba(132, 204, 22, 0.95)',
+                innerStrokeStyle: 'rgba(132, 204, 22, 0.72)'
             });
         }
 

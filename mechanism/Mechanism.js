@@ -304,27 +304,44 @@ class Mechanism {
         if (!Number.isFinite(wallThickness) || wallThickness < 0) return [];
 
         const pivots = this.getUniquePivotPoints(Number(options.tolerance) || 1e-5);
-        if (pivots.length < 2) return [];
+        if (pivots.length < 1) return [];
 
         const attachments = [];
-        for (let i = 0; i < pivots.length - 1; i++) {
-            const startPivot = pivots[i];
-            const endPivot = pivots[i + 1];
+
+        const pushAttachmentForSegment = (startPoint, endPoint) => {
+            const sx = Number(startPoint?.x);
+            const sy = Number(startPoint?.y);
+            const ex = Number(endPoint?.x);
+            const ey = Number(endPoint?.y);
+            if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(ex) || !Number.isFinite(ey)) {
+                return;
+            }
+
             const orientation = {
-                x: endPivot.x - startPivot.x,
-                y: endPivot.y - startPivot.y
+                x: ex - sx,
+                y: ey - sy
             };
-            if (Math.hypot(orientation.x, orientation.y) < 1e-8) continue;
+            if (Math.hypot(orientation.x, orientation.y) < 1e-8) return;
 
             const midpoint = {
-                x: (startPivot.x + endPivot.x) / 2,
-                y: (startPivot.y + endPivot.y) / 2
+                x: (sx + ex) / 2,
+                y: (sy + ey) / 2
             };
+
             const attachment = createAttachment(midpoint, orientation, holeLength, wallThickness);
             if (attachment) {
                 attachments.push(attachment);
             }
+        };
+
+        // Endpoint attachments: firstPoint->p0 and plast->lastPoint.
+        pushAttachmentForSegment(this.firstPoint, pivots[0]);
+
+        for (let i = 0; i < pivots.length - 1; i++) {
+            pushAttachmentForSegment(pivots[i], pivots[i + 1]);
         }
+
+        pushAttachmentForSegment(pivots[pivots.length - 1], this.lastPoint);
 
         return attachments;
     }

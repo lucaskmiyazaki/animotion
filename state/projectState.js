@@ -171,12 +171,12 @@ async function getProjectStateSnapshot(stateRefs) {
             })()
         },
         mechanism: {
-            chainThickness: Number(chainThickness) || 50,
-            jointMinimumThickness: Number(jointMinimumThickness) || 5,
-            companionSlack: Number(companionSlack) || 0,
-            holeLinePositionA: Number(holeLinePositionA) || 0,
-            holeLinePositionB: Number(holeLinePositionB) || 0,
-            attachmentHoleLength: Number(attachmentHoleLength) || 10,
+            chainThickness: Number(chainThickness) || 20,
+            jointMinimumThickness: Number(jointMinimumThickness) || 2,
+            companionSlack: Number(companionSlack) || 2,
+            holeLinePositionA: Number.isFinite(Number(holeLinePositionA)) ? Number(holeLinePositionA) : 10,
+            holeLinePositionB: Number.isFinite(Number(holeLinePositionB)) ? Number(holeLinePositionB) : 10,
+            attachmentHoleLength: Number(attachmentHoleLength) || 5,
             attachmentWallThickness: Number(attachmentWallThickness) || 2
         },
         video: videoState ?? {
