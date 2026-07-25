@@ -148,6 +148,37 @@ const buildButton = createButton('Generate Chain', async () => {
 });
 buildButton.classList.add('build-cta');
 
+const normalizeSkeletonsButton = createButton('Normalize Skeletons', async () => {
+    const hasAnySkeleton = (window.appActions?.getLastSkeletonFrameIndex?.() ?? -1) >= 0;
+    if (!hasAnySkeleton) return;
+
+    const parsedMm = Number.parseFloat(skeletonLinkLengthInput.value);
+    if (!Number.isFinite(parsedMm) || parsedMm <= 0) {
+        alert('Link length must be greater than 0');
+        return;
+    }
+
+    normalizeSkeletonsButton.disabled = true;
+    try {
+        const result = window.appActions?.normalizeSkeletonsToFrameZero?.(mmToPx(parsedMm));
+        if (!result) {
+            alert('No frame 0 skeleton is available to normalize from.');
+            return;
+        }
+
+        const trimmedCount = Array.isArray(result.trimmedFrameIndices) ? result.trimmedFrameIndices.length : 0;
+        const resampledCount = Array.isArray(result.resampledFrameIndices) ? result.resampledFrameIndices.length : 0;
+        if (Array.isArray(result.failedFrameIndices) && result.failedFrameIndices.length > 0) {
+            alert(`Normalized ${trimmedCount + resampledCount} frames. Some frames could not be processed: ${result.failedFrameIndices.join(', ')}`);
+        } else {
+            alert(`Normalized ${trimmedCount + resampledCount} frames to link length ${parsedMm} mm.`);
+        }
+    } finally {
+        normalizeSkeletonsButton.disabled = false;
+    }
+});
+normalizeSkeletonsButton.classList.add('build-cta');
+
 const chainBuildProgressWrap = document.createElement('div');
 chainBuildProgressWrap.className = 'chain-build-progress';
 
@@ -1201,6 +1232,7 @@ function updateBuildControls() {
     buildButton.textContent = hasChain ? 'Regenerate Chain' : 'Generate Chain';
     bottomSecondaryActions.style.display = hasChain ? 'grid' : 'none';
     buildButton.disabled = !hasAnySkeleton;
+    normalizeSkeletonsButton.disabled = !hasAnySkeleton;
 
 }
 
@@ -1254,6 +1286,7 @@ function updateProgressiveVisibility() {
     skeletonDrawHint.style.display = (hasVideo && !hasSkeleton) ? '' : 'none';
     addPointButton.style.display = hasSkeleton ? '' : 'none';
     skeletonAdvancedDetails.style.display = hasSkeleton ? '' : 'none';
+    normalizeSkeletonsButton.style.display = hasSkeleton ? '' : 'none';
 
     if (hasVideo && !hasSkeleton && window.appActions?.getMode?.() !== 'create') {
         window.appActions?.switchToCreateMode?.();
@@ -1262,7 +1295,7 @@ function updateProgressiveVisibility() {
     updateRulerButtonState();
 }
 
-bottomActions.append(buildButton, chainBuildProgressWrap, bottomSecondaryActions);
+bottomActions.append(normalizeSkeletonsButton, buildButton, chainBuildProgressWrap, bottomSecondaryActions);
 
 function updateFrameInput() {
     const current = window.videoControls?.getCurrentFrameIndex?.() ?? 0;

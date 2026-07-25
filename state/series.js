@@ -181,6 +181,98 @@ class Series {
         return this.frameEntries.map((entry) => entry?.skeleton).filter(Boolean);
     }
 
+    normalizeSkeletonsToFrameZero(linkLength, options = {}) {
+        const referenceSkeleton = this.getFrame(0);
+        const referencePointCount = referenceSkeleton?.points?.length ?? 0;
+        const stepLength = Number(linkLength);
+
+        if (!Number.isFinite(stepLength) || stepLength <= 0) {
+            return {
+                referenceFrameIndex: 0,
+                linkLength: stepLength,
+                referencePointCount,
+                referenceLinkCount: -1,
+                normalizedFrameIndices: [],
+                trimmedFrameIndices: [],
+                resampledFrameIndices: [],
+                failedFrameIndices: [0]
+            };
+        }
+
+        const referenceResampledSkeleton = referenceSkeleton?.resampleByLinkLength?.(stepLength, options.resampleOptions || {});
+        if (!referenceResampledSkeleton) {
+            return {
+                referenceFrameIndex: 0,
+                linkLength: stepLength,
+                referencePointCount,
+                referenceLinkCount: -1,
+                normalizedFrameIndices: [],
+                trimmedFrameIndices: [],
+                resampledFrameIndices: [],
+                failedFrameIndices: [0]
+            };
+        }
+
+        const referenceLinkCount = Math.max(0, referenceResampledSkeleton.points.length - 1);
+
+        const frameIndices = this.getFrameIndices().sort((a, b) => a - b);
+        const normalizedFrameIndices = [];
+        const trimmedFrameIndices = [];
+        const resampledFrameIndices = [];
+        const failedFrameIndices = [];
+
+        frameIndices.forEach((frameIndex) => {
+            if (frameIndex === 0) {
+                this.setFrame(0, referenceResampledSkeleton);
+                normalizedFrameIndices.push(0);
+                resampledFrameIndices.push(0);
+                return;
+            }
+
+            const skeleton = this.getFrame(frameIndex);
+            if (!skeleton || !Array.isArray(skeleton.points)) {
+                return;
+            }
+
+            if (typeof skeleton.resampleByLinkLength !== 'function') {
+                failedFrameIndices.push(frameIndex);
+                return;
+            }
+
+            const resampledSkeleton = skeleton.resampleByLinkLength(stepLength, options.resampleOptions || {});
+            if (!resampledSkeleton) {
+                failedFrameIndices.push(frameIndex);
+                return;
+            }
+
+            while (resampledSkeleton.points.length - 1 > referenceLinkCount) {
+                const lastPoint = resampledSkeleton.points[resampledSkeleton.points.length - 1];
+                if (!lastPoint) break;
+                resampledSkeleton.deletePoint(lastPoint, { preserveOriginalPoints: true });
+            }
+
+            if (resampledSkeleton.points.length - 1 > referenceLinkCount) {
+                failedFrameIndices.push(frameIndex);
+                return;
+            }
+
+            this.setFrame(frameIndex, resampledSkeleton);
+            resampledFrameIndices.push(frameIndex);
+            normalizedFrameIndices.push(frameIndex);
+        });
+
+        return {
+            referenceFrameIndex: 0,
+            linkLength: stepLength,
+            referencePointCount,
+            referenceLinkCount,
+            normalizedFrameIndices,
+            trimmedFrameIndices,
+            resampledFrameIndices,
+            failedFrameIndices
+        };
+    }
+
     // ---------- Timeline / Frame Deletion ----------
 
     getStoredFrameIndices(extraStores = []) {

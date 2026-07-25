@@ -1023,6 +1023,20 @@ function resampleCurrentSkeletonByLinkLength(linkLength) {
     return true;
 }
 
+function normalizeSkeletonsToFrameZero(linkLength) {
+    const result = series.normalizeSkeletonsToFrameZero?.(linkLength);
+    if (!result) {
+        return false;
+    }
+
+    hoveredPoint = null;
+    draggedPoint = null;
+    selectedPoint = null;
+    emitChainStateChange();
+    redrawAll();
+    return result;
+}
+
 function copyPreviousFrameSkeleton() {
     if (!isSkeletonEditable()) return;
     if (currentFrameIndex <= 0) return;
@@ -1800,6 +1814,7 @@ window.appActions = {
     getCurrentSkeletonPointCount: () => series.getFrame(currentFrameIndex)?.points?.length ?? 0,
     resampleCurrentSkeleton: (pointCount) => resampleCurrentSkeleton(pointCount),
     resampleCurrentSkeletonByLinkLength: (linkLength) => resampleCurrentSkeletonByLinkLength(linkLength),
+    normalizeSkeletonsToFrameZero: (linkLength) => normalizeSkeletonsToFrameZero(linkLength),
     calculateCurrentSkeletonLength: () => {
         const skeleton = series.getFrame(currentFrameIndex);
         return skeleton ? skeleton.getLength() : 0;

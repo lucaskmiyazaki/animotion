@@ -419,6 +419,11 @@ class Skeleton {
         }
 
         const newSkeleton = new Skeleton();
+        if (Array.isArray(this.originalPoints) && this.originalPoints.length > 0) {
+            newSkeleton.setOriginalPoints(this.originalPoints);
+        } else {
+            newSkeleton.setOriginalPoints(sourcePoints);
+        }
         sampledPoints.forEach((point) => {
             newSkeleton.addPoint(point.x, point.y, false);
         });
@@ -611,10 +616,11 @@ class Skeleton {
         return drawnCount;
     }
 
-    deletePoint(point) {
+    deletePoint(point, options = {}) {
         const connectedLines = [...point.lines];
         const neighbors = connectedLines.map(l => l.getOtherPoint(point));
         const pointIndex = this.points.indexOf(point);
+        const preserveOriginalPoints = Boolean(options.preserveOriginalPoints);
 
         // Remove connected lines from skeleton and from neighbor point refs
         connectedLines.forEach(line => {
@@ -625,7 +631,7 @@ class Skeleton {
 
         // Remove the point
         this.points = this.points.filter(p => p !== point);
-        if (pointIndex >= 0 && pointIndex < this.originalPoints.length) {
+        if (!preserveOriginalPoints && pointIndex >= 0 && pointIndex < this.originalPoints.length) {
             this.originalPoints.splice(pointIndex, 1);
         }
 
