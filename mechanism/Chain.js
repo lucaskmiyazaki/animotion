@@ -443,7 +443,7 @@ class Chain {
         return Math.hypot(Number(a.x) - Number(b.x), Number(a.y) - Number(b.y)) <= tolerance;
     }
 
-    static _collectTwinCombinedPoints(link, tolerance = 1e-5) {
+    static _collectTwinCombinedPoints(link, tolerance = 0.1) {
         const ownPoints = Array.isArray(link?.getWorldPoints?.()) ? link.getWorldPoints() : [];
         const twinPoints = Array.isArray(link?.twin?.getWorldPoints?.()) ? link.twin.getWorldPoints() : [];
 
@@ -454,10 +454,12 @@ class Chain {
         }));
 
         twinPoints.forEach((point) => {
+            if (point?.isPivot) return;
+
             const pointCopy = {
                 x: Number(point.x),
                 y: Number(point.y),
-                isPivot: Boolean(point?.isPivot),
+                isPivot: false,
                 isTwin: true
             };
             if (!Number.isFinite(pointCopy.x) || !Number.isFinite(pointCopy.y)) return;
@@ -480,6 +482,7 @@ class Chain {
         const mergedFillStyle = options.mergedFillStyle || 'rgba(132, 204, 22, 0.16)';
         const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 2;
         const slack = Number.isFinite(options.slack) ? Number(options.slack) : null;
+        const pointTolerance = Number.isFinite(options.pointTolerance) ? Number(options.pointTolerance) : 0.1;
         const frameIndex = Number.isInteger(options.frameIndex) ? options.frameIndex : null;
 
         this.links.forEach((link, linkIndex) => {
@@ -495,12 +498,13 @@ class Chain {
             //     anchorPointStrokeStyle: baseStrokeStyle
             // });
 
-            const combined = Chain._collectTwinCombinedPoints(link);
+            const combined = Chain._collectTwinCombinedPoints(link, pointTolerance);
             window.PolygonRenderer.drawPolygonFromPoints(ctx, combined, {
                 strokeStyle: mergedStrokeStyle,
                 fillStyle: mergedFillStyle,
                 lineWidth,
                 slack,
+                pointTolerance,
                 frameIndex,
                 linkIndex,
                 logViolations: true

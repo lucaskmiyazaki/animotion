@@ -57,6 +57,12 @@ function drawPolygonFromPoints(ctx, points, options = {}) {
             console.log(
                 `[Polygon Error] Expected 2 pivots, found ${pivotPoints.length}`
             );
+            pivotPoints.forEach((pivot, index) => {
+                console.log(`[Polygon Error] Pivot ${index}:`, {
+                    x: pivot.x,
+                    y: pivot.y
+                });
+            });
         }
 
         return;
@@ -161,7 +167,7 @@ function normalizePolygonOptions(options = {}) {
         pointTolerance:
             Number.isFinite(options.pointTolerance)
                 ? Number(options.pointTolerance)
-                : 1e-6,
+                : 0.1,
 
         pivotHighlightRadius:
             Number.isFinite(options.pivotHighlightRadius)
