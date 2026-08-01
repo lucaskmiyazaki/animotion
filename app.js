@@ -811,7 +811,6 @@ function redrawAll() {
                     : 'rgba(245, 130, 32, 0.95)',
                 holeLineWidth: 2,
                 holePosition: selectedHolePosition,
-                highlightFirstLineEndpoints: true,
                 firstLineExtensionLength: selectedKey === 'A'
                     ? centerlineDifferences.chainA + 50
                     : centerlineDifferences.chainB + 50
@@ -824,7 +823,6 @@ function redrawAll() {
                         : 'rgba(255, 80, 170, 0.42)',
                     holeLineWidth: 2,
                     holePosition: otherHolePosition,
-                    highlightFirstLineEndpoints: true,
                     firstLineExtensionLength: selectedKey === 'A'
                         ? centerlineDifferences.chainB + 50
                         : centerlineDifferences.chainA + 50
