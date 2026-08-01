@@ -1430,7 +1430,24 @@ window.appActions = {
         redrawAll();
     },
     exportDXF: () => {
-        console.warn('Export DXF is not implemented for the new Mechanism model yet.');
+        const bundle = getCurrentMechanismBundle();
+        const exported = window.MechanismDXFExporter?.download?.(bundle, {
+            fileName: `pangolin-mechanism-frame-${currentFrameIndex}.dxf`,
+            scaleMmPerPixel: ruler.getScaleMmPerPixel(),
+            primaryChainKey: mechanismRenderChain,
+            slack: companionSlack,
+            pointTolerance: 0.1,
+            holePositionA: holeLinePositionA,
+            holePositionB: holeLinePositionB,
+            jointMinimumThickness,
+            attachmentHoleLength,
+            attachmentWallThickness
+        });
+
+        if (!exported) {
+            alert('Could not export DXF. Generate a mechanism first.');
+        }
+        return Boolean(exported);
     },
     // Project state management
     getProjectStateRefs: exposeStateForSerialization,
