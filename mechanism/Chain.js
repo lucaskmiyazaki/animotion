@@ -445,6 +445,8 @@ class Chain {
         const strokeStyle = options.holeStrokeStyle || 'rgba(255, 80, 170, 0.95)';
         const lineWidth = Number.isFinite(options.holeLineWidth) ? options.holeLineWidth : 2;
         const holePosition = Number.isFinite(options.holePosition) ? options.holePosition : 0;
+        const highlightFirstLineEndpoints = Boolean(options.highlightFirstLineEndpoints);
+        const endpointRadius = Number.isFinite(options.endpointRadius) ? Number(options.endpointRadius) : 5;
 
         const lines = this._getHoleLines(holePosition);
 
@@ -468,6 +470,21 @@ class Chain {
             ctx.beginPath();
             ctx.moveTo(pair.a.x, pair.a.y);
             ctx.lineTo(pair.b.x, pair.b.y);
+            ctx.stroke();
+        }
+
+        if (highlightFirstLineEndpoints) {
+            ctx.fillStyle = options.endpointFillStyle || 'rgba(255, 255, 255, 0.98)';
+            ctx.lineWidth = Number.isFinite(options.endpointLineWidth) ? Number(options.endpointLineWidth) : 2.5;
+            const connectedPoint = lines.length > 1
+                ? Chain._nearestEndpointsBetweenLines(lines[0], lines[1]).a
+                : null;
+            const firstPoint = connectedPoint && Chain._isSamePoint(connectedPoint, lines[0].start)
+                ? lines[0].end
+                : lines[0].start;
+            ctx.beginPath();
+            ctx.arc(firstPoint.x, firstPoint.y, endpointRadius, 0, Math.PI * 2);
+            ctx.fill();
             ctx.stroke();
         }
 

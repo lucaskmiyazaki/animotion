@@ -778,7 +778,8 @@ function redrawAll() {
                     ? 'rgba(255, 80, 170, 0.95)'
                     : 'rgba(245, 130, 32, 0.95)',
                 holeLineWidth: 2,
-                holePosition: selectedHolePosition
+                holePosition: selectedHolePosition,
+                highlightFirstLineEndpoints: true
             });
 
             if (showBothChains) {
@@ -787,7 +788,8 @@ function redrawAll() {
                         ? 'rgba(245, 130, 32, 0.42)'
                         : 'rgba(255, 80, 170, 0.42)',
                     holeLineWidth: 2,
-                    holePosition: otherHolePosition
+                    holePosition: otherHolePosition,
+                    highlightFirstLineEndpoints: true
                 });
             }
         }
