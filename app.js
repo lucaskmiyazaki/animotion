@@ -1902,6 +1902,36 @@ window.appActions = {
             : 0;
         return { orangeLength, pinkLength };
     },
+    calculateCenterlineDifferences: () => {
+        const measure = (bundle) => ({
+            chainA: Number(bundle?.mechanism1?.getHoleLineLength?.()) || 0,
+            chainB: Number(bundle?.mechanism2?.getHoleLineLength?.()) || 0
+        });
+        const current = measure(getCurrentMechanismBundle());
+        const frameIndices = series.getFrameIndices().sort((a, b) => a - b);
+        const initialFrameIndex = frameIndices[0];
+        const finalFrameIndex = frameIndices[frameIndices.length - 1];
+
+        if (!(liveMechanismBundle?.mechanism instanceof Mechanism)
+            || !Number.isInteger(initialFrameIndex)
+            || !Number.isInteger(finalFrameIndex)) {
+            return { chainA: 0, chainB: 0 };
+        }
+
+        let initial = current;
+        let final = current;
+        try {
+            initial = measure(syncLiveMechanismToFrame(initialFrameIndex));
+            final = measure(syncLiveMechanismToFrame(finalFrameIndex));
+        } finally {
+            syncLiveMechanismToFrame(currentFrameIndex);
+        }
+
+        return {
+            chainA: Math.max(initial.chainA, final.chainA) - current.chainA,
+            chainB: Math.max(initial.chainB, final.chainB) - current.chainB
+        };
+    },
     getCurrentStringLengthChainB: () => {
         const bundle = getCurrentMechanismBundle();
         const chainB = bundle.mechanism?.chains?.[1];

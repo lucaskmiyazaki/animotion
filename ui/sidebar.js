@@ -750,6 +750,16 @@ companionLineLengthDisplay.className = 'energy-display';
 companionLineLengthDisplay.textContent = 'Chain B centerline: 0';
 companionLineLengthDisplay.style.color = '#f550aa';
 
+const centerlineDifferenceADisplay = document.createElement('div');
+centerlineDifferenceADisplay.className = 'energy-display';
+centerlineDifferenceADisplay.textContent = 'Chain A centerline difference: 0';
+centerlineDifferenceADisplay.style.color = '#f58220';
+
+const centerlineDifferenceBDisplay = document.createElement('div');
+centerlineDifferenceBDisplay.className = 'energy-display';
+centerlineDifferenceBDisplay.textContent = 'Chain B centerline difference: 0';
+centerlineDifferenceBDisplay.style.color = '#f550aa';
+
 const targetLineLengthADisplay = document.createElement('div');
 targetLineLengthADisplay.className = 'energy-display';
 targetLineLengthADisplay.textContent = 'Target Chain A centerline: -';
@@ -884,14 +894,19 @@ advancedChainContent.className = 'advanced-content';
 function updateEnergyAndLengthDisplay() {
     const energy = window.appActions?.calculateTotalElasticEnergy?.() ?? 0;
     const holeLengths = window.appActions?.calculateHoleLineLengths?.() ?? { orangeLength: 0, pinkLength: 0 };
+    const centerlineDifferences = window.appActions?.calculateCenterlineDifferences?.() ?? { chainA: 0, chainB: 0 };
     const chainALength = Number.isFinite(holeLengths.orangeLength) ? pxToMm(holeLengths.orangeLength) : 0;
     const chainBLengthDisplay = Number.isFinite(holeLengths.pinkLength) ? pxToMm(holeLengths.pinkLength) : 0;
+    const chainADifference = Number.isFinite(centerlineDifferences.chainA) ? pxToMm(centerlineDifferences.chainA) : 0;
+    const chainBDifference = Number.isFinite(centerlineDifferences.chainB) ? pxToMm(centerlineDifferences.chainB) : 0;
     const targetChainA = Number(window.appActions?.getCurrentTargetHoleLengthA?.());
     const targetChainB = Number(window.appActions?.getCurrentTargetHoleLength?.());
     const companionJointWarning = window.appActions?.getCompanionJointWarning?.() ?? '';
     energyDisplay.textContent = `Elastic Energy: ${energy.toFixed(2)}`;
     lineLengthDisplay.textContent = `Chain A centerline: ${chainALength.toFixed(2)} mm`;
     companionLineLengthDisplay.textContent = `Chain B centerline: ${chainBLengthDisplay.toFixed(2)} mm`;
+    centerlineDifferenceADisplay.textContent = `Chain A centerline difference: ${chainADifference.toFixed(2)} mm`;
+    centerlineDifferenceBDisplay.textContent = `Chain B centerline difference: ${chainBDifference.toFixed(2)} mm`;
     targetLineLengthADisplay.textContent = Number.isFinite(targetChainA)
         ? `Target Chain A centerline: ${pxToMm(targetChainA).toFixed(2)} mm`
         : 'Target Chain A centerline: -';
@@ -918,6 +933,8 @@ advancedChainContent.append(
     energyDisplay,
     lineLengthDisplay,
     companionLineLengthDisplay,
+    centerlineDifferenceADisplay,
+    centerlineDifferenceBDisplay,
     targetLineLengthADisplay,
     targetLineLengthBDisplay,
     companionJointWarningDisplay
