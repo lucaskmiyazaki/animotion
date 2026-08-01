@@ -23,6 +23,50 @@ class Chain {
         return clone;
     }
 
+    toSerializable() {
+        return {
+            links: this.links.map((link) => ({
+                position: {
+                    x: Number(link.position.x),
+                    y: Number(link.position.y)
+                },
+                theta: Number(link.theta),
+                localPoints: link.localPoints.map((point) => ({
+                    x: Number(point.x),
+                    y: Number(point.y),
+                    isPivot: Boolean(point.isPivot)
+                })),
+                metadata: { ...(link.metadata || {}) }
+            }))
+        };
+    }
+
+    static fromSerializable(snapshot) {
+        const chain = new Chain();
+        const serializedLinks = Array.isArray(snapshot?.links) ? snapshot.links : [];
+
+        serializedLinks.forEach((item) => {
+            const position = item?.position;
+            const localPoints = Array.isArray(item?.localPoints) ? item.localPoints : [];
+            if (!Number.isFinite(position?.x) || !Number.isFinite(position?.y)) return;
+            if (localPoints.length !== 3 && localPoints.length !== 4) return;
+
+            const worldPoints = localPoints.map((point) => ({
+                x: Number(position.x) + Number(point.x),
+                y: Number(position.y) + Number(point.y),
+                isPivot: Boolean(point?.isPivot)
+            }));
+            if (worldPoints.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) return;
+
+            chain.addLink(new Link(worldPoints, {
+                theta: Number.isFinite(item.theta) ? Number(item.theta) : 0,
+                metadata: item.metadata && typeof item.metadata === 'object' ? item.metadata : {}
+            }));
+        });
+
+        return chain;
+    }
+
     // Rebuild links from their current world pose so local geometry matches
     // the current frame and theta can be reset to zero.
     rebaseToCurrentPose() {

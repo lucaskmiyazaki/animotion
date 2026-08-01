@@ -52,7 +52,7 @@ function gatherSkeletonState(frameSkeletons) {
     };
 }
 
-function gatherChainState(frameChains, frameChainBuilt) {
+function gatherChainState(frameChains, frameChainBuilt, generatedMechanismState = null) {
     const frameIndices = Array.from(new Set(
         Object.keys(frameChains)
             .concat(Object.keys(frameChainBuilt))
@@ -64,6 +64,45 @@ function gatherChainState(frameChains, frameChainBuilt) {
     const builtFrames = frameIndices
         .filter((frameIndex) => Boolean(frameChainBuilt[frameIndex] && frameChains[frameIndex]))
         .sort((a, b) => a - b);
+
+    const mechanism = generatedMechanismState?.bundle?.mechanism;
+    const chainA = generatedMechanismState?.bundle?.mechanism1;
+    const chainB = generatedMechanismState?.bundle?.mechanism2;
+    const serializedA = chainA?.toSerializable?.() || null;
+    const serializedB = chainB?.toSerializable?.() || null;
+
+    if (serializedA || serializedB) {
+        return {
+            format: 'generated-mechanism-v1',
+            frameCount: builtFrames.length,
+            template: {
+                chainA: serializedA,
+                chainB: serializedB,
+                baseState: generatedMechanismState?.baseState || null,
+                rotation: Number.isFinite(mechanism?.rotation) ? Number(mechanism.rotation) : 0,
+                joints: Array.isArray(mechanism?.joints)
+                    ? mechanism.joints.map((joint) => ({
+                        initialTheta: Number(joint.initialTheta),
+                        finalTheta: Number(joint.finalTheta),
+                        k: Number(joint.k)
+                    }))
+                    : []
+            },
+            frames: builtFrames.map((frameIndex) => {
+                const poseState = frameChains[frameIndex] || {};
+                return {
+                    frameIndex,
+                    chainBuilt: true,
+                    thetaVector: Array.isArray(poseState.thetaVector) ? poseState.thetaVector.slice() : [],
+                    targetHoleLength: Number.isFinite(poseState.targetHoleLength) ? Number(poseState.targetHoleLength) : null,
+                    targetHoleLengthA: Number.isFinite(poseState.targetHoleLengthA) ? Number(poseState.targetHoleLengthA) : null,
+                    solveResult: poseState.solveResult && typeof poseState.solveResult === 'object'
+                        ? poseState.solveResult
+                        : null
+                };
+            })
+        };
+    }
 
     if (builtFrames.length === 0) {
         return {
@@ -155,7 +194,8 @@ async function getProjectStateSnapshot(stateRefs) {
         currentFrameIndex,
         mode,
         selectedPoint,
-        getCurrentSkeleton
+        getCurrentSkeleton,
+        getGeneratedMechanismState
     } = stateRefs;
 
     const videoState = await window.videoControls?.getSerializableState?.();
@@ -196,7 +236,7 @@ async function getProjectStateSnapshot(stateRefs) {
             video: null
         },
         skeleton: gatherSkeletonState(frameSkeletons),
-        chain: gatherChainState(frameChains, frameChainBuilt),
+        chain: gatherChainState(frameChains, frameChainBuilt, getGeneratedMechanismState?.()),
         companion: {
             model: companionRigidModel ?? null
         },
@@ -413,6 +453,11 @@ function restoreChainState(chainSnapshot) {
     }
 
     try {
+        if (chainSnapshot.format === 'generated-mechanism-v1') {
+            window.appActions?.restoreGeneratedMechanismState?.(chainSnapshot);
+            return;
+        }
+
         const ChainCtor = window.Chain || (typeof Chain !== 'undefined' ? Chain : null);
         if (!ChainCtor || !ChainCtor.fromSerializable) {
             return;

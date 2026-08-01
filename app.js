@@ -963,6 +963,57 @@ function getMode() {
     return mode;
 }
 
+function restoreGeneratedMechanismState(chainSnapshot) {
+    const template = chainSnapshot?.template;
+    if (!template || (!template.chainA && !template.chainB)) return false;
+
+    const mechanism1 = template.chainA ? Chain.fromSerializable(template.chainA) : null;
+    const mechanism2 = template.chainB ? Chain.fromSerializable(template.chainB) : null;
+    if (!mechanism1 && !mechanism2) return false;
+
+    series.clearAllMechanisms();
+    Object.keys(frameChains).forEach((key) => delete frameChains[key]);
+    Object.keys(frameChainBuilt).forEach((key) => delete frameChainBuilt[key]);
+    startPointMismatchLoggedFrames.clear();
+
+    if (mechanism1 && mechanism2) {
+        Chain.pairTwinLinks(mechanism1, mechanism2);
+    }
+
+    const bundle = makeMechanismFrameBundle(mechanism1, mechanism2);
+    bundle.mechanism = buildJointMechanismForBundle(bundle, currentFrameIndex);
+
+    const jointDefinitions = Array.isArray(template.joints) ? template.joints : [];
+    bundle.mechanism.joints.forEach((joint, index) => {
+        const definition = jointDefinitions[index];
+        if (!definition) return;
+        if (Number.isFinite(definition.initialTheta)) joint.initialTheta = Number(definition.initialTheta);
+        if (Number.isFinite(definition.finalTheta)) joint.finalTheta = Number(definition.finalTheta);
+        if (Number.isFinite(definition.k) && Number(definition.k) >= 0) joint.k = Number(definition.k);
+    });
+
+    if (template.baseState) {
+        bundle.mechanism._restorePoseState(template.baseState);
+    }
+    bundle.mechanism.rotation = Number.isFinite(template.rotation) ? Number(template.rotation) : 0;
+    bundle.mechanism._syncEndpointReferences();
+
+    liveMechanismBundle = bundle;
+    liveMechanismBaseState = bundle.mechanism._capturePoseState();
+
+    const frames = Array.isArray(chainSnapshot.frames) ? chainSnapshot.frames : [];
+    frames.forEach((frame) => {
+        const frameIndex = Number.parseInt(frame?.frameIndex, 10);
+        if (!Number.isInteger(frameIndex) || frameIndex < 0 || !frame.chainBuilt) return;
+        setFramePoseState(frameIndex, makeMechanismPoseState(frame.thetaVector, frame));
+    });
+
+    syncLiveMechanismToFrame(currentFrameIndex);
+    emitChainStateChange();
+    redrawAll();
+    return true;
+}
+
 // Project state is now managed in projectState.js
 // Expose state references for serialization
 function exposeStateForSerialization() {
@@ -987,7 +1038,11 @@ function exposeStateForSerialization() {
         currentFrameIndex,
         mode,
         selectedPoint,
-        getCurrentSkeleton: () => series.getFrame(currentFrameIndex)
+        getCurrentSkeleton: () => series.getFrame(currentFrameIndex),
+        getGeneratedMechanismState: () => ({
+            bundle: liveMechanismBundle,
+            baseState: liveMechanismBaseState
+        })
     };
 }
 
@@ -1474,6 +1529,7 @@ window.appActions = {
             redrawAll();
         }
     },
+    restoreGeneratedMechanismState,
     getLastSkeletonFrameIndex: () => series.getLastFrameWithPoints(),
     setSkeletonVisible: (visible) => {
         skeletonVisible = Boolean(visible);
