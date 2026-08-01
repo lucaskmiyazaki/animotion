@@ -399,6 +399,37 @@ function getCurrentMechanismBundle() {
     return bundle;
 }
 
+function calculateCenterlineDifferences() {
+    const measure = (bundle) => ({
+        chainA: Number(bundle?.mechanism1?.getHoleLineLength?.()) || 0,
+        chainB: Number(bundle?.mechanism2?.getHoleLineLength?.()) || 0
+    });
+    const current = measure(getCurrentMechanismBundle());
+    const frameIndices = series.getFrameIndices().sort((a, b) => a - b);
+    const initialFrameIndex = frameIndices[0];
+    const finalFrameIndex = frameIndices[frameIndices.length - 1];
+
+    if (!(liveMechanismBundle?.mechanism instanceof Mechanism)
+        || !Number.isInteger(initialFrameIndex)
+        || !Number.isInteger(finalFrameIndex)) {
+        return { chainA: 0, chainB: 0 };
+    }
+
+    let initial = current;
+    let final = current;
+    try {
+        initial = measure(syncLiveMechanismToFrame(initialFrameIndex));
+        final = measure(syncLiveMechanismToFrame(finalFrameIndex));
+    } finally {
+        syncLiveMechanismToFrame(currentFrameIndex);
+    }
+
+    return {
+        chainA: Math.max(initial.chainA, final.chainA) - current.chainA,
+        chainB: Math.max(initial.chainB, final.chainB) - current.chainB
+    };
+}
+
 function hasRenderableChain() {
     const bundle = getCurrentMechanismBundle();
     const m1 = bundle.mechanism1;
@@ -773,13 +804,17 @@ function redrawAll() {
         if (holeEnabled) {
             const selectedHolePosition = selectedKey === 'A' ? holeLinePositionA : holeLinePositionB;
             const otherHolePosition = selectedKey === 'A' ? holeLinePositionB : holeLinePositionA;
+            const centerlineDifferences = calculateCenterlineDifferences();
             selectedChain?.drawHoles?.(ctx, {
                 holeStrokeStyle: selectedKey === 'A'
                     ? 'rgba(255, 80, 170, 0.95)'
                     : 'rgba(245, 130, 32, 0.95)',
                 holeLineWidth: 2,
                 holePosition: selectedHolePosition,
-                highlightFirstLineEndpoints: true
+                highlightFirstLineEndpoints: true,
+                firstLineExtensionLength: selectedKey === 'A'
+                    ? centerlineDifferences.chainA + 50
+                    : centerlineDifferences.chainB + 50
             });
 
             if (showBothChains) {
@@ -789,7 +824,10 @@ function redrawAll() {
                         : 'rgba(255, 80, 170, 0.42)',
                     holeLineWidth: 2,
                     holePosition: otherHolePosition,
-                    highlightFirstLineEndpoints: true
+                    highlightFirstLineEndpoints: true,
+                    firstLineExtensionLength: selectedKey === 'A'
+                        ? centerlineDifferences.chainB + 50
+                        : centerlineDifferences.chainA + 50
                 });
             }
         }
@@ -1904,36 +1942,7 @@ window.appActions = {
             : 0;
         return { orangeLength, pinkLength };
     },
-    calculateCenterlineDifferences: () => {
-        const measure = (bundle) => ({
-            chainA: Number(bundle?.mechanism1?.getHoleLineLength?.()) || 0,
-            chainB: Number(bundle?.mechanism2?.getHoleLineLength?.()) || 0
-        });
-        const current = measure(getCurrentMechanismBundle());
-        const frameIndices = series.getFrameIndices().sort((a, b) => a - b);
-        const initialFrameIndex = frameIndices[0];
-        const finalFrameIndex = frameIndices[frameIndices.length - 1];
-
-        if (!(liveMechanismBundle?.mechanism instanceof Mechanism)
-            || !Number.isInteger(initialFrameIndex)
-            || !Number.isInteger(finalFrameIndex)) {
-            return { chainA: 0, chainB: 0 };
-        }
-
-        let initial = current;
-        let final = current;
-        try {
-            initial = measure(syncLiveMechanismToFrame(initialFrameIndex));
-            final = measure(syncLiveMechanismToFrame(finalFrameIndex));
-        } finally {
-            syncLiveMechanismToFrame(currentFrameIndex);
-        }
-
-        return {
-            chainA: Math.max(initial.chainA, final.chainA) - current.chainA,
-            chainB: Math.max(initial.chainB, final.chainB) - current.chainB
-        };
-    },
+    calculateCenterlineDifferences,
     getCurrentStringLengthChainB: () => {
         const bundle = getCurrentMechanismBundle();
         const chainB = bundle.mechanism?.chains?.[1];

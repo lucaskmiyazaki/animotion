@@ -447,6 +447,9 @@ class Chain {
         const holePosition = Number.isFinite(options.holePosition) ? options.holePosition : 0;
         const highlightFirstLineEndpoints = Boolean(options.highlightFirstLineEndpoints);
         const endpointRadius = Number.isFinite(options.endpointRadius) ? Number(options.endpointRadius) : 5;
+        const extensionLength = Number.isFinite(options.firstLineExtensionLength)
+            ? Math.max(0, Number(options.firstLineExtensionLength))
+            : 0;
 
         const lines = this._getHoleLines(holePosition);
 
@@ -473,15 +476,37 @@ class Chain {
             ctx.stroke();
         }
 
-        if (highlightFirstLineEndpoints) {
-            ctx.fillStyle = options.endpointFillStyle || 'rgba(255, 255, 255, 0.98)';
-            ctx.lineWidth = Number.isFinite(options.endpointLineWidth) ? Number(options.endpointLineWidth) : 2.5;
+        if (highlightFirstLineEndpoints || extensionLength > 0) {
             const connectedPoint = lines.length > 1
                 ? Chain._nearestEndpointsBetweenLines(lines[0], lines[1]).a
                 : null;
             const firstPoint = connectedPoint && Chain._isSamePoint(connectedPoint, lines[0].start)
                 ? lines[0].end
                 : lines[0].start;
+
+            if (connectedPoint && extensionLength > 0) {
+                const dx = firstPoint.x - connectedPoint.x;
+                const dy = firstPoint.y - connectedPoint.y;
+                const length = Math.hypot(dx, dy);
+                if (length > 1e-8) {
+                    ctx.lineWidth = lineWidth;
+                    ctx.beginPath();
+                    ctx.moveTo(firstPoint.x, firstPoint.y);
+                    ctx.lineTo(
+                        firstPoint.x + (dx / length) * extensionLength,
+                        firstPoint.y + (dy / length) * extensionLength
+                    );
+                    ctx.stroke();
+                }
+            }
+
+            if (!highlightFirstLineEndpoints) {
+                ctx.restore();
+                return;
+            }
+
+            ctx.fillStyle = options.endpointFillStyle || 'rgba(255, 255, 255, 0.98)';
+            ctx.lineWidth = Number.isFinite(options.endpointLineWidth) ? Number(options.endpointLineWidth) : 2.5;
             ctx.beginPath();
             ctx.arc(firstPoint.x, firstPoint.y, endpointRadius, 0, Math.PI * 2);
             ctx.fill();
