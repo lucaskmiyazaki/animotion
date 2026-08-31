@@ -57,6 +57,21 @@ class Test {
 
         document.body.insertBefore(this.video, this.canvas);
 
+        this.alignedCanvas = document.createElement('canvas');
+        this.alignedCanvas.id = 'alignedTestVideoCanvas';
+        Object.assign(this.alignedCanvas.style, {
+            position: 'fixed',
+            inset: '0',
+            width: '100vw',
+            height: '100vh',
+            zIndex: '1',
+            background: 'transparent',
+            pointerEvents: 'none',
+            visibility: 'hidden'
+        });
+        document.body.insertBefore(this.alignedCanvas, this.canvas);
+        this.alignedContext = this.alignedCanvas.getContext('2d');
+
         this.markerCanvas = document.createElement('canvas');
         this.markerCanvas.id = 'testMarkerCanvas';
         Object.assign(this.markerCanvas.style, {
@@ -81,9 +96,12 @@ class Test {
 
         this.resizeMarkerCanvas = () => {
             const dpr = window.devicePixelRatio || 1;
+            this.alignedCanvas.width = Math.max(1, Math.round(window.innerWidth * dpr));
+            this.alignedCanvas.height = Math.max(1, Math.round(window.innerHeight * dpr));
             this.markerCanvas.width = Math.max(1, Math.round(window.innerWidth * dpr));
             this.markerCanvas.height = Math.max(1, Math.round(window.innerHeight * dpr));
             this.markerContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+            this.renderAlignedFrame();
             this.drawMarkers(this.getDisplayMarkers(this.currentFrameIndex));
         };
         window.addEventListener('resize', this.resizeMarkerCanvas);
@@ -186,8 +204,9 @@ class Test {
 
         this.video.pause();
         this.video.style.opacity = hasVideo ? '0.5' : '0';
-        this.video.style.visibility = this.enabled && hasVideo ? 'visible' : 'hidden';
+        this.updateVideoLayerVisibility();
         if (!hasVideo) {
+            this.renderAlignedFrame();
             this.drawMarkers([]);
             this.emitFrameChange();
             return;
@@ -203,15 +222,24 @@ class Test {
     }
 
     scheduleMarkerDetection(frameIndex) {
+        const requestId = ++this.detectionRequestId;
         const cachedCentroids = this.markerCache.get(frameIndex);
         if (cachedCentroids) {
             this.trackFrameMarkers(frameIndex, cachedCentroids);
             this.drawMarkers(this.getDisplayMarkers(frameIndex));
+            const renderCachedFrame = () => {
+                if (requestId !== this.detectionRequestId || frameIndex !== this.currentFrameIndex) return;
+                if (this.video.seeking) {
+                    this.video.addEventListener('seeked', renderCachedFrame, { once: true });
+                    return;
+                }
+                this.renderAlignedFrame();
+            };
+            renderCachedFrame();
             return;
         }
 
         this.drawMarkers([]);
-        const requestId = ++this.detectionRequestId;
         let completed = false;
         let waitingForSeek = false;
         const detectCurrentFrame = () => {
@@ -231,6 +259,7 @@ class Test {
             const centroids = this.detectGreenMarkerCentroids();
             this.markerCache.set(frameIndex, centroids);
             this.trackFrameMarkers(frameIndex, centroids);
+            this.renderAlignedFrame();
             this.drawMarkers(this.getDisplayMarkers(frameIndex));
         };
 
@@ -415,6 +444,7 @@ class Test {
             ...centroid,
             id
         })));
+        this.renderAlignedFrame();
     }
 
     trackFrameMarkers(frameIndex, centroids) {
@@ -466,6 +496,112 @@ class Test {
         return this.trackedMarkerCache.get(frameIndex) || this.markerCache.get(frameIndex) || [];
     }
 
+    getFrameAlignment(frameIndex = this.currentFrameIndex) {
+        const markers = this.trackedMarkerCache.get(frameIndex) || [];
+        const marker0 = markers.find((marker) => marker.id === 0);
+        const referencePoints = window.appSeries?.getFrame?.(0)?.points || [];
+        const point0 = referencePoints[0];
+        if (!marker0 || !point0 || referencePoints.length < 2) return null;
+
+        const orderedMarkers = [...markers].sort((a, b) => a.id - b.id);
+        const sourceLength = orderedMarkers.slice(1).reduce((total, marker, index) => {
+            const previousMarker = orderedMarkers[index];
+            return total + Math.hypot(
+                marker.x - previousMarker.x,
+                marker.y - previousMarker.y
+            );
+        }, 0);
+        const targetLength = referencePoints.slice(1).reduce((total, point, index) => {
+            const previousPoint = referencePoints[index];
+            return total + Math.hypot(
+                point.x - previousPoint.x,
+                point.y - previousPoint.y
+            );
+        }, 0);
+        if (sourceLength <= 0 || targetLength <= 0) return null;
+
+        const scale = targetLength / sourceLength;
+        let dotSum = 0;
+        let crossSum = 0;
+        orderedMarkers.forEach((marker) => {
+            const referencePoint = referencePoints[marker.id];
+            if (!referencePoint) return;
+
+            const sourceX = (marker.x - marker0.x) * scale;
+            const sourceY = (marker.y - marker0.y) * scale;
+            const targetX = referencePoint.x - point0.x;
+            const targetY = referencePoint.y - point0.y;
+            dotSum += sourceX * targetX + sourceY * targetY;
+            crossSum += sourceX * targetY - sourceY * targetX;
+        });
+        if (Math.abs(dotSum) + Math.abs(crossSum) <= Number.EPSILON) return null;
+
+        const angle = Math.atan2(crossSum, dotSum);
+        const cosine = Math.cos(angle) * scale;
+        const sine = Math.sin(angle) * scale;
+        return {
+            a: cosine,
+            b: sine,
+            c: -sine,
+            d: cosine,
+            e: point0.x - cosine * marker0.x + sine * marker0.y,
+            f: point0.y - sine * marker0.x - cosine * marker0.y
+        };
+    }
+
+    transformMarkerToViewport(marker, alignment = this.getFrameAlignment()) {
+        if (alignment) {
+            return {
+                x: alignment.a * marker.x + alignment.c * marker.y + alignment.e,
+                y: alignment.b * marker.x + alignment.d * marker.y + alignment.f
+            };
+        }
+
+        const displayedRect = this.getDisplayedVideoRect();
+        return {
+            x: displayedRect.left + marker.x * displayedRect.width / this.video.videoWidth,
+            y: displayedRect.top + marker.y * displayedRect.height / this.video.videoHeight
+        };
+    }
+
+    renderAlignedFrame() {
+        if (!this.alignedContext) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        this.alignedContext.setTransform(1, 0, 0, 1, 0, 0);
+        this.alignedContext.clearRect(0, 0, this.alignedCanvas.width, this.alignedCanvas.height);
+        const alignment = this.getFrameAlignment();
+        const canRender = this.enabled && this.hasVideo() && alignment && this.video.readyState >= 2;
+        this.alignedCanvas.style.visibility = canRender ? 'visible' : 'hidden';
+        if (!canRender) {
+            this.updateVideoLayerVisibility();
+            return;
+        }
+
+        this.alignedContext.save();
+        this.alignedContext.globalAlpha = 0.5;
+        this.alignedContext.setTransform(
+            dpr * alignment.a,
+            dpr * alignment.b,
+            dpr * alignment.c,
+            dpr * alignment.d,
+            dpr * alignment.e,
+            dpr * alignment.f
+        );
+        this.alignedContext.drawImage(this.video, 0, 0);
+        this.alignedContext.restore();
+        this.updateVideoLayerVisibility();
+    }
+
+    updateVideoLayerVisibility() {
+        const hasVideo = this.hasVideo();
+        const isAligned = Boolean(this.getFrameAlignment());
+        this.video.style.visibility = this.enabled && hasVideo && !isAligned ? 'visible' : 'hidden';
+        if (!this.enabled || !hasVideo) {
+            this.alignedCanvas.style.visibility = 'hidden';
+        }
+    }
+
     getDisplayedVideoRect() {
         const bounds = this.video.getBoundingClientRect();
         const videoAspect = this.video.videoWidth / this.video.videoHeight;
@@ -489,9 +625,7 @@ class Test {
         this.markerContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
         if (!this.enabled || !this.hasVideo() || markers.length === 0) return;
 
-        const displayedRect = this.getDisplayedVideoRect();
-        const scaleX = displayedRect.width / this.video.videoWidth;
-        const scaleY = displayedRect.height / this.video.videoHeight;
+        const alignment = this.getFrameAlignment();
         const trackedMarkers = markers.filter((marker) => Number.isInteger(marker.id));
 
         if (trackedMarkers.length > 1) {
@@ -499,8 +633,7 @@ class Test {
             this.markerContext.lineWidth = 3;
             this.markerContext.beginPath();
             trackedMarkers.forEach((marker, index) => {
-                const x = displayedRect.left + marker.x * scaleX;
-                const y = displayedRect.top + marker.y * scaleY;
+                const { x, y } = this.transformMarkerToViewport(marker, alignment);
                 if (index === 0) this.markerContext.moveTo(x, y);
                 else this.markerContext.lineTo(x, y);
             });
@@ -509,8 +642,7 @@ class Test {
 
         this.markerContext.fillStyle = '#ff0000';
         markers.forEach((marker) => {
-            const x = displayedRect.left + marker.x * scaleX;
-            const y = displayedRect.top + marker.y * scaleY;
+            const { x, y } = this.transformMarkerToViewport(marker, alignment);
             this.markerContext.beginPath();
             this.markerContext.arc(x, y, 5, 0, Math.PI * 2);
             this.markerContext.fill();
