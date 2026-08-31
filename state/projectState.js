@@ -199,6 +199,7 @@ async function getProjectStateSnapshot(stateRefs) {
     } = stateRefs;
 
     const videoState = await window.videoControls?.getSerializableState?.();
+    const testState = await window.testControls?.getSerializableState?.();
 
     return {
         version: 2,
@@ -233,6 +234,10 @@ async function getProjectStateSnapshot(stateRefs) {
             maxFrameIndex: 0,
             frameIndexMap: [],
             frameRange: null,
+            video: null
+        },
+        test: testState ?? {
+            enabled: false,
             video: null
         },
         skeleton: gatherSkeletonState(frameSkeletons),
@@ -397,6 +402,25 @@ async function restoreVideoState(videoSnapshot, seekNow = false) {
     }
 }
 
+async function restoreTestState(testSnapshot) {
+    if (!testSnapshot) return;
+
+    try {
+        if (testSnapshot.video) {
+            const { name, type, dataURL } = testSnapshot.video;
+            const response = await fetch(dataURL);
+            const blob = await response.blob();
+            const file = new File([blob], name, { type });
+            await window.testControls?.loadVideoFile?.(file);
+        }
+
+        window.testControls?.showFrameIndex?.(testSnapshot.currentFrameIndex ?? 0);
+        window.testControls?.setEnabled?.(testSnapshot.enabled ?? false);
+    } catch (error) {
+        console.error('Error restoring test video:', error);
+    }
+}
+
 /**
  * Restore skeleton from snapshot
  * @param {Object} skeletonSnapshot - Skeleton section of project snapshot
@@ -556,6 +580,7 @@ async function restoreProjectSnapshot(snapshot) {
 
         // 1. Restore video first but DON'T seek yet (needed for frame context)
         await restoreVideoState(snapshot.video, false);
+        await restoreTestState(snapshot.test);
 
         // 2. Restore skeleton (before seeking so canvas can render them)
         restoreSkeletonState(snapshot.skeleton);

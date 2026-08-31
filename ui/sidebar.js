@@ -960,6 +960,112 @@ chainOptionsSection.append(
     advancedChainDetails
 );
 
+const testVideoSection = document.createElement('div');
+testVideoSection.className = 'frame-section';
+
+const testVideoHeader = createSectionToggle(
+    'Test Video',
+    window.testControls?.getEnabled?.() ?? false,
+    (visible) => {
+        window.testControls?.setEnabled?.(visible);
+        setSectionInteractive(testVideoSection, testVideoHeader.input, visible);
+    }
+);
+
+const testVideoIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5v2zM12 3l-5 5h3v6h4V8h3l-5-5z"/></svg>';
+const testPlayIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+const testPauseIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h5v14H6zm7 0h5v14h-5z"/></svg>';
+const testSelectFirstIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 2h2v3.07A7.01 7.01 0 0 1 18.93 11H22v2h-3.07A7.01 7.01 0 0 1 13 18.93V22h-2v-3.07A7.01 7.01 0 0 1 5.07 13H2v-2h3.07A7.01 7.01 0 0 1 11 5.07V2zm1 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>';
+const uploadTestVideoButton = createIconButton(testVideoIcon, 'Upload Test Video', () => {
+    window.testControls?.openVideoPicker?.();
+});
+
+const uploadTestVideoPrompt = document.createElement('div');
+uploadTestVideoPrompt.className = 'upload-video-prompt';
+
+const uploadTestVideoText = document.createElement('span');
+uploadTestVideoText.className = 'upload-video-text';
+uploadTestVideoText.textContent = 'Upload test video';
+
+uploadTestVideoPrompt.append(uploadTestVideoButton, uploadTestVideoText);
+
+const testPlayPauseButton = createIconButton(testPlayIcon, 'Play Test Video', () => {
+    window.testControls?.togglePlayback?.();
+});
+let testFirstPointSelectionActive = false;
+const testSelectFirstButton = createIconButton(testSelectFirstIcon, 'Select First Marker', () => {
+    if (testFirstPointSelectionActive) {
+        window.testControls?.cancelFirstPointSelection?.();
+    } else {
+        window.testControls?.beginFirstPointSelection?.();
+    }
+});
+
+const testVideoActionsRow = document.createElement('div');
+testVideoActionsRow.className = 'icon-actions-row test-video-actions-row';
+testVideoActionsRow.append(uploadTestVideoPrompt, testSelectFirstButton, testPlayPauseButton);
+
+const testFrameControl = document.createElement('div');
+testFrameControl.className = 'frame-control test-frame-control';
+
+const testFramePrevButton = createButton('<', () => {
+    window.testControls?.prevFrame?.();
+});
+
+const testFrameInput = document.createElement('input');
+testFrameInput.type = 'number';
+testFrameInput.min = '0';
+testFrameInput.step = '1';
+testFrameInput.value = '0';
+testFrameInput.className = 'frame-input';
+testFrameInput.addEventListener('change', () => {
+    const raw = Number.parseInt(testFrameInput.value, 10);
+    window.testControls?.showFrameIndex?.(Number.isNaN(raw) ? 0 : Math.max(0, raw));
+});
+
+const testFrameNextButton = createButton('>', () => {
+    window.testControls?.nextFrame?.();
+});
+
+testFrameControl.append(testFramePrevButton, testFrameInput, testFrameNextButton);
+
+function updateTestVideoPrompt() {
+    const hasVideo = window.testControls?.hasVideo?.() ?? false;
+    uploadTestVideoText.style.display = hasVideo ? 'none' : '';
+    testFrameControl.style.display = hasVideo ? 'grid' : 'none';
+    testSelectFirstButton.style.display = hasVideo ? '' : 'none';
+    testPlayPauseButton.style.display = hasVideo ? '' : 'none';
+}
+
+window.testControls?.onVideoChange?.(updateTestVideoPrompt);
+window.testControls?.onFrameChange?.((currentFrameIndex, maxFrameIndex) => {
+    testFrameInput.value = String(currentFrameIndex);
+    testFrameInput.max = String(maxFrameIndex);
+});
+window.testControls?.onPlaybackChange?.((playing) => {
+    testPlayPauseButton.innerHTML = playing ? testPauseIcon : testPlayIcon;
+    testPlayPauseButton.title = playing ? 'Pause Test Video' : 'Play Test Video';
+    testPlayPauseButton.setAttribute('aria-label', testPlayPauseButton.title);
+});
+window.testControls?.onSelectionChange?.((active) => {
+    testFirstPointSelectionActive = active;
+    testSelectFirstButton.classList.toggle('active', active);
+    testSelectFirstButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+    testSelectFirstButton.title = active ? 'Cancel First Marker Selection' : 'Select First Marker';
+    testSelectFirstButton.setAttribute('aria-label', testSelectFirstButton.title);
+});
+window.testControls?.onEnabledChange?.((enabled) => {
+    testVideoHeader.sync(enabled);
+    setSectionInteractive(testVideoSection, testVideoHeader.input, enabled);
+});
+updateTestVideoPrompt();
+testVideoSection.append(testVideoHeader.header, testVideoActionsRow, testFrameControl);
+setSectionInteractive(
+    testVideoSection,
+    testVideoHeader.input,
+    window.testControls?.getEnabled?.() ?? false
+);
+
 const testsSection = document.createElement('div');
 testsSection.className = 'chain-section';
 
@@ -1034,7 +1140,7 @@ const frameSection = document.createElement('div');
 frameSection.className = 'frame-section';
 
 const frameHeader = createSectionToggle(
-    'Video',
+    'Animal Video',
     window.appActions?.getFramesVisible?.() ?? true,
     (visible) => {
         window.appActions?.setFramesVisible?.(visible);
@@ -1497,6 +1603,7 @@ sidebar.append(
     frameSection,
     skeletonSection,
     chainOptionsSection,
+    testVideoSection,
     testsSection,
     sideSpacer,
     bottomActions

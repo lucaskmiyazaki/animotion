@@ -460,6 +460,11 @@ canvas.create-mode {
     grid-template-columns: 1fr;
 }
 
+.test-video-actions-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+}
+
 .upload-video-prompt {
     display: flex;
     align-items: center;
@@ -504,6 +509,10 @@ canvas.create-mode {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
     align-items: center;
     gap: 8px;
+}
+
+.test-frame-control {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
 }
 
 .joint-k-value-input.manual-disabled {
