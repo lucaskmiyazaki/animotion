@@ -1020,7 +1020,7 @@ testFrameInput.value = '0';
 testFrameInput.className = 'frame-input';
 testFrameInput.addEventListener('change', () => {
     const raw = Number.parseInt(testFrameInput.value, 10);
-    window.testControls?.showFrameIndex?.(Number.isNaN(raw) ? 0 : Math.max(0, raw));
+    window.testControls?.selectFrameIndex?.(Number.isNaN(raw) ? 0 : Math.max(0, raw));
 });
 
 const testFrameNextButton = createButton('>', () => {
@@ -1028,6 +1028,10 @@ const testFrameNextButton = createButton('>', () => {
 });
 
 testFrameControl.append(testFramePrevButton, testFrameInput, testFrameNextButton);
+
+const testAnalysisStatus = document.createElement('div');
+testAnalysisStatus.className = 'test-analysis-status';
+testAnalysisStatus.style.display = 'none';
 
 function updateTestVideoPrompt() {
     const hasVideo = window.testControls?.hasVideo?.() ?? false;
@@ -1054,12 +1058,29 @@ window.testControls?.onSelectionChange?.((active) => {
     testSelectFirstButton.title = active ? 'Cancel First Marker Selection' : 'Select First Marker';
     testSelectFirstButton.setAttribute('aria-label', testSelectFirstButton.title);
 });
+window.testControls?.onAnalysisChange?.(({ status, progress, message }) => {
+    const analyzing = status === 'running';
+    testAnalysisStatus.style.display = '';
+    testAnalysisStatus.classList.toggle('error', status === 'error');
+    testAnalysisStatus.textContent = analyzing ? `${message} ${progress}%` : message;
+    uploadTestVideoButton.disabled = analyzing;
+    testSelectFirstButton.disabled = analyzing;
+    testPlayPauseButton.disabled = analyzing;
+    testFramePrevButton.disabled = analyzing;
+    testFrameInput.disabled = analyzing;
+    testFrameNextButton.disabled = analyzing;
+});
 window.testControls?.onEnabledChange?.((enabled) => {
     testVideoHeader.sync(enabled);
     setSectionInteractive(testVideoSection, testVideoHeader.input, enabled);
 });
 updateTestVideoPrompt();
-testVideoSection.append(testVideoHeader.header, testVideoActionsRow, testFrameControl);
+testVideoSection.append(
+    testVideoHeader.header,
+    testVideoActionsRow,
+    testFrameControl,
+    testAnalysisStatus
+);
 setSectionInteractive(
     testVideoSection,
     testVideoHeader.input,

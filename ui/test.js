@@ -6,6 +6,9 @@ class Test {
         this.enabled = false;
         this.currentFrameIndex = 0;
         this.maxFrameIndex = 0;
+        this.sourceMaxFrameIndex = 0;
+        this.frameIndexMap = null;
+        this.matchedPairs = null;
         this.playbackTimer = null;
         this.playbackDirection = 1;
         this.currentVideoURL = null;
@@ -19,6 +22,9 @@ class Test {
         this.nextMarkerId = 0;
         this.firstPointSelectionActive = false;
         this.selectionChangeListeners = new Set();
+        this.analysisChangeListeners = new Set();
+        this.analysisRunId = 0;
+        this.analysisInProgress = false;
         this.detectionRequestId = 0;
 
         if (!this.canvas) {
@@ -102,7 +108,7 @@ class Test {
             this.markerCanvas.height = Math.max(1, Math.round(window.innerHeight * dpr));
             this.markerContext.setTransform(dpr, 0, 0, dpr, 0, 0);
             this.renderAlignedFrame();
-            this.drawMarkers(this.getDisplayMarkers(this.currentFrameIndex));
+            this.drawMarkers(this.getDisplayMarkers(this.getSourceFrameIndex()));
         };
         window.addEventListener('resize', this.resizeMarkerCanvas);
         this.resizeMarkerCanvas();
@@ -112,6 +118,15 @@ class Test {
             this.loadVideoFile(file)?.catch((error) => {
                 console.error('Failed to load test video file:', error);
             });
+        });
+
+        window.videoControls?.onFrameChange?.((frameIndex) => {
+            if (this.matchedPairs) this.showFrameIndex(frameIndex);
+        });
+        window.videoControls?.onPlaybackChange?.((playing) => {
+            if (!this.matchedPairs) return;
+            if (playing) this.pausePlayback();
+            this.playbackChangeListeners.forEach((listener) => listener(playing));
         });
 
         this.ready = true;
@@ -130,6 +145,8 @@ class Test {
             }
 
             this.pausePlayback();
+            this.analysisRunId += 1;
+            this.analysisInProgress = false;
             const previousVideoURL = this.currentVideoURL;
             const candidateVideoURL = URL.createObjectURL(file);
 
@@ -151,7 +168,10 @@ class Test {
                     ? Math.floor(duration / this.FRAME_STEP)
                     : 0;
                 this.maxFrameIndex = testMaxFrameIndex;
+                this.sourceMaxFrameIndex = testMaxFrameIndex;
                 this.currentFrameIndex = 0;
+                this.frameIndexMap = null;
+                this.matchedPairs = null;
                 this.markerCache.clear();
                 this.resetMarkerTracking();
                 this.showFrameIndex(0);
@@ -175,7 +195,10 @@ class Test {
                     this.currentVideoFile = null;
                     this.currentVideoURL = null;
                     this.maxFrameIndex = 0;
+                    this.sourceMaxFrameIndex = 0;
                     this.currentFrameIndex = 0;
+                    this.frameIndexMap = null;
+                    this.matchedPairs = null;
                     this.markerCache.clear();
                     this.resetMarkerTracking();
                     this.showFrameIndex(0);
@@ -212,13 +235,18 @@ class Test {
             return;
         }
 
-        const targetTime = this.currentFrameIndex * this.FRAME_STEP;
+        const sourceFrameIndex = this.getSourceFrameIndex();
+        const targetTime = sourceFrameIndex * this.FRAME_STEP;
         const duration = Number(this.video.duration);
         this.video.currentTime = Number.isFinite(duration)
             ? Math.min(Math.max(0, targetTime), duration)
             : Math.max(0, targetTime);
-        this.scheduleMarkerDetection(this.currentFrameIndex);
+        this.scheduleMarkerDetection(sourceFrameIndex);
         this.emitFrameChange();
+    }
+
+    getSourceFrameIndex(logicalFrameIndex = this.currentFrameIndex) {
+        return this.frameIndexMap?.[logicalFrameIndex] ?? logicalFrameIndex;
     }
 
     scheduleMarkerDetection(frameIndex) {
@@ -228,7 +256,10 @@ class Test {
             this.trackFrameMarkers(frameIndex, cachedCentroids);
             this.drawMarkers(this.getDisplayMarkers(frameIndex));
             const renderCachedFrame = () => {
-                if (requestId !== this.detectionRequestId || frameIndex !== this.currentFrameIndex) return;
+                if (
+                    requestId !== this.detectionRequestId ||
+                    frameIndex !== this.getSourceFrameIndex()
+                ) return;
                 if (this.video.seeking) {
                     this.video.addEventListener('seeked', renderCachedFrame, { once: true });
                     return;
@@ -246,7 +277,7 @@ class Test {
             if (
                 completed ||
                 requestId !== this.detectionRequestId ||
-                frameIndex !== this.currentFrameIndex
+                frameIndex !== this.getSourceFrameIndex()
             ) return;
             if (this.video.seeking) {
                 if (!waitingForSeek) {
@@ -409,6 +440,9 @@ class Test {
         this.initializeMarkerTracking(centroids, closestIndex);
         this.cancelFirstPointSelection();
         this.drawMarkers(this.getDisplayMarkers(0));
+        this.analyzeAndMatch().catch((error) => {
+            console.error('Could not match Test video frames:', error);
+        });
     }
 
     initializeMarkerTracking(centroids, firstIndex) {
@@ -496,10 +530,8 @@ class Test {
         return this.trackedMarkerCache.get(frameIndex) || this.markerCache.get(frameIndex) || [];
     }
 
-    getFrameAlignment(frameIndex = this.currentFrameIndex) {
-        const markers = this.trackedMarkerCache.get(frameIndex) || [];
+    getSimilarityAlignment(markers, referencePoints) {
         const marker0 = markers.find((marker) => marker.id === 0);
-        const referencePoints = window.appSeries?.getFrame?.(0)?.points || [];
         const point0 = referencePoints[0];
         if (!marker0 || !point0 || referencePoints.length < 2) return null;
 
@@ -547,6 +579,256 @@ class Test {
             e: point0.x - cosine * marker0.x + sine * marker0.y,
             f: point0.y - sine * marker0.x - cosine * marker0.y
         };
+    }
+
+    getFrameAlignment(frameIndex = this.currentFrameIndex) {
+        const sourceFrameIndex = this.getSourceFrameIndex(frameIndex);
+        const markers = this.trackedMarkerCache.get(sourceFrameIndex) || [];
+        const referenceFrameIndex = this.matchedPairs?.[frameIndex]?.originalLogicalFrame ?? 0;
+        const referencePoints = window.appSeries?.getFrame?.(referenceFrameIndex)?.points || [];
+        return this.getSimilarityAlignment(markers, referencePoints);
+    }
+
+    applyMatchedPairs(pairs) {
+        const retainedSourceFrames = new Set(pairs.map((pair) => pair.testSourceFrame));
+        this.markerCache = new Map(
+            [...this.markerCache.entries()].filter(([sourceFrame]) => (
+                retainedSourceFrames.has(sourceFrame)
+            ))
+        );
+        this.trackedMarkerCache = new Map(
+            [...this.trackedMarkerCache.entries()].filter(([sourceFrame]) => (
+                retainedSourceFrames.has(sourceFrame)
+            ))
+        );
+        this.matchedPairs = pairs.map((pair, logicalFrame) => ({
+            ...pair,
+            originalLogicalFrame: logicalFrame
+        }));
+        this.frameIndexMap = pairs.map((pair) => pair.testSourceFrame);
+        this.maxFrameIndex = Math.max(0, this.frameIndexMap.length - 1);
+        this.currentFrameIndex = 0;
+        this.showFrameIndex(0);
+    }
+
+    scoreSkeletonPair(markers, referencePoints) {
+        if (
+            markers.length < 2 ||
+            markers.length !== referencePoints.length ||
+            markers.some((marker) => !Number.isInteger(marker.id) || !referencePoints[marker.id])
+        ) return Number.POSITIVE_INFINITY;
+
+        const alignment = this.getSimilarityAlignment(markers, referencePoints);
+        if (!alignment) return Number.POSITIVE_INFINITY;
+
+        const totalDistance = markers.reduce((total, marker) => {
+            const transformed = this.transformMarkerToViewport(marker, alignment);
+            const referencePoint = referencePoints[marker.id];
+            return total + Math.hypot(
+                transformed.x - referencePoint.x,
+                transformed.y - referencePoint.y
+            );
+        }, 0);
+        return totalDistance / markers.length;
+    }
+
+    compareMatchSolutions(left, right, lastTestFrameIndex) {
+        if (!left) return right;
+        if (!right) return left;
+        if (left.pairs.length !== right.pairs.length) {
+            return left.pairs.length > right.pairs.length ? left : right;
+        }
+
+        const distanceDifference = left.totalDistance - right.totalDistance;
+        if (Math.abs(distanceDifference) > 1e-9) {
+            return distanceDifference < 0 ? left : right;
+        }
+
+        const compareBoundary = (testFrameIndex, preferLaterSkeleton) => {
+            const leftPair = left.pairs.find((pair) => pair.testSourceFrame === testFrameIndex);
+            const rightPair = right.pairs.find((pair) => pair.testSourceFrame === testFrameIndex);
+            if (!leftPair || !rightPair || leftPair.originalLogicalFrame === rightPair.originalLogicalFrame) {
+                return null;
+            }
+            const leftWins = preferLaterSkeleton
+                ? leftPair.originalLogicalFrame > rightPair.originalLogicalFrame
+                : leftPair.originalLogicalFrame < rightPair.originalLogicalFrame;
+            return leftWins ? left : right;
+        };
+
+        const firstBoundaryWinner = compareBoundary(0, true);
+        if (firstBoundaryWinner) return firstBoundaryWinner;
+        const lastBoundaryWinner = compareBoundary(lastTestFrameIndex, false);
+        if (lastBoundaryWinner) return lastBoundaryWinner;
+
+        const leftKey = left.pairs
+            .map((pair) => `${String(pair.originalLogicalFrame).padStart(8, '0')}:${String(pair.testSourceFrame).padStart(8, '0')}`)
+            .join('|');
+        const rightKey = right.pairs
+            .map((pair) => `${String(pair.originalLogicalFrame).padStart(8, '0')}:${String(pair.testSourceFrame).padStart(8, '0')}`)
+            .join('|');
+        return leftKey <= rightKey ? left : right;
+    }
+
+    computeMonotonicMatches(originalFrames, testFrames) {
+        const rowCount = originalFrames.length;
+        const columnCount = testFrames.length;
+        const lastTestFrameIndex = testFrames[columnCount - 1]?.sourceFrame ?? -1;
+        const table = Array.from({ length: rowCount + 1 }, () => Array(columnCount + 1).fill(null));
+        table[0][0] = { pairs: [], totalDistance: 0 };
+
+        for (let row = 0; row <= rowCount; row += 1) {
+            for (let column = 0; column <= columnCount; column += 1) {
+                const current = table[row][column];
+                if (!current) continue;
+
+                if (row < rowCount) {
+                    table[row + 1][column] = this.compareMatchSolutions(
+                        table[row + 1][column],
+                        current,
+                        lastTestFrameIndex
+                    );
+                }
+                if (column < columnCount) {
+                    table[row][column + 1] = this.compareMatchSolutions(
+                        table[row][column + 1],
+                        current,
+                        lastTestFrameIndex
+                    );
+                }
+                if (row >= rowCount || column >= columnCount) continue;
+
+                const originalFrame = originalFrames[row];
+                const testFrame = testFrames[column];
+                const distance = this.scoreSkeletonPair(testFrame.markers, originalFrame.points);
+                if (!Number.isFinite(distance)) continue;
+
+                const matched = {
+                    pairs: [...current.pairs, {
+                        originalLogicalFrame: originalFrame.logicalFrame,
+                        animalSourceFrame: originalFrame.sourceFrame,
+                        testSourceFrame: testFrame.sourceFrame,
+                        distance
+                    }],
+                    totalDistance: current.totalDistance + distance
+                };
+                table[row + 1][column + 1] = this.compareMatchSolutions(
+                    table[row + 1][column + 1],
+                    matched,
+                    lastTestFrameIndex
+                );
+            }
+        }
+
+        return table[rowCount][columnCount]?.pairs || [];
+    }
+
+    seekToSourceFrame(sourceFrameIndex) {
+        return new Promise((resolve, reject) => {
+            const duration = Number(this.video.duration);
+            const requestedTime = sourceFrameIndex * this.FRAME_STEP;
+            const targetTime = Number.isFinite(duration)
+                ? Math.min(Math.max(0, requestedTime), duration)
+                : Math.max(0, requestedTime);
+
+            if (this.video.readyState >= 2 && Math.abs(this.video.currentTime - targetTime) < 0.0005) {
+                resolve();
+                return;
+            }
+
+            const cleanup = () => {
+                this.video.removeEventListener('seeked', handleSeeked);
+                this.video.removeEventListener('error', handleError);
+            };
+            const handleSeeked = () => {
+                cleanup();
+                resolve();
+            };
+            const handleError = () => {
+                cleanup();
+                reject(new Error(`Could not decode Test source frame ${sourceFrameIndex}.`));
+            };
+
+            this.video.addEventListener('seeked', handleSeeked);
+            this.video.addEventListener('error', handleError);
+            this.video.currentTime = targetTime;
+        });
+    }
+
+    async analyzeAndMatch() {
+        if (this.analysisInProgress) return;
+
+        const originalFrames = (window.appSeries?.getFrameIndices?.() || [])
+            .sort((a, b) => a - b)
+            .map((logicalFrame) => ({
+                logicalFrame,
+                sourceFrame: window.appSeries.getSourceFrameIndex(logicalFrame),
+                points: (window.appSeries.getFrame(logicalFrame)?.points || [])
+                    .map((point) => ({ x: point.x, y: point.y }))
+            }))
+            .filter((frame) => frame.points.length >= 2);
+        if (originalFrames.length === 0) {
+            this.emitAnalysisChange('error', 0, 'No original skeleton frames are available.');
+            return;
+        }
+
+        const runId = ++this.analysisRunId;
+        this.analysisInProgress = true;
+        this.pausePlayback();
+        this.emitAnalysisChange('running', 0, 'Analyzing Test video frames...');
+
+        try {
+            for (let sourceFrame = 0; sourceFrame <= this.sourceMaxFrameIndex; sourceFrame += 1) {
+                if (runId !== this.analysisRunId) throw new Error('Test frame analysis was cancelled.');
+
+                await this.seekToSourceFrame(sourceFrame);
+                if (!this.markerCache.has(sourceFrame)) {
+                    this.markerCache.set(sourceFrame, this.detectGreenMarkerCentroids());
+                }
+                if (sourceFrame > 0) {
+                    this.trackFrameMarkers(sourceFrame, this.markerCache.get(sourceFrame));
+                }
+                this.emitAnalysisChange(
+                    'running',
+                    Math.round(((sourceFrame + 1) / (this.sourceMaxFrameIndex + 1)) * 80),
+                    `Analyzing Test frame ${sourceFrame + 1} of ${this.sourceMaxFrameIndex + 1}...`
+                );
+            }
+
+            const testFrames = [...this.trackedMarkerCache.entries()]
+                .sort(([leftFrame], [rightFrame]) => leftFrame - rightFrame)
+                .map(([sourceFrame, markers]) => ({ sourceFrame, markers }));
+            const pairs = this.computeMonotonicMatches(originalFrames, testFrames);
+            if (pairs.length === 0) {
+                throw new Error('No equal-point-count skeleton and Test frame pairs were found.');
+            }
+
+            this.emitAnalysisChange('running', 90, 'Compacting matched frames...');
+            const retained = window.appActions?.retainMatchedOriginalFrames?.(
+                pairs.map((pair) => pair.originalLogicalFrame)
+            );
+            if (!retained) throw new Error('Could not retain matched original frames.');
+
+            this.applyMatchedPairs(pairs);
+            this.emitAnalysisChange(
+                'complete',
+                100,
+                `Matched ${pairs.length} frame${pairs.length === 1 ? '' : 's'}.`
+            );
+        } catch (error) {
+            if (runId === this.analysisRunId) {
+                this.frameIndexMap = null;
+                this.matchedPairs = null;
+                this.maxFrameIndex = this.sourceMaxFrameIndex;
+                this.emitAnalysisChange('error', 0, error.message || 'Frame matching failed.');
+            }
+            throw error;
+        } finally {
+            if (runId === this.analysisRunId) {
+                this.analysisInProgress = false;
+                if (!this.matchedPairs) this.showFrameIndex(0);
+            }
+        }
     }
 
     transformMarkerToViewport(marker, alignment = this.getFrameAlignment()) {
@@ -657,12 +939,20 @@ class Test {
     }
 
     nextFrame() {
+        if (this.matchedPairs) {
+            window.videoControls?.nextFrame?.();
+            return;
+        }
         this.showFrameIndex(this.currentFrameIndex >= this.maxFrameIndex
             ? 0
             : this.currentFrameIndex + 1);
     }
 
     prevFrame() {
+        if (this.matchedPairs) {
+            window.videoControls?.prevFrame?.();
+            return;
+        }
         this.showFrameIndex(this.currentFrameIndex <= 0
             ? this.maxFrameIndex
             : this.currentFrameIndex - 1);
@@ -696,6 +986,10 @@ class Test {
     }
 
     togglePlayback() {
+        if (this.matchedPairs) {
+            window.videoControls?.togglePlayback?.();
+            return;
+        }
         if (this.playbackTimer === null) {
             this.playFrames();
         } else {
@@ -707,6 +1001,14 @@ class Test {
         this.enabled = Boolean(enabled);
         this.showFrameIndex(this.currentFrameIndex);
         this.enabledChangeListeners.forEach((listener) => listener(this.enabled));
+    }
+
+    selectFrameIndex(frameIndex) {
+        if (this.matchedPairs) {
+            window.videoControls?.showFrameIndex?.(frameIndex);
+            return;
+        }
+        this.showFrameIndex(frameIndex);
     }
 
     getEnabled() {
@@ -730,6 +1032,14 @@ class Test {
         return {
             enabled: this.enabled,
             currentFrameIndex: this.currentFrameIndex,
+            frameIndexMap: this.frameIndexMap ? [...this.frameIndexMap] : null,
+            matchedPairs: this.matchedPairs ? this.matchedPairs.map((pair) => ({ ...pair })) : null,
+            trackedMarkers: Object.fromEntries(
+                [...this.trackedMarkerCache.entries()].map(([frameIndex, markers]) => [
+                    frameIndex,
+                    markers.map((marker) => ({ ...marker }))
+                ])
+            ),
             video: this.currentVideoFile
                 ? {
                     name: this.currentVideoFile.name,
@@ -738,6 +1048,28 @@ class Test {
                 }
                 : null
         };
+    }
+
+    restoreMatchingState(state) {
+        if (!state?.frameIndexMap?.length || !state?.matchedPairs?.length) return;
+
+        this.trackedMarkerCache = new Map(
+            Object.entries(state.trackedMarkers || {}).map(([frameIndex, markers]) => [
+                Number.parseInt(frameIndex, 10),
+                markers.map((marker) => ({ ...marker }))
+            ])
+        );
+        this.frameIndexMap = state.frameIndexMap.map((frameIndex) => Number.parseInt(frameIndex, 10));
+        this.matchedPairs = state.matchedPairs.map((pair, logicalFrame) => ({
+            ...pair,
+            originalLogicalFrame: logicalFrame
+        }));
+        this.maxFrameIndex = this.frameIndexMap.length - 1;
+        this.currentFrameIndex = Math.min(
+            Math.max(0, Number.parseInt(state.currentFrameIndex, 10) || 0),
+            this.maxFrameIndex
+        );
+        this.showFrameIndex(this.currentFrameIndex);
     }
 
     onVideoChange(listener) {
@@ -785,6 +1117,17 @@ class Test {
             listener(this.firstPointSelectionActive);
         });
     }
+
+    onAnalysisChange(listener) {
+        this.analysisChangeListeners.add(listener);
+        return () => this.analysisChangeListeners.delete(listener);
+    }
+
+    emitAnalysisChange(status, progress, message) {
+        this.analysisChangeListeners.forEach((listener) => {
+            listener({ status, progress, message });
+        });
+    }
 }
 
 (function () {
@@ -798,24 +1141,41 @@ class Test {
         getEnabled: () => controller.getEnabled(),
         hasVideo: () => controller.hasVideo(),
         showFrameIndex: (frameIndex) => controller.showFrameIndex(frameIndex),
+        selectFrameIndex: (frameIndex) => controller.selectFrameIndex(frameIndex),
         getCurrentFrameIndex: () => controller.currentFrameIndex,
         getMaxFrameIndex: () => controller.maxFrameIndex,
         nextFrame: () => controller.nextFrame(),
         prevFrame: () => controller.prevFrame(),
         togglePlayback: () => controller.togglePlayback(),
         pausePlayback: () => controller.pausePlayback(),
-        isPlaying: () => controller.playbackTimer !== null,
+        isPlaying: () => controller.matchedPairs
+            ? window.videoControls?.isPlaying?.() ?? false
+            : controller.playbackTimer !== null,
         beginFirstPointSelection: () => controller.beginFirstPointSelection(),
         cancelFirstPointSelection: () => controller.cancelFirstPointSelection(),
         getTrackedMarkers: (frameIndex) => (
             controller.trackedMarkerCache.get(frameIndex ?? controller.currentFrameIndex) || []
         ).map((marker) => ({ ...marker })),
+        scoreSkeletonPair: (markers, referencePoints) => (
+            controller.scoreSkeletonPair(markers, referencePoints)
+        ),
+        computeMonotonicMatches: (originalFrames, testFrames) => (
+            controller.computeMonotonicMatches(originalFrames, testFrames)
+        ),
+        applyMatchedPairs: (pairs) => controller.applyMatchedPairs(pairs),
+        restoreMatchingState: (state) => controller.restoreMatchingState(state),
+        getFrameIndexMap: () => controller.frameIndexMap ? [...controller.frameIndexMap] : null,
+        getMatchedPairs: () => controller.matchedPairs
+            ? controller.matchedPairs.map((pair) => ({ ...pair }))
+            : null,
+        isAnalyzing: () => controller.analysisInProgress,
         getSerializableState: () => controller.getSerializableState(),
         onVideoChange: (listener) => controller.onVideoChange(listener),
         onFrameChange: (listener) => controller.onFrameChange(listener),
         onPlaybackChange: (listener) => controller.onPlaybackChange(listener),
         onEnabledChange: (listener) => controller.onEnabledChange(listener),
         onSelectionChange: (listener) => controller.onSelectionChange(listener),
+        onAnalysisChange: (listener) => controller.onAnalysisChange(listener),
         video: controller.video
     };
 })();

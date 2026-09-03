@@ -515,6 +515,16 @@ canvas.create-mode {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
 }
 
+.test-analysis-status {
+    color: var(--muted-text);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.test-analysis-status.error {
+    color: #ff9a9a;
+}
+
 .joint-k-value-input.manual-disabled {
     opacity: 0.58;
     color: var(--muted-text);

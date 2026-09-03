@@ -414,6 +414,7 @@ async function restoreTestState(testSnapshot) {
             await window.testControls?.loadVideoFile?.(file);
         }
 
+        window.testControls?.restoreMatchingState?.(testSnapshot);
         window.testControls?.showFrameIndex?.(testSnapshot.currentFrameIndex ?? 0);
         window.testControls?.setEnabled?.(testSnapshot.enabled ?? false);
     } catch (error) {

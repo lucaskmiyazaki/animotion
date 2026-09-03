@@ -1160,15 +1160,39 @@ function autoCopyPreviousSkeletonIfEmpty() {
     redrawAll();
 }
 
+function removeFrameAtIndex(frameIndex) {
+    series.removeFrameAndShift(frameIndex, [frameChains, frameChainBuilt]);
+}
+
 function deleteCurrentFrame() {
     if (!(window.videoControls?.getFramesVisible?.() ?? true)) return;
     const deletedFrameIndex = currentFrameIndex;
 
-    series.removeFrameAndShift(deletedFrameIndex, [frameChains, frameChainBuilt]);
+    removeFrameAtIndex(deletedFrameIndex);
     emitChainStateChange();
 
     const newFrameIndex = deletedFrameIndex > 0 ? deletedFrameIndex - 1 : 0;
     window.videoControls?.showFrameIndex?.(newFrameIndex);
+}
+
+function retainMatchedOriginalFrames(frameIndicesToKeep) {
+    const keep = new Set(
+        (Array.isArray(frameIndicesToKeep) ? frameIndicesToKeep : [])
+            .filter((frameIndex) => Number.isInteger(frameIndex) && frameIndex >= 0)
+    );
+    if (keep.size === 0) return false;
+
+    window.videoControls?.pausePlayback?.();
+    const maxFrameIndex = series.getMaxFrameIndex();
+    Array.from({ length: maxFrameIndex + 1 }, (_, frameIndex) => frameIndex)
+        .sort((a, b) => b - a)
+        .forEach((frameIndex) => {
+            if (!keep.has(frameIndex)) removeFrameAtIndex(frameIndex);
+        });
+
+    emitChainStateChange();
+    window.videoControls?.showFrameIndex?.(0);
+    return true;
 }
 
 function getFramesWithTargets() {
@@ -1425,6 +1449,7 @@ window.appActions = {
         });
     },
     deleteCurrentFrame,
+    retainMatchedOriginalFrames,
     buildChain,
     hasRenderableChain,
     getMechanismNeedsRegeneration: () => mechanismNeedsRegeneration,
@@ -1433,7 +1458,6 @@ window.appActions = {
             console.warn('SpringOptimization is not available.');
             return null;
         }
-
         const bundle = getCurrentMechanismBundle();
         if (!(bundle.mechanism instanceof Mechanism)) {
             return null;
